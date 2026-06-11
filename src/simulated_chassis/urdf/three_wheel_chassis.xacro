@@ -1,0 +1,151 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="three_wheel_agv">
+
+  <!-- 参数 -->
+  <xacro:property name="chassis_length" value="1.0"/>
+  <xacro:property name="chassis_width" value="0.8"/>
+  <xacro:property name="chassis_height" value="0.3"/>
+  <xacro:property name="wheel_radius" value="0.1"/>
+  <xacro:property name="wheel_width" value="0.08"/>
+  <xacro:property name="wheel_base" value="0.5"/>  <!-- 轮到中心距离 -->
+
+  <!-- 材料 -->
+  <material name="blue">
+    <color rgba="0.0 0.0 0.8 1.0"/>
+  </material>
+  <material name="black">
+    <color rgba="0.1 0.1 0.1 1.0"/>
+  </material>
+
+  <!-- 底盘本体 -->
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="50.0"/>
+      <inertia ixx="2.0" ixy="0.0" ixz="0.0" iyy="2.0" iyz="0.0" izz="2.0"/>
+    </inertial>
+  </link>
+
+  <!-- 宏：定义一个舵轮 -->
+  <xacro:macro name="steering_wheel" params="name parent x y theta">
+    <!-- 转向关节（绕Z轴旋转） -->
+    <joint name="${name}_steering_joint" type="revolute">
+      <parent link="${parent}"/>
+      <child link="${name}_steering_link"/>
+      <origin xyz="${x} ${y} 0" rpy="0 0 ${theta}"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-3.14159" upper="3.14159" effort="100" velocity="3.0"/>
+    </joint>
+    
+    <link name="${name}_steering_link">
+      <visual>
+        <geometry>
+          <cylinder radius="0.05" length="0.1"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+      <inertial>
+        <mass value="2.0"/>
+        <inertia ixx="0.01" ixy="0.0" ixz="0.0" iyy="0.01" iyz="0.0" izz="0.01"/>
+      </inertial>
+    </link>
+
+    <!-- 驱动轮关节（绕Y轴旋转） -->
+    <joint name="${name}_wheel_joint" type="continuous">
+      <parent link="${name}_steering_link"/>
+      <child link="${name}_wheel_link"/>
+      <origin xyz="0 0 -0.05" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+
+    <link name="${name}_wheel_link">
+      <visual>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="3.0"/>
+        <inertia ixx="0.01" ixy="0.0" ixz="0.0" iyy="0.02" iyz="0.0" izz="0.01"/>
+      </inertial>
+    </link>
+
+    <!-- Gazebo 摩擦参数 -->
+    <gazebo reference="${name}_wheel_link">
+      <mu1>0.8</mu1>
+      <mu2>0.8</mu2>
+      <kp>1000000.0</kp>
+      <kd>100.0</kd>
+      <minDepth>0.001</minDepth>
+      <maxVel>1.0</maxVel>
+    </gazebo>
+
+    <!-- ros2_control 传动装置定义 -->
+    <transmission name="${name}_steering_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="${name}_steering_joint">
+        <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="${name}_steering_motor">
+        <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+        <mechanicalReduction>1</mechanicalReduction>
+      </actuator>
+    </transmission>
+
+    <transmission name="${name}_wheel_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="${name}_wheel_joint">
+        <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="${name}_wheel_motor">
+        <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+        <mechanicalReduction>1</mechanicalReduction>
+      </actuator>
+    </transmission>
+  </xacro:macro>
+
+  <!-- 三个舵轮：等边三角形布置 -->
+  <!-- 轮1：前方 -->
+  <xacro:steering_wheel name="wheel_front" parent="base_link" 
+                        x="${wheel_base}" y="0" theta="0"/>
+  
+  <!-- 轮2：左后方 -->
+  <xacro:steering_wheel name="wheel_left" parent="base_link" 
+                        x="${-wheel_base*0.5}" y="${wheel_base*0.866}" theta="2.094"/>
+  
+  <!-- 轮3：右后方 -->
+  <xacro:steering_wheel name="wheel_right" parent="base_link" 
+                        x="${-wheel_base*0.5}" y="${-wheel_base*0.866}" theta="-2.094"/>
+
+  <!-- Gazebo 插件 -->
+  <gazebo>
+    <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+      <parameters>$(find your_pkg)/config/three_wheel_controllers.yaml</parameters>
+    </plugin>
+  </gazebo>
+
+  <!-- 底盘与地面的接触 -->
+  <gazebo reference="base_link">
+    <mu1>0.1</mu1>
+    <mu2>0.1</mu2>
+    <kp>100000.0</kp>
+    <kd>100.0</kd>
+  </gazebo>
+
+</robot>
