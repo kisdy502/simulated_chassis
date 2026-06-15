@@ -21,7 +21,9 @@ find_package(nav2_behavior_tree REQUIRED)
 find_package(nav2_util REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
-find_package(jzt_robot_msgs REQUIRED)
+find_package(controller_interface REQUIRED)
+find_package(hardware_interface REQUIRED)
+
 
 include_directories(
   include
@@ -41,12 +43,11 @@ set(dependencies
   behaviortree_cpp_v3
   nav2_behavior_tree
   nav2_util
-  jzt_robot_msgs
   pluginlib
 )
 
 add_library(simulated_chassis_core SHARED
-  src/chassis_controller.cpp
+  src/three_wheel_steering_controller.cpp
 )
 target_include_directories(simulated_chassis_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -54,11 +55,60 @@ target_include_directories(simulated_chassis_core PUBLIC
 )
 ament_target_dependencies(simulated_chassis_core ${dependencies})
 
+# ros2_control 使用现代 CMake target，不能通过 ament_target_dependencies 链接
+target_link_libraries(simulated_chassis_core
+  controller_interface::controller_interface
+  hardware_interface::hardware_interface
+  Eigen3::Eigen
+)
+
 install(TARGETS simulated_chassis_core
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib
 )
+
+install(DIRECTORY include/
+  DESTINATION include
+)
+
+install(DIRECTORY behavior_trees/
+  DESTINATION share/${PROJECT_NAME}/behavior_trees
+)
+
+# Install directories
+install(DIRECTORY
+  launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+install(DIRECTORY
+  config/
+  DESTINATION share/${PROJECT_NAME}/config
+)
+install(DIRECTORY
+  param/
+  DESTINATION share/${PROJECT_NAME}/param
+)
+install(DIRECTORY
+  maps/
+  DESTINATION share/${PROJECT_NAME}/maps
+)
+install(DIRECTORY
+  rviz/
+  DESTINATION share/${PROJECT_NAME}/rviz
+)
+install(DIRECTORY
+  urdf/
+  DESTINATION share/${PROJECT_NAME}/urdf
+)
+install(DIRECTORY
+  world/
+  DESTINATION share/${PROJECT_NAME}/world
+)
+
+
+pluginlib_export_plugin_description_file(controller_interface plugin.xml)
+
 
 # Add your nodes, libraries and plugins here.
 # Example:

@@ -1,151 +1,380 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="three_wheel_agv">
 
-  <!-- 参数 -->
-  <xacro:property name="chassis_length" value="1.0"/>
-  <xacro:property name="chassis_width" value="0.8"/>
-  <xacro:property name="chassis_height" value="0.3"/>
-  <xacro:property name="wheel_radius" value="0.1"/>
-  <xacro:property name="wheel_width" value="0.08"/>
-  <xacro:property name="wheel_base" value="0.5"/>  <!-- 轮到中心距离 -->
+  <!-- ==================== Dummy Root ==================== -->
+  <link name="dummy_root"/>
 
-  <!-- 材料 -->
-  <material name="blue">
-    <color rgba="0.0 0.0 0.8 1.0"/>
-  </material>
-  <material name="black">
-    <color rgba="0.1 0.1 0.1 1.0"/>
-  </material>
+  <joint name="dummy_root_joint" type="fixed">
+    <parent link="dummy_root"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
 
-  <!-- 底盘本体 -->
+  <!-- ==================== Base Link ==================== -->
   <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="20.0"/>
+      <inertia ixx="0.5" ixy="0.0" ixz="0.0" iyy="0.5" iyz="0.0" izz="0.8"/>
+    </inertial>
     <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+        <box size="0.6 0.4 0.15"/>
       </geometry>
-      <material name="blue"/>
+      <material name="blue">
+        <color rgba="0.1 0.3 0.8 1.0"/>
+      </material>
     </visual>
     <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+        <box size="0.6 0.4 0.15"/>
       </geometry>
     </collision>
-    <inertial>
-      <mass value="50.0"/>
-      <inertia ixx="2.0" ixy="0.0" ixz="0.0" iyy="2.0" iyz="0.0" izz="2.0"/>
-    </inertial>
   </link>
 
-  <!-- 宏：定义一个舵轮 -->
-  <xacro:macro name="steering_wheel" params="name parent x y theta">
-    <!-- 转向关节（绕Z轴旋转） -->
-    <joint name="${name}_steering_joint" type="revolute">
-      <parent link="${parent}"/>
-      <child link="${name}_steering_link"/>
-      <origin xyz="${x} ${y} 0" rpy="0 0 ${theta}"/>
-      <axis xyz="0 0 1"/>
-      <limit lower="-3.14159" upper="3.14159" effort="100" velocity="3.0"/>
+  <!-- ==================== IMU ==================== -->
+  <link name="imu_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.01"/>
+      <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.04 0.02"/>
+      </geometry>
+      <material name="dark">
+        <color rgba="0.2 0.2 0.2 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0.0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== 3D Lidar (Mid360 style) ==================== -->
+  <link name="lidar_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.2"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.04" length="0.03"/>
+      </geometry>
+      <material name="orange">
+        <color rgba="1.0 0.5 0.0 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <origin xyz="0 0 0.12" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== Front Steering Module ==================== -->
+  <link name="wheel_front_steering_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.06"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="wheel_front_steering_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="wheel_front_steering_link"/>
+    <origin xyz="0.3 0.0 -0.05" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <!-- 360° 转向支持 -->
+    <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
+  </joint>
+
+  <link name="wheel_front_wheel_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.015" ixy="0.0" ixz="0.0" iyy="0.015" iyz="0.0" izz="0.02"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.1" length="0.08"/>
+      </geometry>
+      <material name="black">
+        <color rgba="0.1 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.1" length="0.08"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="wheel_front_wheel_joint" type="continuous">
+    <parent link="wheel_front_steering_link"/>
+    <child link="wheel_front_wheel_link"/>
+    <origin xyz="0.0 0.0 -0.05" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- ==================== Left Steering Module ==================== -->
+  <link name="wheel_left_steering_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.06"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
+  </link>
+
+  <joint name="wheel_left_steering_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="wheel_left_steering_link"/>
+    <origin xyz="-0.15 0.26 -0.05" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
+  </joint>
+
+  <link name="wheel_left_wheel_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.015" ixy="0.0" ixz="0.0" iyy="0.015" iyz="0.0" izz="0.02"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.1" length="0.08"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.1" length="0.08"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="wheel_left_wheel_joint" type="continuous">
+    <parent link="wheel_left_steering_link"/>
+    <child link="wheel_left_wheel_link"/>
+    <origin xyz="0.0 0.0 -0.05" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- ==================== Right Steering Module ==================== -->
+  <link name="wheel_right_steering_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.06"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
+  </link>
+
+  <joint name="wheel_right_steering_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="wheel_right_steering_link"/>
+    <origin xyz="-0.15 -0.26 -0.05" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
+  </joint>
+
+  <link name="wheel_right_wheel_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.015" ixy="0.0" ixz="0.0" iyy="0.015" iyz="0.0" izz="0.02"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.1" length="0.08"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.1" length="0.08"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="wheel_right_wheel_joint" type="continuous">
+    <parent link="wheel_right_steering_link"/>
+    <child link="wheel_right_wheel_link"/>
+    <origin xyz="0.0 0.0 -0.05" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- ==================== ros2_control ==================== -->
+  <ros2_control name="IgnitionSystem" type="system">
+    <hardware>
+      <plugin>ign_ros2_control/IgnitionSystem</plugin>
+    </hardware>
+    <joint name="wheel_front_steering_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
     </joint>
-    
-    <link name="${name}_steering_link">
-      <visual>
-        <geometry>
-          <cylinder radius="0.05" length="0.1"/>
-        </geometry>
-        <material name="black"/>
-      </visual>
-      <inertial>
-        <mass value="2.0"/>
-        <inertia ixx="0.01" ixy="0.0" ixz="0.0" iyy="0.01" iyz="0.0" izz="0.01"/>
-      </inertial>
-    </link>
-
-    <!-- 驱动轮关节（绕Y轴旋转） -->
-    <joint name="${name}_wheel_joint" type="continuous">
-      <parent link="${name}_steering_link"/>
-      <child link="${name}_wheel_link"/>
-      <origin xyz="0 0 -0.05" rpy="0 0 0"/>
-      <axis xyz="0 1 0"/>
+    <joint name="wheel_left_steering_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
     </joint>
+    <joint name="wheel_right_steering_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+    </joint>
+    <joint name="wheel_front_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="wheel_left_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="wheel_right_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
 
-    <link name="${name}_wheel_link">
-      <visual>
-        <geometry>
-          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
-        </geometry>
-        <material name="black"/>
-      </visual>
-      <collision>
-        <geometry>
-          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
-        </geometry>
-      </collision>
-      <inertial>
-        <mass value="3.0"/>
-        <inertia ixx="0.01" ixy="0.0" ixz="0.0" iyy="0.02" iyz="0.0" izz="0.01"/>
-      </inertial>
-    </link>
-
-    <!-- Gazebo 摩擦参数 -->
-    <gazebo reference="${name}_wheel_link">
-      <mu1>0.8</mu1>
-      <mu2>0.8</mu2>
-      <kp>1000000.0</kp>
-      <kd>100.0</kd>
-      <minDepth>0.001</minDepth>
-      <maxVel>1.0</maxVel>
-    </gazebo>
-
-    <!-- ros2_control 传动装置定义 -->
-    <transmission name="${name}_steering_trans">
-      <type>transmission_interface/SimpleTransmission</type>
-      <joint name="${name}_steering_joint">
-        <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
-      </joint>
-      <actuator name="${name}_steering_motor">
-        <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
-        <mechanicalReduction>1</mechanicalReduction>
-      </actuator>
-    </transmission>
-
-    <transmission name="${name}_wheel_trans">
-      <type>transmission_interface/SimpleTransmission</type>
-      <joint name="${name}_wheel_joint">
-        <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
-      </joint>
-      <actuator name="${name}_wheel_motor">
-        <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
-        <mechanicalReduction>1</mechanicalReduction>
-      </actuator>
-    </transmission>
-  </xacro:macro>
-
-  <!-- 三个舵轮：等边三角形布置 -->
-  <!-- 轮1：前方 -->
-  <xacro:steering_wheel name="wheel_front" parent="base_link" 
-                        x="${wheel_base}" y="0" theta="0"/>
-  
-  <!-- 轮2：左后方 -->
-  <xacro:steering_wheel name="wheel_left" parent="base_link" 
-                        x="${-wheel_base*0.5}" y="${wheel_base*0.866}" theta="2.094"/>
-  
-  <!-- 轮3：右后方 -->
-  <xacro:steering_wheel name="wheel_right" parent="base_link" 
-                        x="${-wheel_base*0.5}" y="${-wheel_base*0.866}" theta="-2.094"/>
-
-  <!-- Gazebo 插件 -->
+  <!-- ==================== Gazebo Plugins ==================== -->
   <gazebo>
-    <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
-      <parameters>$(find your_pkg)/config/three_wheel_controllers.yaml</parameters>
+    <plugin filename="ign_ros2_control-system" name="ign_ros2_control::IgnitionROS2ControlPlugin">
+      <parameters>$(find simulated_chassis)/param/three_wheel_controllers.yaml</parameters>
+      <robot_param>robot_description</robot_param>
+      <robot_param_node>robot_state_publisher</robot_param_node>
+    </plugin>
+    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
     </plugin>
   </gazebo>
 
-  <!-- 底盘与地面的接触 -->
-  <gazebo reference="base_link">
-    <mu1>0.1</mu1>
-    <mu2>0.1</mu2>
-    <kp>100000.0</kp>
-    <kd>100.0</kd>
+  <!-- ==================== IMU Sensor (Edifice Compatible) ==================== -->
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <update_rate>100</update_rate>
+      <visualize>false</visualize>
+      <topic>/imu</topic>
+      <imu>
+        <angular_velocity>
+          <x>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.01</stddev>
+            </noise>
+          </x>
+          <y>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.01</stddev>
+            </noise>
+          </y>
+          <z>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.01</stddev>
+            </noise>
+          </z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.1</stddev>
+            </noise>
+          </x>
+          <y>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.1</stddev>
+            </noise>
+          </y>
+          <z>
+            <noise type="gaussian">
+              <mean>0</mean>
+              <stddev>0.1</stddev>
+            </noise>
+          </z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
   </gazebo>
+
+  <!-- ==================== Lidar Sensor (Edifice Compatible) ==================== -->
+  <gazebo reference="lidar_link">
+    <!-- 关键1：传感器类型必须是 'lidar'，不能用 'gpu_lidar' -->
+    <sensor name="mid360_sensor" type="lidar">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>/lidar_points</topic>
+      <update_rate>10</update_rate>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+
+      <!-- 关键2：必须使用 <lidar> 标签，不是 <ray> -->
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>8</samples>
+            <min_angle>-0.2618</min_angle>
+            <max_angle>0.2618</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.1</min>
+          <max>10.0</max>
+          <resolution>0.01</resolution>
+        </range>
+      </lidar>
+      <noise>
+        <type>gaussian</type>
+        <mean>0.0</mean>
+        <stddev>0.02</stddev>
+      </noise>
+    </sensor>
+  </gazebo>
+
 
 </robot>

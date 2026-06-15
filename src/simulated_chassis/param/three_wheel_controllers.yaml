@@ -1,86 +1,17 @@
-# three_wheel_controllers.yaml
 controller_manager:
   ros__parameters:
-    update_rate: 100  # Hz
+    update_rate: 100
 
-    # 三个转向关节的位置控制器
-    wheel_front_steering_controller:
-      type: position_controllers/JointPositionController
-      
-    wheel_left_steering_controller:
-      type: position_controllers/JointPositionController
-      
-    wheel_right_steering_controller:
-      type: position_controllers/JointPositionController
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
 
-    # 三个驱动轮的速度控制器
-    wheel_front_drive_controller:
-      type: velocity_controllers/JointVelocityController
-      
-    wheel_left_drive_controller:
-      type: velocity_controllers/JointVelocityController
-      
-    wheel_right_drive_controller:
-      type: velocity_controllers/JointVelocityController
-
-    # 自定义：三舵轮运动学控制器（接收 Twist，输出6个关节指令）
     three_wheel_base_controller:
       type: three_wheel_controller/ThreeWheelSteeringController
 
-# 各关节参数
-wheel_front_steering_controller:
+joint_state_broadcaster:
   ros__parameters:
-    joint: wheel_front_steering_joint
-    pid: {p: 100.0, i: 0.01, d: 10.0}
+    {}
 
-wheel_left_steering_controller:
-  ros__parameters:
-    joint: wheel_left_steering_joint
-    pid: {p: 100.0, i: 0.01, d: 10.0}
-
-wheel_right_steering_controller:
-  ros__parameters:
-    joint: wheel_right_steering_joint
-    pid: {p: 100.0, i: 0.01, d: 10.0}
-
-wheel_front_drive_controller:
-  ros__parameters:
-    joint: wheel_front_wheel_joint
-    pid: {p: 1.0, i: 0.1, d: 0.01}
-
-wheel_left_drive_controller:
-  ros__parameters:
-    joint: wheel_left_wheel_joint
-    pid: {p: 1.0, i: 0.1, d: 0.01}
-
-wheel_right_drive_controller:
-  ros__parameters:
-    joint: wheel_right_wheel_joint
-    pid: {p: 1.0, i: 0.1, d: 0.01}
-
-# 自定义控制器参数
 three_wheel_base_controller:
   ros__parameters:
-    # 轮距中心距离
-    wheel_base: 0.5
-    
-    # 各轮安装角度（弧度）
-    wheel_angles: [0.0, 2.094, -2.094]  # 0°, 120°, -120°
-    
-    # 各轮安装位置（相对于底盘中心）
-    wheel_positions_x: [0.5, -0.25, -0.25]
-    wheel_positions_y: [0.0, 0.433, -0.433]
-    
-    # 最大转向速度
-    max_steering_speed: 3.0  # rad/s
-    
-    # 最大轮速
-    max_wheel_speed: 10.0  # rad/s (约 1.0 m/s)
-    
-    # 转向优化：允许轮子转180°而不是绕远路
-    allow_reverse_steering: true
-    
-    # 发布 odom
-    odom_frame_id: odom
-    base_frame_id: base_link
-    publish_rate: 50.0
+    {}

@@ -1,0 +1,7 @@
+<library path="simulated_chassis_core">
+    <class name="three_wheel_controller/ThreeWheelSteeringController" type="three_wheel_controller::ThreeWheelSteeringController" base_class_type="controller_interface::ControllerInterface">
+        <description>
+      Kinematic base controller for a three-wheel steering chassis.
+        </description>
+    </class>
+</library>

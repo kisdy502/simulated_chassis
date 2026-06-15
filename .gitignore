@@ -1,0 +1,55 @@
+# Colcon / build artifacts
+build/
+install/
+log/
+.colcon/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Compiled Dynamic libraries
+*.dll
+*.dylib
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Test artifacts
+test_results/
+*.gtest.xml
+
+# Core dumps
+core
+*.core
+
+# Coverage
+*.gcov
+*.gcda
+*.gcno
+coverage/
