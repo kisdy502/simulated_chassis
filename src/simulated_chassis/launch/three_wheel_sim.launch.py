@@ -43,7 +43,7 @@ def generate_launch_description():
     set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
 
     ign_gazebo = ExecuteProcess(
-        cmd=["ign", "gazebo", "-r",world_path],
+        cmd=["ign", "gazebo", "-r", world_path],
         output="screen",
     )
 

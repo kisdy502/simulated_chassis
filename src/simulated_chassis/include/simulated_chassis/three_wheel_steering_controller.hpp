@@ -10,18 +10,6 @@
 #include <vector>
 #include <algorithm>
 
-namespace rclcpp
-{
-  template<typename T>
-  class Subscription;
-
-  template<typename T>
-  class Publisher;
-
-  class Time;
-  class Duration;
-}
-
 namespace three_wheel_controller
 {
 
