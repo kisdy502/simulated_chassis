@@ -84,8 +84,9 @@ def generate_launch_description():
         '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
         # 如果需要 2D LaserScan 也桥接
         '/lidar/point_cloud@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan',
-            '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
-            '/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
+        '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
+        '/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
+        '/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',  # ← 添加这行
         ],
         output='screen'
     )
