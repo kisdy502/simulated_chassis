@@ -20,6 +20,7 @@ def generate_launch_description():
     )
 
     xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis.xacro")
+    world_path = os.path.join(pkg_share, "world", "world.sdf")
     robot_description = {
         "robot_description": Command(["xacro ", xacro_path])
     }
@@ -33,15 +34,16 @@ def generate_launch_description():
             {"use_sim_time": LaunchConfiguration("use_sim_time")},
         ],
     )
-
-    set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
-    set_gazebo_plugin_path = SetEnvironmentVariable(
-        "IGN_GAZEBO_SYSTEM_PLUGIN_PATH", "/opt/ros/humble/lib"
+    
+    set_plugin_path = SetEnvironmentVariable(
+        "IGN_GAZEBO_SYSTEM_PLUGIN_PATH",
+        "/opt/ros/humble/lib"
     )
 
+    set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
 
     ign_gazebo = ExecuteProcess(
-        cmd=["ign", "gazebo", "-r", "empty.sdf"],
+        cmd=["ign", "gazebo", "-r",world_path],
         output="screen",
     )
 
@@ -51,7 +53,7 @@ def generate_launch_description():
         arguments=[
             "-name", "three_wheel_agv",
             "-topic", "/robot_description",
-            "-x", "0.0", "-y", "0.0", "-z", "0.5",
+            "-x", "0.0", "-y", "0.0", "-z", "0.0",
         ],
         output="screen",
     )
@@ -73,25 +75,36 @@ def generate_launch_description():
         ],
     )
     
-    # ✅ 修复：使用 Edifice 的桥接包
+    # ============ 桥接（只改这里） ============
     bridge = Node(
-        package='ros_ign_bridge',  # 改：ros_gz_bridge → ros_ign_bridge
+        package='ros_ign_bridge',
         executable='parameter_bridge',
         arguments=[
-            '/lidar_points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',  # 改：gz.msgs → ignition.msgs
-            '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',  # 改：gz.msgs → ignition.msgs
-            '/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',  # 改：gz.msgs → ignition.msgs
+             # 3D 点云 - 注意是 /points 子话题
+        '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
+        # 如果需要 2D LaserScan 也桥接
+        '/lidar/point_cloud@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan',
+            '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
+            '/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
         ],
         output='screen'
+    )
+    
+    teleop = Node(
+        package='teleop_twist_keyboard',
+        executable='teleop_twist_keyboard',
+        name='teleop_twistkeyboard',
+        output='screen',  # 输出会显示在启动launch的终端中
     )
 
     return LaunchDescription([
         use_sim_time_arg,
+        set_plugin_path,
         set_software_render,
-        set_gazebo_plugin_path,
         robot_state_pub,
         ign_gazebo,
         spawn_after_gazebo,
         controller_spawners,
-        bridge
+        bridge,
+        teleop,
     ])

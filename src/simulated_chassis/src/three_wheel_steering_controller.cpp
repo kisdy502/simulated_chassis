@@ -67,58 +67,64 @@ namespace three_wheel_controller
     }
 
     controller_interface::CallbackReturn
-ThreeWheelSteeringController::on_activate(const rclcpp_lifecycle::State & /*previous_state*/)
-{
-  steering_cmds_.clear();
-  drive_cmds_.clear();
+    ThreeWheelSteeringController::on_activate(const rclcpp_lifecycle::State & /*previous_state*/)
+    {
+        steering_cmds_.clear();
+        drive_cmds_.clear();
 
-  auto find_cmd = [&](const std::string & interface_name) -> hardware_interface::LoanedCommandInterface * {
-    auto it = std::find_if(command_interfaces_.begin(), command_interfaces_.end(),
-      [&](const auto & iface) {
-        // 修正：用 get_name() 获取完整接口名，不是 get_interface_name()
-        return iface.get_name() == interface_name;
-      });
-    if (it != command_interfaces_.end()) {
-      return &(*it);
+        auto find_cmd = [&](const std::string &interface_name) -> hardware_interface::LoanedCommandInterface *
+        {
+            auto it = std::find_if(command_interfaces_.begin(), command_interfaces_.end(),
+                                   [&](const auto &iface)
+                                   {
+                                       // 修正：用 get_name() 获取完整接口名，不是 get_interface_name()
+                                       return iface.get_name() == interface_name;
+                                   });
+            if (it != command_interfaces_.end())
+            {
+                return &(*it);
+            }
+            return nullptr;
+        };
+
+        std::vector<std::string> steering_names = {
+            "wheel_front_steering_joint/position",
+            "wheel_left_steering_joint/position",
+            "wheel_right_steering_joint/position",
+        };
+        for (const auto &name : steering_names)
+        {
+            auto *iface = find_cmd(name);
+            if (!iface)
+            {
+                RCLCPP_ERROR(get_node()->get_logger(), "Missing command interface: %s", name.c_str());
+                return controller_interface::CallbackReturn::ERROR;
+            }
+            steering_cmds_.push_back(std::ref(*iface));
+        }
+
+        std::vector<std::string> drive_names = {
+            "wheel_front_wheel_joint/velocity",
+            "wheel_left_wheel_joint/velocity",
+            "wheel_right_wheel_joint/velocity",
+        };
+        for (const auto &name : drive_names)
+        {
+            auto *iface = find_cmd(name);
+            if (!iface)
+            {
+                RCLCPP_ERROR(get_node()->get_logger(), "Missing command interface: %s", name.c_str());
+                return controller_interface::CallbackReturn::ERROR;
+            }
+            drive_cmds_.push_back(std::ref(*iface));
+        }
+
+        last_cmd_ = nullptr;
+        odom_x_ = 0.0;
+        odom_y_ = 0.0;
+        odom_yaw_ = 0.0;
+        return controller_interface::CallbackReturn::SUCCESS;
     }
-    return nullptr;
-  };
-
-  std::vector<std::string> steering_names = {
-    "wheel_front_steering_joint/position",
-    "wheel_left_steering_joint/position",
-    "wheel_right_steering_joint/position",
-  };
-  for (const auto & name : steering_names) {
-    auto * iface = find_cmd(name);
-    if (!iface) {
-      RCLCPP_ERROR(get_node()->get_logger(), "Missing command interface: %s", name.c_str());
-      return controller_interface::CallbackReturn::ERROR;
-    }
-    steering_cmds_.push_back(std::ref(*iface));
-  }
-
-  std::vector<std::string> drive_names = {
-    "wheel_front_wheel_joint/velocity",
-    "wheel_left_wheel_joint/velocity",
-    "wheel_right_wheel_joint/velocity",
-  };
-  for (const auto & name : drive_names) {
-    auto * iface = find_cmd(name);
-    if (!iface) {
-      RCLCPP_ERROR(get_node()->get_logger(), "Missing command interface: %s", name.c_str());
-      return controller_interface::CallbackReturn::ERROR;
-    }
-    drive_cmds_.push_back(std::ref(*iface));
-  }
-
-  last_cmd_ = nullptr;
-  odom_x_ = 0.0;
-  odom_y_ = 0.0;
-  odom_yaw_ = 0.0;
-  return controller_interface::CallbackReturn::SUCCESS;
-}
-
 
     controller_interface::CallbackReturn
     ThreeWheelSteeringController::on_deactivate(const rclcpp_lifecycle::State & /*previous_state*/)

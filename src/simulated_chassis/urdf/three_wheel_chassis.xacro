@@ -13,21 +13,21 @@
   <!-- ==================== Base Link ==================== -->
   <link name="base_link">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="20.0"/>
+      <origin xyz="0 0 0.175" rpy="0 0 0"/>
+      <mass value="60.0"/>
       <inertia ixx="0.5" ixy="0.0" ixz="0.0" iyy="0.5" iyz="0.0" izz="0.8"/>
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0.175" rpy="0 0 0"/>
       <geometry>
         <box size="0.6 0.4 0.15"/>
       </geometry>
-      <material name="blue">
-        <color rgba="0.1 0.3 0.8 1.0"/>
+      <material name="green">
+        <color rgba="0.1 0.8 0.1 1.0"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0.175" rpy="0 0 0"/>
       <geometry>
         <box size="0.6 0.4 0.15"/>
       </geometry>
@@ -46,8 +46,9 @@
       <geometry>
         <box size="0.04 0.04 0.02"/>
       </geometry>
-      <material name="dark">
-        <color rgba="0.2 0.2 0.2 1.0"/>
+      <material name="purple">
+        <color rgba="0.8 0.0 0.8 1.0"/>
+        <!-- 紫色 -->
       </material>
     </visual>
   </link>
@@ -55,7 +56,7 @@
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <origin xyz="0 0 0.0" rpy="0 0 0"/>
+    <origin xyz="0 0 0.175" rpy="0 0 0"/>
   </joint>
 
   <!-- ==================== 3D Lidar (Mid360 style) ==================== -->
@@ -70,8 +71,8 @@
       <geometry>
         <cylinder radius="0.04" length="0.03"/>
       </geometry>
-      <material name="orange">
-        <color rgba="1.0 0.5 0.0 1.0"/>
+      <material name="cinnabar">
+        <color rgba="0.906 0.337 0.196 1.0"/>
       </material>
     </visual>
   </link>
@@ -79,7 +80,7 @@
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <origin xyz="0 0 0.12" rpy="0 0 0"/>
+    <origin xyz="0 0 0.32" rpy="0 0 0"/>
   </joint>
 
   <!-- ==================== Front Steering Module ==================== -->
@@ -103,7 +104,7 @@
   <joint name="wheel_front_steering_joint" type="revolute">
     <parent link="base_link"/>
     <child link="wheel_front_steering_link"/>
-    <origin xyz="0.3 0.0 -0.05" rpy="0 0 0"/>
+    <origin xyz="0.3 0.0 0.1" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
     <!-- 360° 转向支持 -->
     <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
@@ -120,8 +121,9 @@
       <geometry>
         <cylinder radius="0.1" length="0.08"/>
       </geometry>
-      <material name="black">
-        <color rgba="0.1 0.1 0.1 1.0"/>
+      <material name="orange_wheel">
+        <color rgba="1.0 0.5 0.0 1.0"/>
+        <!-- 橙色 -->
       </material>
     </visual>
     <collision>
@@ -135,7 +137,7 @@
   <joint name="wheel_front_wheel_joint" type="continuous">
     <parent link="wheel_front_steering_link"/>
     <child link="wheel_front_wheel_link"/>
-    <origin xyz="0.0 0.0 -0.05" rpy="0 0 0"/>
+    <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
   </joint>
 
@@ -158,7 +160,7 @@
   <joint name="wheel_left_steering_joint" type="revolute">
     <parent link="base_link"/>
     <child link="wheel_left_steering_link"/>
-    <origin xyz="-0.15 0.26 -0.05" rpy="0 0 0"/>
+    <origin xyz="-0.15 0.26 0.1" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
     <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
   </joint>
@@ -174,7 +176,10 @@
       <geometry>
         <cylinder radius="0.1" length="0.08"/>
       </geometry>
-      <material name="black"/>
+      <material name="orange_wheel">
+        <color rgba="1.0 0.5 0.0 1.0"/>
+        <!-- 橙色 -->
+      </material>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
@@ -187,7 +192,7 @@
   <joint name="wheel_left_wheel_joint" type="continuous">
     <parent link="wheel_left_steering_link"/>
     <child link="wheel_left_wheel_link"/>
-    <origin xyz="0.0 0.0 -0.05" rpy="0 0 0"/>
+    <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
   </joint>
 
@@ -210,7 +215,7 @@
   <joint name="wheel_right_steering_joint" type="revolute">
     <parent link="base_link"/>
     <child link="wheel_right_steering_link"/>
-    <origin xyz="-0.15 -0.26 -0.05" rpy="0 0 0"/>
+    <origin xyz="-0.15 -0.26 0.1" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
     <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
   </joint>
@@ -226,7 +231,10 @@
       <geometry>
         <cylinder radius="0.1" length="0.08"/>
       </geometry>
-      <material name="black"/>
+      <material name="orange_wheel">
+        <color rgba="1.0 0.5 0.0 1.0"/>
+        <!-- 橙色 -->
+      </material>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
@@ -239,7 +247,7 @@
   <joint name="wheel_right_wheel_joint" type="continuous">
     <parent link="wheel_right_steering_link"/>
     <child link="wheel_right_wheel_link"/>
-    <origin xyz="0.0 0.0 -0.05" rpy="0 0 0"/>
+    <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
   </joint>
 
@@ -283,12 +291,17 @@
     </plugin>
     <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
     </plugin>
+    <plugin name="ignition::gazebo::systems::Imu" filename="ignition-gazebo-imu-system"></plugin>
+    <!-- <plugin name='ignition::gazebo::systems::Physics' filename='ignition-gazebo-physics-system'></plugin>
+    <plugin name='ignition::gazebo::systems::UserCommands' filename='ignition-gazebo-user-commands-system'></plugin>
+    <plugin name='ignition::gazebo::systems::SceneBroadcaster' filename='ignition-gazebo-scene-broadcaster-system'></plugin> -->
   </gazebo>
 
   <!-- ==================== IMU Sensor (Edifice Compatible) ==================== -->
   <gazebo reference="imu_link">
     <sensor name="imu_sensor" type="imu">
       <always_on>true</always_on>
+      <enable>true</enable>
       <update_rate>100</update_rate>
       <visualize>false</visualize>
       <topic>/imu</topic>
@@ -337,37 +350,35 @@
     </sensor>
   </gazebo>
 
-  <!-- ==================== Lidar Sensor (Edifice Compatible) ==================== -->
   <gazebo reference="lidar_link">
-    <!-- 关键1：传感器类型必须是 'lidar'，不能用 'gpu_lidar' -->
-    <sensor name="mid360_sensor" type="lidar">
-      <pose>0 0 0 0 0 0</pose>
-      <topic>/lidar_points</topic>
-      <update_rate>10</update_rate>
+    <sensor name="mid360_sensor" type="gpu_lidar">
+      <enable>true</enable>
       <always_on>true</always_on>
+      <update_rate>10</update_rate>
       <visualize>true</visualize>
+      <topic>/lidar/point_cloud</topic>
 
-      <!-- 关键2：必须使用 <lidar> 标签，不是 <ray> -->
       <lidar>
         <scan>
           <horizontal>
             <samples>360</samples>
             <resolution>1</resolution>
-            <min_angle>-3.14159</min_angle>
-            <max_angle>3.14159</max_angle>
+            <min_angle>-3.1415926</min_angle>
+            <max_angle>3.1415926</max_angle>
           </horizontal>
           <vertical>
-            <samples>8</samples>
+            <samples>16</samples>
             <min_angle>-0.2618</min_angle>
             <max_angle>0.2618</max_angle>
           </vertical>
         </scan>
         <range>
-          <min>0.1</min>
-          <max>10.0</max>
+          <min>0.2</min>
+          <max>30.0</max>
           <resolution>0.01</resolution>
         </range>
       </lidar>
+
       <noise>
         <type>gaussian</type>
         <mean>0.0</mean>
