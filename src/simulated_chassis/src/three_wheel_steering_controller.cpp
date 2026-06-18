@@ -56,12 +56,16 @@ namespace three_wheel_controller
 
         cmd_vel_sub_ = node->create_subscription<geometry_msgs::msg::Twist>(
             "~/cmd_vel", 10,
-            [this](const geometry_msgs::msg::Twist::SharedPtr msg)
+            [this,node](const geometry_msgs::msg::Twist::SharedPtr msg)
             {
                 last_cmd_ = msg;
+                last_cmd_time_ = node->now(); // 记录收到指令的时间
             });
 
         odom_pub_ = node->create_publisher<nav_msgs::msg::Odometry>("~/odom", 10);
+        last_cmd_time_ = node->now(); // 初始化
+        RCLCPP_INFO(get_node()->get_logger(), "last_cmd_time=%.3f", last_cmd_time_.seconds());
+                
 
         return controller_interface::CallbackReturn::SUCCESS;
     }
@@ -141,11 +145,25 @@ namespace three_wheel_controller
         double vy = 0.0;
         double omega = 0.0;
 
+        
+
+
         if (last_cmd_)
         {
-            vx = last_cmd_->linear.x;
-            vy = last_cmd_->linear.y;
-            omega = last_cmd_->angular.z;
+            rclcpp::Time now = get_node()->now();
+            double dt = (now - last_cmd_time_).seconds();
+
+            RCLCPP_INFO(get_node()->get_logger(), 
+                "time=%.3f, last_cmd_time=%.3f, dt=%.3f", 
+                now.seconds(), last_cmd_time_.seconds(), dt);
+            // RCLCPP_INFO(get_node()->get_logger(), "cmd: x=%.3f, y=%.3f, z=%.3f, dt=%.3f",
+            //             last_cmd_->linear.x, last_cmd_->linear.y, last_cmd_->angular.z, dt);
+            if (dt < CMD_TIMEOUT) // 0.5秒超时
+            {
+                vx = last_cmd_->linear.x;
+                vy = last_cmd_->linear.y;
+                omega = last_cmd_->angular.z;
+            }
         }
 
         double front_angle, left_angle, right_angle;

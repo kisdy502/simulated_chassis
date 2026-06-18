@@ -44,6 +44,8 @@ namespace three_wheel_controller
     double wheel_radius_;
     double chassis_radius_;
     double odom_x_, odom_y_, odom_yaw_;
+    rclcpp::Time last_cmd_time_;
+    static constexpr double CMD_TIMEOUT = 0.5;  // 0.5秒超时
   };
 
 } // namespace three_wheel_controller

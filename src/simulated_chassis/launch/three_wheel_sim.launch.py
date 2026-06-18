@@ -18,6 +18,9 @@ def generate_launch_description():
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time", default_value="true", description="使用仿真时间"
     )
+    
+    # 机器人名称（统一修改）
+    robot_name = 'three_wheel_agv'
 
     xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis.xacro")
     world_path = os.path.join(pkg_share, "world", "world.sdf")
@@ -51,7 +54,7 @@ def generate_launch_description():
         package="ros_ign_gazebo",
         executable="create",
         arguments=[
-            "-name", "three_wheel_agv",
+            "-name", robot_name,
             "-topic", "/robot_description",
             "-x", "0.0", "-y", "0.0", "-z", "0.0",
         ],
@@ -76,17 +79,35 @@ def generate_launch_description():
     )
     
     # ============ 桥接（只改这里） ============
+    # bridge = Node(
+    #     package='ros_ign_bridge',
+    #     executable='parameter_bridge',
+    #     arguments=[
+    #     # 3D 点云 - 注意是 /points 子话题
+    #     '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
+    #     # 如果需要 2D LaserScan 也桥接
+    #     '/lidar/point_cloud@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan',
+    #     '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
+    #     # 把 Gazebo 的 /world/test_world/clock 桥接到 ROS2 的 /clock
+    #     #'/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
+    #     '/world/test_world/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock',
+    #     ],
+    #     output='screen'
+    # )
+    
     bridge = Node(
-        package='ros_ign_bridge',
+        package='ros_gz_bridge',  # 改包名
         executable='parameter_bridge',
         arguments=[
-             # 3D 点云 - 注意是 /points 子话题
-        '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
-        # 如果需要 2D LaserScan 也桥接
-        '/lidar/point_cloud@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan',
-        '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
-        '/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
-        '/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',  # ← 添加这行
+            '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
+            '/lidar/point_cloud@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
+            '/imu@sensor_msgs/msg/Imu@gz.msgs.IMU',
+            '/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',  # 用 gz.msgs
+        ],
+        remappings=[
+            (f'/model/{robot_name}/odometry', '/odom'),
+            (f'/model/{robot_name}/tf', '/tf'),
+            # ('/clock', '/clock'),
         ],
         output='screen'
     )

@@ -22,3 +22,7 @@ ros2 topic pub /three_wheel_base_controller/cmd_vel geometry_msgs/msg/Twist '{li
 
 ## 效果图
 ![alt text](images/image.png)
+
+
+## gazebo 
+ign topic -e -t /clock
