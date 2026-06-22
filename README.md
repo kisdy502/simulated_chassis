@@ -67,6 +67,9 @@ ros2 topic pub /three_wheel_base_controller/cmd_vel geometry_msgs/msg/Twist '{li
 ## 建图rviz 预览效果
 ![alt text](images/image2.png)
 
+## 导航rviz效果图
+![alt text](images/image3.png)
+
 
 ## gazebo 
 ign topic -e -t /clock
