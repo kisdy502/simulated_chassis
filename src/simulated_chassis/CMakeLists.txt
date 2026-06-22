@@ -62,7 +62,47 @@ target_link_libraries(simulated_chassis_core
   Eigen3::Eigen
 )
 
-install(TARGETS simulated_chassis_core
+
+# Odom Relay Node
+add_executable(odom_relay_node
+  src/odom_relay_node.cpp
+)
+
+ament_target_dependencies(odom_relay_node
+  rclcpp
+  nav_msgs
+  geometry_msgs
+  tf2_ros
+)
+
+# Gamepad Teleop Node
+add_executable(gamepad_teleop_node
+  src/gamepad_teleop_node.cpp
+)
+
+ament_target_dependencies(gamepad_teleop_node
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+)
+
+# Cmd Vel Relay Node
+add_executable(cmd_vel_relay_node
+  src/cmd_vel_relay_node.cpp
+)
+
+ament_target_dependencies(cmd_vel_relay_node
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+)
+
+
+install(TARGETS odom_relay_node gamepad_teleop_node cmd_vel_relay_node
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
+install(TARGETS simulated_chassis_core 
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib

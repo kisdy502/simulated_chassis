@@ -2,26 +2,30 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="three_wheel_agv">
 
   <!-- ==================== Base Footprint ==================== -->
+  <!-- 机器人在地面的投影点，用于导航和 TF 树 -->
   <link name="base_footprint">
   </link>
 
   <joint name="base_footprint_joint" type="fixed">
     <parent link="base_footprint"/>
     <child link="base_link"/>
-    <origin xyz="0 0 0.15" rpy="0 0 0"/>
+    <!-- base_link 中心高度 0.175，所以 footprint 在 base_link 下方 0.175 -->
+    <origin xyz="0 0 0.175" rpy="0 0 0"/>
   </joint>
 
   <!-- ==================== Base Link ==================== -->
   <link name="base_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
+      <!-- 质心在原点 -->
       <mass value="60.0"/>
       <inertia ixx="0.5" ixy="0.0" ixz="0.0" iyy="0.5" iyz="0.0" izz="0.8"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
+      <!-- 视觉在原点 -->
       <geometry>
-        <box size="0.6 0.4 0.18"/>
+        <box size="0.6 0.4 0.15"/>
       </geometry>
       <material name="green">
         <color rgba="0.1 0.8 0.1 1.0"/>
@@ -29,8 +33,9 @@
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
+      <!-- 碰撞在原点 -->
       <geometry>
-        <box size="0.6 0.4 0.18"/>
+        <box size="0.6 0.4 0.15"/>
       </geometry>
     </collision>
   </link>
@@ -49,6 +54,7 @@
       </geometry>
       <material name="purple">
         <color rgba="0.8 0.0 0.8 1.0"/>
+        <!-- 紫色 -->
       </material>
     </visual>
   </link>
@@ -59,7 +65,7 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <!-- ==================== 3D Lidar ==================== -->
+  <!-- ==================== 3D Lidar (Mid360 style) ==================== -->
   <link name="lidar_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -80,7 +86,7 @@
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <origin xyz="0 0 0.24" rpy="0 0 0"/>
+    <origin xyz="0 0 0.32" rpy="0 0 0"/>
   </joint>
 
   <!-- ==================== Front Steering Module ==================== -->
@@ -104,8 +110,9 @@
   <joint name="wheel_front_steering_joint" type="revolute">
     <parent link="base_link"/>
     <child link="wheel_front_steering_link"/>
-    <origin xyz="0.3 0.0 -0.05" rpy="0 0 0"/>
+    <origin xyz="0.3 0.0 0.1" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
+    <!-- 360° 转向支持 -->
     <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
   </joint>
 
@@ -122,6 +129,7 @@
       </geometry>
       <material name="orange_wheel">
         <color rgba="1.0 0.5 0.0 1.0"/>
+        <!-- 橙色 -->
       </material>
     </visual>
     <collision>
@@ -159,7 +167,7 @@
   <joint name="wheel_left_steering_joint" type="revolute">
     <parent link="base_link"/>
     <child link="wheel_left_steering_link"/>
-    <origin xyz="-0.15 0.26 -0.05" rpy="0 0 0"/>
+    <origin xyz="-0.15 0.26 0.1" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
     <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
   </joint>
@@ -177,6 +185,7 @@
       </geometry>
       <material name="orange_wheel">
         <color rgba="1.0 0.5 0.0 1.0"/>
+        <!-- 橙色 -->
       </material>
     </visual>
     <collision>
@@ -214,7 +223,7 @@
   <joint name="wheel_right_steering_joint" type="revolute">
     <parent link="base_link"/>
     <child link="wheel_right_steering_link"/>
-    <origin xyz="-0.15 -0.26 -0.05" rpy="0 0 0"/>
+    <origin xyz="-0.15 -0.26 0.1" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
     <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
   </joint>
@@ -232,6 +241,7 @@
       </geometry>
       <material name="orange_wheel">
         <color rgba="1.0 0.5 0.0 1.0"/>
+        <!-- 橙色 -->
       </material>
     </visual>
     <collision>
@@ -293,13 +303,17 @@
       <parameters>$(find simulated_chassis)/param/three_wheel_controllers.yaml</parameters>
       <robot_param>robot_description</robot_param>
       <robot_param_node>robot_state_publisher</robot_param_node>
+      <!-- <robot_base_name>base_footprint</robot_base_name> -->
     </plugin>
     <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
     </plugin>
     <plugin name="ignition::gazebo::systems::Imu" filename="ignition-gazebo-imu-system"></plugin>
+    <!-- <plugin name='ignition::gazebo::systems::Physics' filename='ignition-gazebo-physics-system'></plugin>
+    <plugin name='ignition::gazebo::systems::UserCommands' filename='ignition-gazebo-user-commands-system'></plugin>
+    <plugin name='ignition::gazebo::systems::SceneBroadcaster' filename='ignition-gazebo-scene-broadcaster-system'></plugin> -->
   </gazebo>
 
-  <!-- ==================== IMU Sensor ==================== -->
+  <!-- ==================== IMU Sensor (Edifice Compatible) ==================== -->
   <gazebo reference="imu_link">
     <sensor name="imu_sensor" type="imu">
       <always_on>true</always_on>
@@ -353,8 +367,7 @@
     </sensor>
   </gazebo>
 
-  <!-- ==================== 3D Lidar ==================== -->
- <gazebo reference="lidar_link">
+  <gazebo reference="lidar_link">
     <sensor name="mid360_sensor" type="gpu_lidar">
       <enable>true</enable>
       <always_on>true</always_on>
@@ -391,5 +404,6 @@
       </noise>
     </sensor>
   </gazebo>
+
 
 </robot>

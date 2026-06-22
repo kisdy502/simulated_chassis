@@ -23,7 +23,7 @@ def generate_launch_description():
     robot_name = 'three_wheel_agv'
 
     xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis.xacro")
-    world_path = os.path.join(pkg_share, "world", "world.sdf")
+    world_path = os.path.join(pkg_share, "world", "world_he.sdf")
     robot_description = {
         "robot_description": Command(["xacro ", xacro_path])
     }
@@ -102,21 +102,66 @@ def generate_launch_description():
             '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
             '/lidar/point_cloud@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
             '/imu@sensor_msgs/msg/Imu@gz.msgs.IMU',
-            '/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',  # 用 gz.msgs
+            '/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',  # 用 gz.msgs
         ],
+        parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
         remappings=[
             (f'/model/{robot_name}/odometry', '/odom'),
             (f'/model/{robot_name}/tf', '/tf'),
-            # ('/clock', '/clock'),
+            ('/world/test_world/clock', '/clock'),  # ✅ 重映射到 /clock
         ],
         output='screen'
     )
     
-    teleop = Node(
-        package='teleop_twist_keyboard',
-        executable='teleop_twist_keyboard',
-        name='teleop_twistkeyboard',
-        output='screen',  # 输出会显示在启动launch的终端中
+    # teleop = Node(
+    #     package='teleop_twist_keyboard',
+    #     executable='teleop_twist_keyboard',
+    #     name='teleop_twistkeyboard',
+    #     prefix='xterm -e',  # 在独立终端中运行
+    #     remappings=[
+    #         ('/cmd_vel', '/three_wheel_base_controller/cmd_vel'),  # 重映射
+    #     ],
+
+    #     output='screen',  # 输出会显示在启动launch的终端中
+    # )
+    
+    # joy 手柄驱动
+    joy_node = Node(
+        package='joy',
+        executable='joy_node',
+        name='joy_node',
+        output='screen',
+        parameters=[{
+            'device_id': 0,
+            'autorepeat_rate': 20.0,
+            "use_sim_time": LaunchConfiguration("use_sim_time")
+        }],
+    )
+
+    # Gamepad 遥控节点
+    gamepad_teleop_node = Node(
+        package='simulated_chassis',
+        executable='gamepad_teleop_node',
+        name='gamepad_teleop_node',
+        output='screen',
+        parameters=[{
+            'cmd_topic': '/three_wheel_base_controller/cmd_vel',
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+            'watchdog_timeout': 0.8,   # 摇杆断连0.8秒后停车，松手主动发停不会被误杀
+        }]
+    )
+    
+    # 里程计中继：控制器发布 /three_wheel_base_controller/odom，转发到 /odom
+    odom_relay_node = Node(
+        package="simulated_chassis",
+        executable="odom_relay_node",
+        output="screen",
+        parameters=[
+            {'input_topic': '/three_wheel_base_controller/odom'},
+            {'output_topic': '/odom'},
+            {'publish_tf': False},  # TF 由控制器 enable_odom_tf 发布
+            {"use_sim_time": LaunchConfiguration("use_sim_time")},
+        ],
     )
 
     return LaunchDescription([
@@ -128,5 +173,8 @@ def generate_launch_description():
         spawn_after_gazebo,
         controller_spawners,
         bridge,
-        teleop,
+        # teleop, ##用游戏手柄替代键盘
+        joy_node,
+        gamepad_teleop_node,
+        odom_relay_node,
     ])
