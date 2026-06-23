@@ -79,6 +79,7 @@ ign topic -e -t /clock
 # 控制器状态查看
 
 ## slam 建图遇到几个坑
+```
 1，tf完整，但是rviz没有地图，仿真时候，需要指定imu和雷达的frame_id <ignition_frame_id>lidar_link</ignition_frame_id> ,<ignition_frame_id>imu_link</ignition_frame_id>
 2，步骤1做了，但是还是没地图，建图时候，gazebo修改世界，将机器人模型保存到了世界中，导致slam建图，提示雷达坐标系不存在，urdf目录加载的机器人被世界的机器人覆盖了，frame id异常了
 3、slam建图和离线建图，配置目前都用保守参数，
@@ -93,3 +94,4 @@ ign topic -e -t /clock
     POSE_GRAPH.optimize_every_n_nodes = 30 
     -- ✅ 最终优化：大量迭代打磨结果
     POSE_GRAPH.max_num_final_iterations = 300 之前用1000，离线建图直接闪退
+```
