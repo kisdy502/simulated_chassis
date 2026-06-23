@@ -75,7 +75,7 @@ def generate_launch_description():
             '--log-level', 'WARN',
         ],
         remappings=[
-            ('points2', '/lidar/point_cloud/points'),
+            ('points2', '/points2'),
             ('odom', '/odom'),
             ('imu', '/imu'),
         ],

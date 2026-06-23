@@ -51,7 +51,7 @@ def generate_launch_description():
             # 3D雷达：点云输入（用 points 或 points_1）
             # ('points', '/lidar/point_cloud/points'),  # 或 '/lidar/point_cloud'
             # ('points_1', '/lidar/point_cloud/points'),
-            ('points2', '/lidar/point_cloud/points'),
+            ('points2', '/points2'),
             ('odom', '/odom'),  # 直接订阅控制器的 odom
             ('imu', '/imu'),
         ],
@@ -68,9 +68,9 @@ def generate_launch_description():
             '-resolution', '0.05',
             '-publish_period_sec', '1.0',
             '-trajectory_id', '0',        # ✅ 指定轨迹
-            '-min_z', '-0.5',             # ✅ 投影高度范围（地面到50cm）
-            '-max_z', '0.5',
-            '-z_voxel_size', '0.1',
+            # '-min_z', '-0.5',             # ✅ 投影高度范围（地面到50cm）
+            # '-max_z', '0.5',
+            # '-z_voxel_size', '0.1',
         ],
     )
 

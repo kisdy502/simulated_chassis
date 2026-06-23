@@ -23,7 +23,7 @@ def generate_launch_description():
     robot_name = 'three_wheel_agv'
 
     xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis.xacro")
-    world_path = os.path.join(pkg_share, "world", "world_he.sdf")
+    world_path = os.path.join(pkg_share, "world", "world_sm.sdf")
     robot_description = {
         "robot_description": Command(["xacro ", xacro_path])
     }
@@ -69,7 +69,7 @@ def generate_launch_description():
     )
 
     controller_spawners = TimerAction(
-        period=8.0,
+        period=6.0,
         actions=[
             Node(package="controller_manager", executable="spawner",
                  arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"]),
@@ -99,9 +99,9 @@ def generate_launch_description():
         package='ros_gz_bridge',  # 改包名
         executable='parameter_bridge',
         arguments=[
-            '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
-            '/lidar/point_cloud@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
-            '/imu@sensor_msgs/msg/Imu@gz.msgs.IMU',
+            '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
+            '/lidar/point_cloud@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan',
+            '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
             '/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',  # 用 gz.msgs
         ],
         parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
@@ -109,6 +109,7 @@ def generate_launch_description():
             (f'/model/{robot_name}/odometry', '/odom'),
             (f'/model/{robot_name}/tf', '/tf'),
             ('/world/test_world/clock', '/clock'),  # ✅ 重映射到 /clock
+            ('/lidar/point_cloud/points','points2')
         ],
         output='screen'
     )

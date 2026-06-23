@@ -17,15 +17,15 @@ ros2 run cartographer_ros cartographer_pbstream_to_ros_map \
     -map_filestem my_map
 
 # 先录制 bag 包（在线建图时录制）
-ros2 bag record -o my_bag /lidar/point_cloud/points /odom /imu /tf /tf_static /clock
+ros2 bag record -o my_bag /points2 /odom /imu /tf /tf_static /clock
 
 # 正确录制方式（只录原始数据）
 ros2 bag record -o my_bag \
-    /lidar/point_cloud/points \
+    /points2 \
     /odom \
-    /imu \
-    /clock \
-    /tf_static   # 只录静态 TF，不录动态 TF
+    /imu  \
+    /tf_static \
+    /clock
 
 # 离线建图
 ros2 launch simulated_chassis slam3d_offline.launch.py \
@@ -33,7 +33,7 @@ ros2 launch simulated_chassis slam3d_offline.launch.py \
     save_state_filename:=my_map_optimized.pbstream
 
 
-# 离线建图
+# 离线建图 (有问题，优化后的地图体积很小，不正常，正在研究如何解决)
 cd ~/workspace/simulated_chassis
 
 ros2 launch simulated_chassis slam3d_offline.launch.py \
@@ -61,15 +61,17 @@ ros2 topic pub /three_wheel_base_controller/cmd_vel geometry_msgs/msg/Twist '{li
 ros2 topic pub /three_wheel_base_controller/cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.0, y: 0.0}, angular: {z: 0.0}}' --rate 1
 
 
-## 效果图
+## gazebo效果图
 ![alt text](images/image.png)
 
-## 建图rviz 预览效果
+## 在线建图rviz 预览效果
 ![alt text](images/image2.png)
 
-## 导航rviz效果图
-![alt text](images/image3.png)
+## 离线建图地图导航效果图
+![alt text](images/image4.png)
 
+## 子图显示
+![alt text](images/image3.png)
 
 ## gazebo 
 ign topic -e -t /clock
@@ -79,3 +81,7 @@ ign topic -e -t /clock
 ## slam 建图遇到几个坑
 1，tf完整，但是rviz没有地图，仿真时候，需要指定imu和雷达的frame_id <ignition_frame_id>lidar_link</ignition_frame_id> ,<ignition_frame_id>imu_link</ignition_frame_id>
 2，步骤1做了，但是还是没地图，建图时候，gazebo修改世界，将机器人模型保存到了世界中，导致slam建图，提示雷达坐标系不存在，urdf目录加载的机器人被世界的机器人覆盖了，frame id异常了
+3、slam建图和离线建图，配置目前都用保守参数，
+4、nav2导航，配置参数雷达话题要和实际话题一致，不然无法显示地图
+5、离线建图，有bug，还在解决中
+6、三舵轮控制器需要优化，现在还有很多问题，舵轮最大旋转角度，没有做限制，转到目标角度时候，需要归一化，按最小转角旋转，rviz观察有漂移现象，还在定位问题

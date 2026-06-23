@@ -46,7 +46,7 @@ TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window =
 
 -- 些尝试性优化，看能不能大幅度提升建图质量
 --  每个节点都优化（离线不受实时限制）
-POSE_GRAPH.optimize_every_n_nodes = 1
+POSE_GRAPH.optimize_every_n_nodes = 30
 -- ✅ 最终优化：大量迭代打磨结果
-POSE_GRAPH.max_num_final_iterations = 1000
+POSE_GRAPH.max_num_final_iterations = 300
 return options

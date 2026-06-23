@@ -54,5 +54,4 @@ core
 *.gcno
 coverage/
 # 建图的地图和录的包
-my_map.pbstream
 my_bag

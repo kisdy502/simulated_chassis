@@ -14,4 +14,28 @@ joint_state_broadcaster:
 
 three_wheel_base_controller:
   ros__parameters:
-    {}
+    # 轮位配置（与URDF一致）
+    wheel0.x: 0.3
+    wheel0.y: 0.0
+    wheel0.max_steering_angle: 1.5708  # 90°
+
+    wheel1.x: -0.15
+    wheel1.y: 0.26
+    wheel1.max_steering_angle: 1.5708
+
+    wheel2.x: -0.15
+    wheel2.y: -0.26
+    wheel2.max_steering_angle: 1.5708
+
+    # 运动学参数
+    wheel_radius: 0.1
+    max_linear_velocity: 1.5      # m/s
+    max_angular_velocity: 1.0     # rad/s
+    max_wheel_speed: 15.0         # rad/s (=1.5/0.1)
+
+    # 控制参数
+    cmd_timeout: 0.5              # s
+    enable_reverse_optimization: true
+    publish_tf: false
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
