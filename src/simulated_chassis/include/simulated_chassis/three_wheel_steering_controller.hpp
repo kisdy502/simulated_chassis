@@ -74,6 +74,7 @@ namespace three_wheel_controller
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
     geometry_msgs::msg::Twist::SharedPtr last_cmd_ ;
     rclcpp::Time last_cmd_time_;
+    rclcpp::Time last_odom_time_{0, 0, RCL_ROS_TIME};  // 防止重复时间戳
 
     std::vector<std::reference_wrapper<hardware_interface::LoanedCommandInterface>> steering_cmds_;
     std::vector<std::reference_wrapper<hardware_interface::LoanedCommandInterface>> drive_cmds_;

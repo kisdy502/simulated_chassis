@@ -138,8 +138,8 @@ def generate_launch_description():
     return LaunchDescription([
         LogInfo(msg=['==========================================']),
         LogInfo(msg=['Nav2 导航模式启动（3D定位）']),
-        LogInfo(msg=['地图: $(var pbstream_file)']),
-        LogInfo(msg=['==========================================']),
+        # LogInfo(msg=['地图: $(var pbstream_file)']),
+        # LogInfo(msg=['==========================================']),
 
         *declared_arguments,
 
@@ -150,7 +150,7 @@ def generate_launch_description():
         TimerAction(period=4.0, actions=[nav2_launch]),
         TimerAction(period=6.0, actions=[rviz_node]),
 
-        LogInfo(msg=['导航节点已启动']),
-        LogInfo(msg=['在 RViz 中设置 2D Goal 启动自主导航']),
-        LogInfo(msg=['手柄可随时接管控制']),
+        # LogInfo(msg=['导航节点已启动']),
+        # LogInfo(msg=['在 RViz 中设置 2D Goal 启动自主导航']),
+        # LogInfo(msg=['手柄可随时接管控制']),
     ])

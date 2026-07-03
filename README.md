@@ -17,7 +17,7 @@ ros2 run cartographer_ros cartographer_pbstream_to_ros_map \
     -map_filestem my_map
 
 # 先录制 bag 包（在线建图时录制）
-ros2 bag record -o my_bag /points2 /odom /imu /tf /tf_static /clock
+ros2 bag record -o my_bag --topics /points2 /odom /imu /tf /tf_static /clock
 
 # 正确录制方式（只录原始数据）
 ros2 bag record -o my_bag \
@@ -36,14 +36,16 @@ ros2 launch simulated_chassis slam3d_offline.launch.py \
 # 离线建图 (有问题，优化后的地图体积很小，不正常，正在研究如何解决)
 cd ~/workspace/simulated_chassis
 
+source install/setup.bash
 ros2 launch simulated_chassis slam3d_offline.launch.py \
     bag_filenames:="/home/kisdy/workspace/simulated_chassis/my_bag" \
     save_state_filename:="/home/kisdy/workspace/simulated_chassis/my_map_optimized.pbstream"
 
 
 # 启动导航
+source install/setup.bash
 ros2 launch simulated_chassis navigation.launch.py \
-    pbstream_file:=/home/kisdy/workspace/simulated_chassis/my_map_optimized.pbstream \
+    pbstream_file:=/mnt/d/github/simulated_chassis/my_map_optimized.pbstream \
     use_sim_time:=true
 
 

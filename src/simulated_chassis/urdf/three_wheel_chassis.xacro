@@ -6,31 +6,31 @@
   </link>
 
   <joint name="base_footprint_joint" type="fixed">
-    <parent link="base_footprint"/>
-    <child link="base_link"/>
-    <origin xyz="0 0 0.15" rpy="0 0 0"/>
+    <parent link="base_footprint" />
+    <child link="base_link" />
+    <origin xyz="0 0 0.15" rpy="0 0 0" />
   </joint>
 
   <!-- ==================== Base Link ==================== -->
   <link name="base_link">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="60.0"/>
-      <inertia ixx="0.5" ixy="0.0" ixz="0.0" iyy="0.5" iyz="0.0" izz="0.8"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="60.0" />
+      <inertia ixx="0.5" ixy="0.0" ixz="0.0" iyy="0.5" iyz="0.0" izz="0.8" />
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <box size="0.6 0.4 0.18"/>
+        <box size="0.6 0.4 0.18" />
       </geometry>
       <material name="green">
-        <color rgba="0.1 0.8 0.1 1.0"/>
+        <color rgba="0.1 0.8 0.1 1.0" />
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <box size="0.6 0.4 0.18"/>
+        <box size="0.6 0.4 0.18" />
       </geometry>
     </collision>
   </link>
@@ -38,277 +38,280 @@
   <!-- ==================== IMU ==================== -->
   <link name="imu_link">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.01"/>
-      <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.01" />
+      <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001" />
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <box size="0.04 0.04 0.02"/>
+        <box size="0.04 0.04 0.02" />
       </geometry>
       <material name="purple">
-        <color rgba="0.8 0.0 0.8 1.0"/>
+        <color rgba="0.8 0.0 0.8 1.0" />
       </material>
     </visual>
   </link>
 
   <joint name="imu_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="imu_link"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="base_link" />
+    <child link="imu_link" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
   </joint>
 
   <!-- ==================== 3D Lidar ==================== -->
   <link name="lidar_link">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.2"/>
-      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.2" />
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <cylinder radius="0.04" length="0.03"/>
+        <cylinder radius="0.04" length="0.03" />
       </geometry>
       <material name="cinnabar">
-        <color rgba="0.906 0.337 0.196 1.0"/>
+        <color rgba="0.906 0.337 0.196 1.0" />
       </material>
     </visual>
   </link>
 
   <joint name="lidar_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="lidar_link"/>
-    <origin xyz="0 0 0.24" rpy="0 0 0"/>
+    <parent link="base_link" />
+    <child link="lidar_link" />
+    <origin xyz="0 0 0.24" rpy="0 0 0" />
   </joint>
 
   <!-- ==================== Front Steering Module ==================== -->
   <link name="wheel_front_steering_link">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.5"/>
-      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.5" />
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <cylinder radius="0.03" length="0.06"/>
+        <cylinder radius="0.03" length="0.06" />
       </geometry>
       <material name="grey">
-        <color rgba="0.5 0.5 0.5 1.0"/>
+        <color rgba="0.5 0.5 0.5 1.0" />
       </material>
     </visual>
   </link>
 
   <joint name="wheel_front_steering_joint" type="revolute">
-    <parent link="base_link"/>
-    <child link="wheel_front_steering_link"/>
-    <origin xyz="0.3 0.0 -0.05" rpy="0 0 0"/>
-    <axis xyz="0 0 1"/>
-    <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
+    <parent link="base_link" />
+    <child link="wheel_front_steering_link" />
+    <origin xyz="0.3 0.0 -0.05" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0" />
   </joint>
 
   <link name="wheel_front_wheel_link">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="1.0"/>
-      <inertia ixx="0.015" ixy="0.0" ixz="0.0" iyy="0.015" iyz="0.0" izz="0.02"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="1.0" />
+      <inertia ixx="0.015" ixy="0.0" ixz="0.0" iyy="0.015" iyz="0.0" izz="0.02" />
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
       <geometry>
-        <cylinder radius="0.1" length="0.08"/>
+        <cylinder radius="0.1" length="0.08" />
       </geometry>
       <material name="orange_wheel">
-        <color rgba="1.0 0.5 0.0 1.0"/>
+        <color rgba="1.0 0.5 0.0 1.0" />
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
       <geometry>
-        <cylinder radius="0.1" length="0.08"/>
+        <cylinder radius="0.1" length="0.08" />
       </geometry>
     </collision>
   </link>
 
   <joint name="wheel_front_wheel_joint" type="revolute">
-    <parent link="wheel_front_steering_link"/>
-    <child link="wheel_front_wheel_link"/>
-    <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-1e9" upper="1e9" effort="10.0" velocity="10.0"/>
+    <parent link="wheel_front_steering_link" />
+    <child link="wheel_front_wheel_link" />
+    <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1e9" upper="1e9" effort="10.0" velocity="10.0" />
   </joint>
 
   <!-- ==================== Left Steering Module ==================== -->
   <link name="wheel_left_steering_link">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.5"/>
-      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.5" />
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <cylinder radius="0.03" length="0.06"/>
+        <cylinder radius="0.03" length="0.06" />
       </geometry>
-      <material name="grey"/>
+      <material name="grey" />
     </visual>
   </link>
 
   <joint name="wheel_left_steering_joint" type="revolute">
-    <parent link="base_link"/>
-    <child link="wheel_left_steering_link"/>
-    <origin xyz="-0.15 0.26 -0.05" rpy="0 0 0"/>
-    <axis xyz="0 0 1"/>
-    <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
+    <parent link="base_link" />
+    <child link="wheel_left_steering_link" />
+    <origin xyz="-0.15 0.26 -0.05" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0" />
   </joint>
 
   <link name="wheel_left_wheel_link">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="1.0"/>
-      <inertia ixx="0.015" ixy="0.0" ixz="0.0" iyy="0.015" iyz="0.0" izz="0.02"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="1.0" />
+      <inertia ixx="0.015" ixy="0.0" ixz="0.0" iyy="0.015" iyz="0.0" izz="0.02" />
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
       <geometry>
-        <cylinder radius="0.1" length="0.08"/>
+        <cylinder radius="0.1" length="0.08" />
       </geometry>
       <material name="orange_wheel">
-        <color rgba="1.0 0.5 0.0 1.0"/>
+        <color rgba="1.0 0.5 0.0 1.0" />
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
       <geometry>
-        <cylinder radius="0.1" length="0.08"/>
+        <cylinder radius="0.1" length="0.08" />
       </geometry>
     </collision>
   </link>
 
   <joint name="wheel_left_wheel_joint" type="revolute">
-    <parent link="wheel_left_steering_link"/>
-    <child link="wheel_left_wheel_link"/>
-    <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-1e9" upper="1e9" effort="10.0" velocity="10.0"/>
+    <parent link="wheel_left_steering_link" />
+    <child link="wheel_left_wheel_link" />
+    <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1e9" upper="1e9" effort="10.0" velocity="10.0" />
   </joint>
 
   <!-- ==================== Right Steering Module ==================== -->
   <link name="wheel_right_steering_link">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.5"/>
-      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.5" />
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <cylinder radius="0.03" length="0.06"/>
+        <cylinder radius="0.03" length="0.06" />
       </geometry>
-      <material name="grey"/>
+      <material name="grey" />
     </visual>
   </link>
 
   <joint name="wheel_right_steering_joint" type="revolute">
-    <parent link="base_link"/>
-    <child link="wheel_right_steering_link"/>
-    <origin xyz="-0.15 -0.26 -0.05" rpy="0 0 0"/>
-    <axis xyz="0 0 1"/>
-    <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0"/>
+    <parent link="base_link" />
+    <child link="wheel_right_steering_link" />
+    <origin xyz="-0.15 -0.26 -0.05" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-3.14159" upper="3.14159" effort="10.0" velocity="5.0" />
   </joint>
 
   <link name="wheel_right_wheel_link">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="1.0"/>
-      <inertia ixx="0.015" ixy="0.0" ixz="0.0" iyy="0.015" iyz="0.0" izz="0.02"/>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="1.0" />
+      <inertia ixx="0.015" ixy="0.0" ixz="0.0" iyy="0.015" iyz="0.0" izz="0.02" />
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
       <geometry>
-        <cylinder radius="0.1" length="0.08"/>
+        <cylinder radius="0.1" length="0.08" />
       </geometry>
       <material name="orange_wheel">
-        <color rgba="1.0 0.5 0.0 1.0"/>
+        <color rgba="1.0 0.5 0.0 1.0" />
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
       <geometry>
-        <cylinder radius="0.1" length="0.08"/>
+        <cylinder radius="0.1" length="0.08" />
       </geometry>
     </collision>
   </link>
 
   <joint name="wheel_right_wheel_joint" type="revolute">
-    <parent link="wheel_right_steering_link"/>
-    <child link="wheel_right_wheel_link"/>
-    <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-1e9" upper="1e9" effort="10.0" velocity="10.0"/>
+    <parent link="wheel_right_steering_link" />
+    <child link="wheel_right_wheel_link" />
+    <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1e9" upper="1e9" effort="10.0" velocity="10.0" />
   </joint>
 
   <!-- ==================== ros2_control ==================== -->
-  <ros2_control name="IgnitionSystem" type="system">
+  <ros2_control name="GzSystem" type="system">
     <hardware>
-      <plugin>ign_ros2_control/IgnitionSystem</plugin>
+      <!-- <plugin>gz_ros2_control/GzSystem</plugin> -->
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
     </hardware>
     <joint name="wheel_front_steering_joint">
-      <command_interface name="position"/>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
+      <command_interface name="position" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
     </joint>
     <joint name="wheel_left_steering_joint">
-      <command_interface name="position"/>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
+      <command_interface name="position" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
     </joint>
     <joint name="wheel_right_steering_joint">
-      <command_interface name="position"/>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
+      <command_interface name="position" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
     </joint>
     <joint name="wheel_front_wheel_joint">
-      <command_interface name="velocity"/>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
+      <command_interface name="velocity" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
     </joint>
     <joint name="wheel_left_wheel_joint">
-      <command_interface name="velocity"/>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
+      <command_interface name="velocity" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
     </joint>
     <joint name="wheel_right_wheel_joint">
-      <command_interface name="velocity"/>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
+      <command_interface name="velocity" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
     </joint>
   </ros2_control>
 
   <!-- ==================== Gazebo Plugins ==================== -->
   <gazebo>
-    <plugin filename="ign_ros2_control-system" name="ign_ros2_control::IgnitionROS2ControlPlugin">
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
       <parameters>$(find simulated_chassis)/param/three_wheel_controllers.yaml</parameters>
       <robot_param>robot_description</robot_param>
       <robot_param_node>robot_state_publisher</robot_param_node>
     </plugin>
-    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
     </plugin>
-    <plugin name="ignition::gazebo::systems::Imu" filename="ignition-gazebo-imu-system"></plugin>
+    <plugin name="gz::sim::systems::Imu" filename="gz-sim-imu-system"></plugin>
   </gazebo>
 
   <!-- ==================== IMU Sensor ==================== -->
   <gazebo reference="imu_link">
     <sensor name="imu_sensor" type="imu">
       <always_on>true</always_on>
-      <enable>true</enable>
+      <!-- <enable>true</enable> -->
       <update_rate>100</update_rate>
       <visualize>false</visualize>
       <topic>/imu</topic>
-      <ignition_frame_id>imu_link</ignition_frame_id>
+      <gz_frame_id>imu_link</gz_frame_id>
+
       <imu>
+        <frame_id>imu_link</frame_id>
         <angular_velocity>
           <x>
             <noise type="gaussian">
@@ -354,16 +357,17 @@
   </gazebo>
 
   <!-- ==================== 3D Lidar ==================== -->
- <gazebo reference="lidar_link">
+  <gazebo reference="lidar_link">
     <sensor name="mid360_sensor" type="gpu_lidar">
-      <enable>true</enable>
+      <!-- <enable>true</enable> -->
       <always_on>true</always_on>
       <update_rate>10</update_rate>
       <visualize>true</visualize>
       <topic>/lidar/point_cloud</topic>
-      <ignition_frame_id>lidar_link</ignition_frame_id>
+      <gz_frame_id>lidar_link</gz_frame_id>
 
       <lidar>
+        <frame_id>lidar_link</frame_id>
         <scan>
           <horizontal>
             <samples>360</samples>
@@ -384,11 +388,11 @@
         </range>
       </lidar>
 
-      <noise>
+      <!-- <noise>
         <type>gaussian</type>
         <mean>0.0</mean>
         <stddev>0.02</stddev>
-      </noise>
+      </noise> -->
     </sensor>
   </gazebo>
 

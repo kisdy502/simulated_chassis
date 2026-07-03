@@ -24,14 +24,14 @@ def generate_launch_description():
     ign_resource_path = SetEnvironmentVariable(
         name='IGN_GAZEBO_RESOURCE_PATH',
         value=[
-            os.path.join("/opt/ros/humble", "share"),  # 注意：你用的是humble
+            os.path.join("/opt/ros/jazzy", "share"),  # 注意：你用的是jazzy
             ":" + model_path
         ]
     )
 
     # ===== 生成机器人 =====
     ignition_spawn_entity = Node(
-        package='ros_ign_gazebo',
+        package='ros_gz',
         executable='create',
         output='screen',
         arguments=[
@@ -47,7 +47,7 @@ def generate_launch_description():
     
     # ===== 生成世界（如果world.sdf存在） =====
     ignition_spawn_world = Node(
-        package='ros_ign_gazebo',
+        package='ros_gz',
         executable='create',
         output='screen',
         arguments=[
@@ -58,7 +58,7 @@ def generate_launch_description():
 
     # ===== ROS2-Gazebo桥接节点（核心修改） =====
     bridge_ign2ros2 = Node(
-        package='ros_ign_bridge',
+        package='ros_gz_bridge',
         executable='parameter_bridge',
         name='bridge_node',
         arguments=[
@@ -162,15 +162,11 @@ def generate_launch_description():
     # ===== 启动Ignition Gazebo =====
     world_file = os.path.join(model_path, "world.sdf")
     
-    ign_gz = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            os.path.join(
-                get_package_share_directory('ros_ign_gazebo'),
-                'launch',
-                'ign_gazebo.launch.py'
-            )
-        ]),
-        launch_arguments=[('ign_args', [' -r -v 3 ' + world_file])]
+    from launch.actions import ExecuteProcess
+
+    ign_gz = ExecuteProcess(
+        cmd=["gz", "sim", "-r", world_file],
+        output='screen'
     )
 
     return LaunchDescription([

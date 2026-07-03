@@ -39,19 +39,19 @@ def generate_launch_description():
     )
     
     set_plugin_path = SetEnvironmentVariable(
-        "IGN_GAZEBO_SYSTEM_PLUGIN_PATH",
-        "/opt/ros/humble/lib"
+        "GZ_SIM_SYSTEM_PLUGIN_PATH",
+        "/opt/ros/jazzy/lib"
     )
 
     set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
 
-    ign_gazebo = ExecuteProcess(
-        cmd=["ign", "gazebo", "-r", world_path],
+    gazebo = ExecuteProcess(
+        cmd=["gz", "sim", "-r","-s", world_path],
         output="screen",
     )
 
     spawn_robot = Node(
-        package="ros_ign_gazebo",
+        package="ros_gz_sim",
         executable="create",
         arguments=[
             "-name", robot_name,
@@ -63,7 +63,7 @@ def generate_launch_description():
 
     spawn_after_gazebo = RegisterEventHandler(
         OnProcessStart(
-            target_action=ign_gazebo,
+            target_action=gazebo,
             on_start=[TimerAction(period=3.0, actions=[spawn_robot])],
         )
     )
@@ -78,53 +78,37 @@ def generate_launch_description():
         ],
     )
     
-    # ============ 桥接（只改这里） ============
-    # bridge = Node(
-    #     package='ros_ign_bridge',
-    #     executable='parameter_bridge',
-    #     arguments=[
-    #     # 3D 点云 - 注意是 /points 子话题
-    #     '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
-    #     # 如果需要 2D LaserScan 也桥接
-    #     '/lidar/point_cloud@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan',
-    #     '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
-    #     # 把 Gazebo 的 /world/test_world/clock 桥接到 ROS2 的 /clock
-    #     #'/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
-    #     '/world/test_world/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock',
-    #     ],
-    #     output='screen'
-    # )
     
     bridge = Node(
-        package='ros_gz_bridge',  # 改包名
+        package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
-            '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
-            '/lidar/point_cloud@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan',
-            '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
-            '/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',  # 用 gz.msgs
+            '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
+            '/lidar/point_cloud@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
+            '/imu@sensor_msgs/msg/Imu@gz.msgs.IMU',
+            '/world/test_world/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock',
         ],
         parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
         remappings=[
-            (f'/model/{robot_name}/odometry', '/odom'),
-            (f'/model/{robot_name}/tf', '/tf'),
-            ('/world/test_world/clock', '/clock'),  # ✅ 重映射到 /clock
-            ('/lidar/point_cloud/points','points2')
+            # (f'/model/{robot_name}/odometry', '/odom'),
+            # (f'/model/{robot_name}/tf', '/tf'),
+            ('/world/test_world/clock', '/clock'),
+            ('/lidar/point_cloud/points', 'points2')
         ],
         output='screen'
     )
     
-    # teleop = Node(
-    #     package='teleop_twist_keyboard',
-    #     executable='teleop_twist_keyboard',
-    #     name='teleop_twistkeyboard',
-    #     prefix='xterm -e',  # 在独立终端中运行
-    #     remappings=[
-    #         ('/cmd_vel', '/three_wheel_base_controller/cmd_vel'),  # 重映射
-    #     ],
+    teleop = Node(
+        package='teleop_twist_keyboard',
+        executable='teleop_twist_keyboard',
+        name='teleop_twistkeyboard',
+        prefix='xterm -e',  # 在独立终端中运行
+        remappings=[
+            ('/cmd_vel', '/three_wheel_base_controller/cmd_vel'),  # 重映射
+        ],
 
-    #     output='screen',  # 输出会显示在启动launch的终端中
-    # )
+        output='screen',  # 输出会显示在启动launch的终端中
+    )
     
     # joy 手柄驱动
     joy_node = Node(
@@ -170,11 +154,11 @@ def generate_launch_description():
         set_plugin_path,
         set_software_render,
         robot_state_pub,
-        ign_gazebo,
+        gazebo,
         spawn_after_gazebo,
         controller_spawners,
         bridge,
-        # teleop, ##用游戏手柄替代键盘
+        teleop, ##用游戏手柄替代键盘
         joy_node,
         gamepad_teleop_node,
         odom_relay_node,

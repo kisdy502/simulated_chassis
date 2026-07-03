@@ -261,9 +261,9 @@
   </joint>
 
   <!-- ==================== ros2_control ==================== -->
-  <ros2_control name="IgnitionSystem" type="system">
+  <ros2_control name="GzSystem" type="system">
     <hardware>
-      <plugin>ign_ros2_control/IgnitionSystem</plugin>
+      <plugin>gz_ros2_control/GzSystem</plugin>
     </hardware>
     <joint name="wheel_front_steering_joint">
       <command_interface name="position"/>
@@ -299,7 +299,7 @@
 
   <!-- ==================== Gazebo Plugins ==================== -->
   <gazebo>
-    <plugin filename="ign_ros2_control-system" name="ign_ros2_control::IgnitionROS2ControlPlugin">
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GzROS2ControlPlugin">
       <parameters>$(find simulated_chassis)/param/three_wheel_controllers.yaml</parameters>
       <robot_param>robot_description</robot_param>
       <robot_param_node>robot_state_publisher</robot_param_node>

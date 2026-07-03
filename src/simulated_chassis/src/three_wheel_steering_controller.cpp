@@ -138,8 +138,8 @@ namespace three_wheel_controller
         {
             tf_pub_ = node->create_publisher<tf2_msgs::msg::TFMessage>("/tf", 10);
         }
-        last_cmd_time_ = node->now(); // 初始化
-        last_cmd_ = std::make_shared<geometry_msgs::msg::Twist>();  // 全0
+        last_cmd_time_ = node->now();                              // 初始化
+        last_cmd_ = std::make_shared<geometry_msgs::msg::Twist>(); // 全0
 
         RCLCPP_INFO(get_node()->get_logger(), "last_cmd_time=%.3f", last_cmd_time_.seconds());
 
@@ -181,16 +181,16 @@ namespace three_wheel_controller
         auto find_cmd = [&](const std::string &interface_name) -> hardware_interface::LoanedCommandInterface *
         {
             auto it = std::find_if(command_interfaces_.begin(), command_interfaces_.end(),
-                                    [&](const auto &iface)
-                                    { return iface.get_name() == interface_name; });
+                                   [&](const auto &iface)
+                                   { return iface.get_name() == interface_name; });
             return (it != command_interfaces_.end()) ? &(*it) : nullptr;
         };
 
         auto find_state = [&](const std::string &interface_name) -> hardware_interface::LoanedStateInterface *
         {
             auto it = std::find_if(state_interfaces_.begin(), state_interfaces_.end(),
-                                    [&](const auto &iface)
-                                    { return iface.get_name() == interface_name; });
+                                   [&](const auto &iface)
+                                   { return iface.get_name() == interface_name; });
             return (it != state_interfaces_.end()) ? &(*it) : nullptr;
         };
 
@@ -215,7 +215,7 @@ namespace three_wheel_controller
             auto *wheel_vel = find_state(wheel.wheel_joint_name + "/velocity");
 
             // ✅ 打印每个接口的查找结果
-            RCLCPP_INFO(get_node()->get_logger(), 
+            RCLCPP_INFO(get_node()->get_logger(),
                         "  steer_pos: %s, wheel_vel: %s",
                         steer_pos ? "OK" : "NULL",
                         wheel_vel ? "OK" : "NULL");
@@ -233,9 +233,9 @@ namespace three_wheel_controller
         RCLCPP_INFO(get_node()->get_logger(), "steering_state_ifaces_ size: %zu", steering_state_ifaces_.size());
         for (size_t i = 0; i < steering_state_ifaces_.size(); ++i)
         {
-            RCLCPP_INFO(get_node()->get_logger(), 
-                        "  steering_state_ifaces_[%zu]: %s", 
-                        i, 
+            RCLCPP_INFO(get_node()->get_logger(),
+                        "  steering_state_ifaces_[%zu]: %s",
+                        i,
                         steering_state_ifaces_[i].get().get_name().c_str());
         }
 
@@ -243,9 +243,9 @@ namespace three_wheel_controller
         RCLCPP_INFO(get_node()->get_logger(), "drive_state_ifaces_ size: %zu", drive_state_ifaces_.size());
         for (size_t i = 0; i < drive_state_ifaces_.size(); ++i)
         {
-            RCLCPP_INFO(get_node()->get_logger(), 
-                        "  drive_state_ifaces_[%zu]: %s", 
-                        i, 
+            RCLCPP_INFO(get_node()->get_logger(),
+                        "  drive_state_ifaces_[%zu]: %s",
+                        i,
                         drive_state_ifaces_[i].get().get_name().c_str());
         }
 
@@ -253,9 +253,9 @@ namespace three_wheel_controller
         RCLCPP_INFO(get_node()->get_logger(), "steering_cmds_ size: %zu", steering_cmds_.size());
         for (size_t i = 0; i < steering_cmds_.size(); ++i)
         {
-            RCLCPP_INFO(get_node()->get_logger(), 
-                        "  steering_cmds_[%zu]: %s", 
-                        i, 
+            RCLCPP_INFO(get_node()->get_logger(),
+                        "  steering_cmds_[%zu]: %s",
+                        i,
                         steering_cmds_[i].get().get_name().c_str());
         }
 
@@ -263,9 +263,9 @@ namespace three_wheel_controller
         RCLCPP_INFO(get_node()->get_logger(), "drive_cmds_ size: %zu", drive_cmds_.size());
         for (size_t i = 0; i < drive_cmds_.size(); ++i)
         {
-            RCLCPP_INFO(get_node()->get_logger(), 
-                        "  drive_cmds_[%zu]: %s", 
-                        i, 
+            RCLCPP_INFO(get_node()->get_logger(),
+                        "  drive_cmds_[%zu]: %s",
+                        i,
                         drive_cmds_[i].get().get_name().c_str());
         }
 
@@ -298,11 +298,11 @@ namespace three_wheel_controller
 
         if (last_cmd_)
         {
-            rclcpp::Time now = get_node()->now();
-            double dt = (now - last_cmd_time_).seconds();
+            // rclcpp::Time now = get_node()->now();
+            double dt = (time - last_cmd_time_).seconds();
             RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
                                  "time=%.3f, last_cmd_time=%.3f, dt=%.3f",
-                                 now.seconds(), last_cmd_time_.seconds(), dt);
+                                 time.seconds(), last_cmd_time_.seconds(), dt);
             if (dt < CMD_TIMEOUT) // 0.5秒超时
             {
                 vx = last_cmd_->linear.x;
@@ -316,7 +316,7 @@ namespace three_wheel_controller
                 last_cmd_->angular.z = 0.0;
                 // 可选：打一次日志
                 RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 5000,
-                                    "Command timeout, zeroing velocity");
+                                     "Command timeout, zeroing velocity");
             }
 
             // 3. 输入速度限制（保护）
@@ -384,7 +384,7 @@ namespace three_wheel_controller
                 odom_yaw_ += 2.0 * M_PI;
 
             // 10. 里程计积分与发布 gazebo已经在否是~/odom he ~/tf了，这里先不发试试
-            publishOdometry(time, odom_x_, odom_y_, omega);
+            publishOdometry(time, vx, vy, omega);
 
             // auto node = get_node();
             // if (odom_pub_ && node)
@@ -469,8 +469,7 @@ namespace three_wheel_controller
             wheel_speeds[i] = std::hypot(vxi, vyi) / wheel_radius_;
 
             RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000, "Wheel[%zu]: vxi=%.3f, vyi=%.3f, angle=%.1f°",
-            i, vxi, vyi, steering_angles[i] * 180.0 / M_PI);
-            
+                                 i, vxi, vyi, steering_angles[i] * 180.0 / M_PI);
         }
     }
 
@@ -569,17 +568,17 @@ namespace three_wheel_controller
 
     bool ThreeWheelSteeringController::readCurrentWheelStates()
     {
-        //  RCLCPP_INFO(get_node()->get_logger(), 
+        //  RCLCPP_INFO(get_node()->get_logger(),
         //         "steering_state_ifaces_.size()=%zu, drive_state_ifaces_.size()=%zu",
         //         steering_state_ifaces_.size(), drive_state_ifaces_.size());
         if (steering_state_ifaces_.size() < 3 || drive_state_ifaces_.size() < 3)
         {
-             return false;
+            return false;
         }
 
         for (size_t i = 0; i < 3; ++i)
         {
-             prev_steering_angles_[i] = steering_state_ifaces_[i].get().get_value();
+            prev_steering_angles_[i] = steering_state_ifaces_[i].get().get_value();
         }
         return true;
     }
@@ -587,6 +586,13 @@ namespace three_wheel_controller
     void ThreeWheelSteeringController::publishOdometry(
         const rclcpp::Time &time, double vx, double vy, double omega)
     {
+        // 防止重复时间戳导致 Cartographer 崩溃 (map_by_time.h)
+        if (time == last_odom_time_)
+        {
+            return; // 跳过本次发布，时间戳和上次相同
+        }
+        last_odom_time_ = time;
+
         odom_msg_.header.stamp = time;
         odom_msg_.header.frame_id = odom_frame_id_;
         odom_msg_.child_frame_id = base_frame_id_;
