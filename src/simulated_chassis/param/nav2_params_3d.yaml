@@ -82,26 +82,24 @@ controller_server:
       model_dt: 0.05
       batch_size: 2000
       vx_std: 0.3
-      vy_std: 0.15                   # 降低侧向噪声，避免目标点附近漂移
+      vy_std: 0.0                     # DiffDrive 不需要侧向
       wz_std: 0.3
       
-      # ✅ 三舵轮速度限制
-      vx_max: 1.2                    # 最大前进速度
-      vx_min: -0.8                   # 增大后退，允许反向纠错
-      vy_max: 0.3                    # 降低侧向速度，抑制摇摆
-      wz_max: 1.0                    # 最大角速度
+      vx_max: 1.2
+      vx_min: -0.8
+      vy_max: 0.0                     # DiffDrive 无侧向
+      wz_max: 1.0
       
-      ax_max: 2.0                    # 最大加速度
-      ax_min: -2.0                   # 最大减速度
+      ax_max: 2.0
+      ax_min: -2.0
       
       iteration_count: 1
       prune_distance: 3.0
       transform_tolerance: 0.3
-      temperature: 0.3               # 降低温度，减少随机探索
+      temperature: 0.3
       gamma: 0.02
       
-      # ✅ 三舵轮：使用 OmniDrive
-      motion_model: "Omni"      # 从 DiffDrive 改为 OmniDrive
+      motion_model: "DiffDrive"
       
       visualize: false
       TrajectoryVisualizer:
@@ -326,20 +324,19 @@ docking_server:
       staging_x_offset: -0.7
       use_external_detection_pose: true
 
-velocity_smoother:
-  ros__parameters:
-    smoothing_frequency: 20.0
-    scale_velocities: False
-    feedback: "OPEN_LOOP"
-    # ✅ 三舵轮速度限制（匹配运动模型）
-    max_velocity: [1.2, 0.8, 1.0]        # [前进, 侧向, 旋转]
-    min_velocity: [-0.35, -0.8, -1.0]    # [后退, 侧向, 旋转]
-    max_accel: [2.0, 2.0, 2.0]           # 三轴加速度
-    min_accel: [-2.0, -2.0, -2.0]        # 三轴减速度
-    odom_topic: "/odom"
-    odom_duration: 0.1
-    deadband_velocity: [0.0, 0.0, 0.0]
-    velocity_timeout: 1.0
+# velocity_smoother:
+#   ros__parameters:
+#     smoothing_frequency: 200.0          # 高频 = 几乎不平滑，直通
+#     scale_velocities: False
+#     feedback: "OPEN_LOOP"
+#     max_velocity: [1.2, 0.8, 1.0]
+#     min_velocity: [-0.8, -0.8, -1.0]   # 匹配 MPPI 的 vx_min
+#     max_accel: [100.0, 100.0, 100.0]    # 关掉加速度限制
+#     min_accel: [-100.0, -100.0, -100.0]
+#     odom_topic: "/odom"
+#     odom_duration: 0.1
+#     deadband_velocity: [0.0, 0.0, 0.0]
+#     velocity_timeout: 1.0
 
 collision_monitor:
   ros__parameters:
@@ -370,5 +367,5 @@ collision_monitor:
       polygon_pub_topic: "polygon_slowdown"
     observation_sources: ["scan"]
     scan:
-      type: "scan"
+      type: "pointcloud"
       topic: "/points2"
