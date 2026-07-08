@@ -1,0 +1,118 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <!-- base_footprint -->
+    <link name="base_footprint" />
+
+    <joint name="base_joint" type="fixed">
+        <parent link="base_footprint" />
+        <child link="base_link" />
+        <origin xyz="0 0 ${base_offset_z}" rpy="0 0 0" />
+    </joint>
+
+    <!-- base_link -->
+    <link name="base_link">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="${base_box_x} ${base_box_y} ${base_box_z}" />
+            </geometry>
+            <material name="purple" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="${base_box_x} ${base_box_y} ${base_box_z}" />
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="${base_mass}" />
+            <xacro:box_inertia m="${base_mass}" x="${base_box_x}" y="${base_box_y}" z="${base_box_z}" />
+        </inertial>
+    </link>
+
+    <gazebo reference="base_link">
+        <material>Gazebo/Orange</material>
+    </gazebo>
+
+    <!-- ==================== 前向雷达 ==================== -->
+    <link name="laser_front_link">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <cylinder length="0.02" radius="0.02" />
+            </geometry>
+            <material name="dark_red" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <cylinder length="0.002" radius="0.002" />
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="0.1" />
+            <xacro:cylinder_inertia m="0.1" r="0.02" l="0.02" />
+        </inertial>
+    </link>
+
+    <joint name="laser_front_joint" type="fixed">
+        <parent link="base_link" />
+        <child link="laser_front_link" />
+        <origin xyz="0.28 -0.15 0.07" rpy="0 0 -0.785398" />
+    </joint>
+
+    <!-- ==================== 后向雷达 ==================== -->
+    <link name="laser_rear_link">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <cylinder length="0.02" radius="0.02" />
+            </geometry>
+            <material name="dark_red" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <cylinder length="0.002" radius="0.002" />
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="0.1" />
+            <xacro:cylinder_inertia m="0.1" r="0.02" l="0.02" />
+        </inertial>
+    </link>
+
+    <joint name="laser_rear_joint" type="fixed">
+        <parent link="base_link" />
+        <child link="laser_rear_link" />
+        <origin xyz="-0.28 0.15 0.07" rpy="0 0 2.35619" />
+    </joint>
+
+    <!-- ==================== IMU ==================== -->
+    <link name="imu_link">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0.02 0.02 0.02" />
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0.02 0.02 0.02" />
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="0.1" />
+            <xacro:box_inertia m="0.1" x="0.02" y="0.02" z="0.02" />
+        </inertial>
+    </link>
+
+    <joint name="imu_joint" type="fixed">
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <parent link="base_link" />
+        <child link="imu_link" />
+    </joint>
+
+</robot>

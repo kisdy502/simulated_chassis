@@ -1,0 +1,100 @@
+### EKF 融合节点参数，用于轮式里程计 + IMU
+### 核心：降低轮速信度，提高 IMU 角速度信度，抑制打滑错误
+
+ekf_filter_node:
+  ros__parameters:
+    frequency: 50.0 # 运行频率，建议高于里程计发布频率
+    sensor_timeout: 0.2 # 传感器超时时间
+    two_d_mode: true # 2D模式，忽略Z、roll、pitch
+
+    # 发布 /odometry/filtered 话题
+    publish_tf: true # 发布 odom -> base_footprint 的 TF
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom # EKF 的世界坐标系是 odom
+
+    # 传感器输入 0 : 轮式里程计 (nav_msgs/Odometry)
+    odom0: /wheel_odom
+    odom0_config: [
+        false,
+        false,
+        false, # x,y,z位置（通常不用于差分，但可启用以防万一）
+        false,
+        false,
+        false, # roll,pitch,yaw 姿态（轮速通常没有这六维）
+        true,
+        true,
+        false, # vx, vy, vz 线速度（我们只融合 vx）
+        false,
+        false,
+        true, # vroll, vpitch, vyaw 角速度（融合 v_yaw）
+        false,
+        false,
+        false, # 加速度不融合
+      ]
+    # 关键：增大打滑时的协方差，降低轮速权重
+    # 经过多次测试，将速度协方差设大，让EKF更相信IMU的角速度和预测模型
+    # 正常路面下这些协方差足够，打滑时可以通过外部节点临时进一步提升噪声
+    odom0_pose_covariance: [0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01]
+    odom0_twist_covariance: [
+        0.05,
+        0.0,
+        0.0, # vx 的方差 0.05 => std ≈0.22 m/s
+        0.0,
+        0.0,
+        0.0, # vy 忽略（没有）
+        0.0,
+        0.0,
+        0.05,
+      ] # v_yaw 方差 0.05 => std ≈0.22 rad/s
+
+    # 传感器输入 1 : IMU (sensor_msgs/Imu)
+    imu0: /imu
+    imu0_config: [
+        false,
+        false,
+        false, # 位置不融合
+        false,
+        false,
+        false, # 姿态不融合（一般由角速度积分得到）
+        false,
+        false,
+        false, # 线速度不融合
+        false,
+        false,
+        true, # 角速度：只融合 vyaw (2D)
+        true,
+        true,
+        true, # 线加速度：全部开启，可以用来检测打滑/静止
+      ]
+    imu0_pose_covariance: [0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01]
+    imu0_twist_covariance: [
+        0.01,
+        0.0,
+        0.0, # 角速度协方差要小，表示可信
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.001,
+      ] # vyaw 标准差≈0.03 rad/s
+    imu0_acceleration_covariance: [
+        1.0,
+        0.0,
+        0.0, # 加速度噪声稍大，主要用作静止判断
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+      ]
+
+    # 过程噪声：代表模型不确定性，可以适当加大以容纳打滑时的模型错误
+    process_noise_covariance: [0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.05]
+
+    # 初始状态协方差
+    initial_estimate_covariance:
+      [1e-9, 0.0, 0.0, 0.0, 1e-9, 0.0, 0.0, 0.0, 1e-9]

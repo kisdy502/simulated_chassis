@@ -1,0 +1,69 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <!-- 数学常量 -->
+    <xacro:property name="M_PI" value="3.1415926535897931" />
+    <xacro:property name="PI_2" value="1.570796327" />
+
+    <!-- 底盘尺寸 -->
+    <xacro:property name="base_box_x" value="0.6" />
+    <xacro:property name="base_box_y" value="0.4" />
+    <xacro:property name="base_box_z" value="0.12" />
+    <xacro:property name="base_mass" value="0.2" />
+    <xacro:property name="base_offset_z" value="0.005" />
+
+    <!-- 轮子参数 -->
+    <xacro:property name="wheel_radius" value="0.032" />
+    <xacro:property name="wheel_width" value="0.04" />
+    <xacro:property name="wheel_mass" value="0.2" />
+
+    <!-- 轮子位置 (相对于 base_link) -->
+    <xacro:property name="wheel_x" value="-0.02" />
+    <xacro:property name="wheel_y" value="0.18" />
+    <xacro:property name="wheel_z" value="-0.06" />
+
+    <!-- 差速插件运动学参数 -->
+    <xacro:property name="wheel_separation" value="0.36" />
+    <xacro:property name="wheel_diameter" value="0.065" />
+
+    <!-- 脚轮参数 -->
+    <xacro:property name="caster_radius" value="0.016" />
+    <xacro:property name="caster_mass" value="0.02" />
+
+    <!-- 颜色定义 -->
+    <material name="purple">
+        <color rgba="0.5 0.0 0.5 0.5" />
+    </material>
+    <material name="dark_red">
+        <color rgba="0.8 0.0 0.0 1.0" />
+    </material>
+    <material name="blue">
+        <color rgba="0.0 0.0 0.7 0.8" />
+    </material>
+    <material name="black">
+        <color rgba="0.0 0.0 0.0 0.6" />
+    </material>
+    <material name="brown">
+        <color rgba="0.6 0.3 0.1 1.0" />
+    </material>
+
+    <!-- 惯性宏 -->
+    <xacro:macro name="box_inertia" params="m x y z">
+        <inertia ixx="${m*(y*y+z*z)/12}" ixy="0" ixz="0"
+            iyy="${m*(x*x+z*z)/12}" iyz="0"
+            izz="${m*(x*x+y*y)/12}" />
+    </xacro:macro>
+
+    <xacro:macro name="cylinder_inertia" params="m r l">
+        <inertia ixx="${m*(3*r*r+l*l)/12}" ixy="0" ixz="0"
+            iyy="${m*(3*r*r+l*l)/12}" iyz="0"
+            izz="${m*r*r/2}" />
+    </xacro:macro>
+
+    <xacro:macro name="sphere_inertia" params="m r">
+        <inertia ixx="${0.4*m*r*r}" ixy="0" ixz="0"
+            iyy="${0.4*m*r*r}" iyz="0"
+            izz="${0.4*m*r*r}" />
+    </xacro:macro>
+
+</robot>

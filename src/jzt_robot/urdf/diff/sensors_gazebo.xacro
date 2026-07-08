@@ -1,0 +1,120 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <!-- ==================== 前向激光雷达 (270°) ==================== -->
+    <gazebo reference="laser_front_link">
+        <sensor name="laser_front_sensor" type="ray">
+            <always_on>true</always_on>
+            <update_rate>20</update_rate>
+            <visualize>true</visualize>
+            <pose>0 0 0 0 0 0</pose>
+            <ray>
+                <scan>
+                    <horizontal>
+                        <samples>540</samples>
+                        <resolution>1.0</resolution>
+                        <min_angle>-2.35619</min_angle>
+                        <max_angle>2.35619</max_angle>
+                    </horizontal>
+                </scan>
+                <range>
+                    <min>0.15</min>
+                    <max>45.0</max>
+                    <resolution>0.01</resolution>
+                </range>
+                <noise>
+                    <type>gaussian</type>
+                    <mean>0.0</mean>
+                    <stddev>0.02</stddev>
+                </noise>
+            </ray>
+        </sensor>
+    </gazebo>
+
+    <!-- ==================== 后向激光雷达 (270°) ==================== -->
+    <gazebo reference="laser_rear_link">
+        <sensor name="laser_rear_sensor" type="ray">
+            <always_on>true</always_on>
+            <update_rate>20</update_rate>
+            <visualize>true</visualize>
+            <pose>0 0 0 0 0 0</pose>
+            <ray>
+                <scan>
+                    <horizontal>
+                        <samples>540</samples>
+                        <resolution>1.0</resolution>
+                        <min_angle>-2.35619</min_angle>
+                        <max_angle>2.35619</max_angle>
+                    </horizontal>
+                </scan>
+                <range>
+                    <min>0.15</min>
+                    <max>45.0</max>
+                    <resolution>0.01</resolution>
+                </range>
+                <noise>
+                    <type>gaussian</type>
+                    <mean>0.0</mean>
+                    <stddev>0.02</stddev>
+                </noise>
+            </ray>
+        </sensor>
+    </gazebo>
+
+    <!-- ==================== IMU ==================== -->
+    <gazebo reference="imu_link">
+        <sensor name="imu_sensor" type="imu">
+            <always_on>true</always_on>
+            <update_rate>100</update_rate>
+            <visualize>false</visualize>
+            <topic>/imu</topic>
+            <gz_frame_id>imu_link</gz_frame_id>
+            <imu>
+                <frame_id>imu_link</frame_id>
+                <angular_velocity>
+                    <x>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.005</stddev>
+                        </noise>
+                    </x>
+                    <y>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.005</stddev>
+                        </noise>
+                    </y>
+                    <z>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.005</stddev>
+                        </noise>
+                    </z>
+                </angular_velocity>
+                <linear_acceleration>
+                    <x>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.1</stddev>
+                        </noise>
+                    </x>
+                    <y>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.1</stddev>
+                        </noise>
+                    </y>
+                    <z>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.1</stddev>
+                        </noise>
+                    </z>
+                </linear_acceleration>
+            </imu>
+        </sensor>
+    </gazebo>
+
+</robot>
+
+</robot>

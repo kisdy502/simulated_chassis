@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<robot name="jzDiffRobot"
+    xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <!--
+    差速底盘 XACRO 总入口 (适配 ROS2 Jazzy + Gazebo Garden/Ionic)
+    传感器：前270° 激光 + 后270° 激光 + IMU
+    -->
+
+    <!-- 载入核心结构（常量、底盘、轮子） -->
+    <xacro:include filename="common_properties.xacro" />
+    <xacro:include filename="diff_base.xacro" />
+    <xacro:include filename="diff_wheels.xacro" />
+
+    <!-- 仿真：Gazebo 传感器 + ros2_control -->
+    <xacro:include filename="sensors_gazebo.xacro" />
+    <xacro:include filename="ros2_control_sim.xacro" />
+
+</robot>
