@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version="1.0"?>
 <sdf version='1.9'>
   <world name='test_world'>
     <physics name='1ms' type='ignored'>
@@ -6,13 +6,13 @@
       <real_time_factor>1</real_time_factor>
       <real_time_update_rate>1000</real_time_update_rate>
     </physics>
-    <plugin name='ignition::gazebo::systems::Physics' filename='ignition-gazebo-physics-system'/>
-    <plugin name='ignition::gazebo::systems::UserCommands' filename='ignition-gazebo-user-commands-system'/>
-    <plugin name='ignition::gazebo::systems::SceneBroadcaster' filename='ignition-gazebo-scene-broadcaster-system'/>
+    <plugin name='gz::sim::systems::Physics' filename='gz-sim-physics-system' />
+    <plugin name='gz::sim::systems::UserCommands' filename='gz-sim-user-commands-system' />
+    <plugin name='gz::sim::systems::SceneBroadcaster' filename='gz-sim-scene-broadcaster-system' />
 
     <gravity>0 0 -9.8</gravity>
     <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
-    <atmosphere type='adiabatic'/>
+    <atmosphere type='adiabatic' />
     <scene>
       <ambient>0.4 0.4 0.4 1</ambient>
       <background>0.7 0.7 0.7 1</background>
@@ -31,10 +31,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='visual'>
@@ -114,10 +114,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -157,10 +157,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -200,10 +200,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -243,10 +243,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -287,10 +287,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -330,10 +330,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -373,10 +373,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -416,10 +416,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -459,10 +459,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -502,10 +502,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -545,10 +545,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -588,10 +588,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -631,10 +631,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -674,10 +674,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -717,10 +717,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name='box_visual'>
@@ -740,6 +740,1121 @@
 
       <static>true</static>
       <self_collide>false</self_collide>
+    </model>
+    <!-- ==================== 扫描特征物体（30组，+30%尺寸，靠墙排列） ==================== -->
+    <!-- 右上角房间 (x:24~31, y:8~31) -->
+    <model name='feat_cylinder_g1_1'>
+      <static>true</static>
+      <pose>30.5 26.0 0.78 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.65</radius>
+              <length>1.56</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.65</radius>
+              <length>1.56</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_box_g2_1'>
+      <static>true</static>
+      <pose>30.5 21.0 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.52 0.52 1.04</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.52 0.52 1.04</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.3 0.5 0.6 1</ambient>
+            <diffuse>0.3 0.5 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_box_g2_2'>
+      <static>true</static>
+      <pose>30.5 20.3 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.52 0.52 1.04</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.52 0.52 1.04</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.3 0.5 0.6 1</ambient>
+            <diffuse>0.3 0.5 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g3_1'>
+      <static>true</static>
+      <pose>29.0 28.0 0.58 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>1.17</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>1.17</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g3_2'>
+      <static>true</static>
+      <pose>29.0 28.7 0.58 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>1.17</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>1.17</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g3_3'>
+      <static>true</static>
+      <pose>28.3 28.3 0.58 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>1.17</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>1.17</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g4_1'>
+      <static>true</static>
+      <pose>25.5 30.0 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g4_2'>
+      <static>true</static>
+      <pose>26.2 30.0 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g4_3'>
+      <static>true</static>
+      <pose>26.2 29.3 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g4_4'>
+      <static>true</static>
+      <pose>25.5 29.3 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <!-- 左上盲巷 (x:-31~-13, y:16~31) -->
+    <model name='feat_cylinder_g5_1'>
+      <static>true</static>
+      <pose>-29.0 22.0 0.65 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.45</radius>
+              <length>1.3</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.45</radius>
+              <length>1.3</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g6_1'>
+      <static>true</static>
+      <pose>-14.5 24.0 0.33 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>0.65</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>0.65</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_box_g6_2'>
+      <static>true</static>
+      <pose>-14.5 23.2 0.33 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.52 0.52 0.65</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.52 0.52 0.65</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.3 0.5 0.6 1</ambient>
+            <diffuse>0.3 0.5 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cuboid_g7_1'>
+      <static>true</static>
+      <pose>-30.0 29.0 0.39 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.91 0.52 0.78</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.91 0.52 0.78</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.3 0.3 1</ambient>
+            <diffuse>0.8 0.3 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cuboid_g7_2'>
+      <static>true</static>
+      <pose>-30.0 29.7 0.39 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.91 0.52 0.78</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.91 0.52 0.78</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.3 0.3 1</ambient>
+            <diffuse>0.8 0.3 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <!-- 上中部房间 (x:1~15, y:17~23) -->
+    <model name='feat_box_g8_1'>
+      <static>true</static>
+      <pose>2.0 22.0 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.78 0.78 1.04</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.78 0.78 1.04</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.3 0.5 0.6 1</ambient>
+            <diffuse>0.3 0.5 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g9_1'>
+      <static>true</static>
+      <pose>12.0 22.5 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.4</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.4</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g9_2'>
+      <static>true</static>
+      <pose>12.7 22.5 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.4</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.4</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g10_1'>
+      <static>true</static>
+      <pose>7.0 18.0 0.33 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>0.65</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>0.65</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g10_2'>
+      <static>true</static>
+      <pose>7.7 18.0 0.33 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>0.65</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.26</radius>
+              <length>0.65</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <!-- 右中部走廊 (x:12~30, y:-30~-1) -->
+    <model name='feat_cuboid_g11_1'>
+      <static>true</static>
+      <pose>29.0 -3.0 0.45 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>1.04 0.52 0.91</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>1.04 0.52 0.91</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.3 0.3 1</ambient>
+            <diffuse>0.8 0.3 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g12_1'>
+      <static>true</static>
+      <pose>29.0 -12.0 0.39 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.4</radius>
+              <length>0.78</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.4</radius>
+              <length>0.78</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g12_2'>
+      <static>true</static>
+      <pose>29.0 -11.2 0.39 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.4</radius>
+              <length>0.78</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.4</radius>
+              <length>0.78</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_box_g13_1'>
+      <static>true</static>
+      <pose>29.0 -20.0 0.45 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.65 0.65 0.91</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.65 0.65 0.91</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.3 0.5 0.6 1</ambient>
+            <diffuse>0.3 0.5 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cuboid_g14_1'>
+      <static>true</static>
+      <pose>29.0 -7.0 0.39 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.91 0.4 0.65</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.91 0.4 0.65</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.3 0.7 0.3 1</ambient>
+            <diffuse>0.3 0.7 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g15_1'>
+      <static>true</static>
+      <pose>13.5 -4.0 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.52</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.52</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.2 0.5 0.2 1</ambient>
+            <diffuse>0.2 0.5 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <!-- 中左部房间 (x:-11~10, y:-10~7) -->
+    <model name='feat_box_g16_1'>
+      <static>true</static>
+      <pose>8.5 -8.0 0.65 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.78 0.78 1.3</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.78 0.78 1.3</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.5 0.2 1</ambient>
+            <diffuse>0.8 0.5 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g17_1'>
+      <static>true</static>
+      <pose>-4.0 -9.0 0.33 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>0.65</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>0.65</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g17_2'>
+      <static>true</static>
+      <pose>-3.2 -9.0 0.33 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>0.65</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>0.65</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g18_1'>
+      <static>true</static>
+      <pose>-9.0 5.0 0.45 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.4</radius>
+              <length>0.91</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.4</radius>
+              <length>0.91</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.3 0.7 0.3 1</ambient>
+            <diffuse>0.3 0.7 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cuboid_g19_1'>
+      <static>true</static>
+      <pose>-4.0 1.5 0.33 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.78 0.4 0.65</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.78 0.4 0.65</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.3 0.3 1</ambient>
+            <diffuse>0.8 0.3 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cuboid_g19_2'>
+      <static>true</static>
+      <pose>-3.2 1.5 0.33 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.78 0.4 0.65</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.78 0.4 0.65</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.3 0.3 1</ambient>
+            <diffuse>0.8 0.3 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <!-- 左下角房间 (x:-31~-13, y:-23~7) -->
+    <model name='feat_box_g20_1'>
+      <static>true</static>
+      <pose>-30.0 -6.0 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.65 0.65 1.04</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.65 0.65 1.04</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.2 0.6 0.4 1</ambient>
+            <diffuse>0.2 0.6 0.4 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g21_1'>
+      <static>true</static>
+      <pose>-14.5 4.0 0.65 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.52</radius>
+              <length>1.3</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.52</radius>
+              <length>1.3</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_box_g22_1'>
+      <static>true</static>
+      <pose>-30.0 -18.0 0.33 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.52 0.52 0.65</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.52 0.52 0.65</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.5 0.2 1</ambient>
+            <diffuse>0.8 0.5 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_box_g22_2'>
+      <static>true</static>
+      <pose>-30.0 -17.2 0.33 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.52 0.52 0.65</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.52 0.52 0.65</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.5 0.2 1</ambient>
+            <diffuse>0.8 0.5 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g23_1'>
+      <static>true</static>
+      <pose>-14.5 -18.0 0.39 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>0.78</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>0.78</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.3 0.7 0.3 1</ambient>
+            <diffuse>0.3 0.7 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g23_2'>
+      <static>true</static>
+      <pose>-14.5 -17.2 0.39 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>0.78</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.33</radius>
+              <length>0.78</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.3 0.7 0.3 1</ambient>
+            <diffuse>0.3 0.7 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <!-- 下中部房间 (x:-10~10, y:-30~-24) -->
+    <model name='feat_cuboid_g24_1'>
+      <static>true</static>
+      <pose>8.5 -29.0 0.39 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>1.04 0.45 0.78</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>1.04 0.45 0.78</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.3 0.3 1</ambient>
+            <diffuse>0.8 0.3 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_cylinder_g25_1'>
+      <static>true</static>
+      <pose>-6.0 -29.0 0.52 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.45</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.45</radius>
+              <length>1.04</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_box_g27_1'>
+      <static>true</static>
+      <pose>0.0 -29.0 0.45 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.65 0.65 0.91</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.65 0.65 0.91</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.5 0.2 1</ambient>
+            <diffuse>0.8 0.5 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <!-- 右下角走廊 (x:24~31, y:-30~-17) -->
+    <model name='feat_cylinder_g28_1'>
+      <static>true</static>
+      <pose>30.0 -28.0 0.65 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <cylinder>
+              <radius>0.52</radius>
+              <length>1.3</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <cylinder>
+              <radius>0.52</radius>
+              <length>1.3</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.6 0.4 0.2 1</ambient>
+            <diffuse>0.6 0.4 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_box_g29_1'>
+      <static>true</static>
+      <pose>30.0 -21.0 0.45 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.65 0.65 0.91</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.65 0.65 0.91</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.2 0.6 0.4 1</ambient>
+            <diffuse>0.2 0.6 0.4 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='feat_box_g29_2'>
+      <static>true</static>
+      <pose>30.0 -20.2 0.45 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry>
+            <box>
+              <size>0.65 0.65 0.91</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box>
+              <size>0.65 0.65 0.91</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.2 0.6 0.4 1</ambient>
+            <diffuse>0.2 0.6 0.4 1</diffuse>
+          </material>
+        </visual>
+      </link>
     </model>
   </world>
 </sdf>

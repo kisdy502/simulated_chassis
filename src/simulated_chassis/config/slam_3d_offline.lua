@@ -24,25 +24,30 @@ options = {
   rangefinder_sampling_ratio = 1.,
   odometry_sampling_ratio = 1.,
   fixed_frame_pose_sampling_ratio = 1.,
-  imu_sampling_ratio = 0.2,
+  imu_sampling_ratio = 1.,
   landmarks_sampling_ratio = 1.,
 }
 
 MAP_BUILDER.use_trajectory_builder_2d = false
 MAP_BUILDER.use_trajectory_builder_3d = true
-MAP_BUILDER.num_background_threads = 4
+MAP_BUILDER.num_background_threads = 8
 
 -- ✅ 离线：稍微提高精度
 TRAJECTORY_BUILDER_3D.min_range = 0.2
-TRAJECTORY_BUILDER_3D.max_range = 24.0
+TRAJECTORY_BUILDER_3D.max_range = 30.0
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.03      -- 从 0.05 改小，保留更多细节
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 4  -- 从 2 增加到 4，提高匹配稳定性
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
 
 -- ✅ 回环检测（与在线一致）
 TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = true
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.12
+TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.6
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(1.)
+
+-- 回环搜索窗口（大地图必须大）
+-- POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_xy_search_window = 4.0
+-- POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_z_search_window = 1.0
+-- POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.angular_search_window = math.rad(20.0)  -- 20° 搜索
 
 -- 些尝试性优化，看能不能大幅度提升建图质量
 --  每个节点都优化（离线不受实时限制）

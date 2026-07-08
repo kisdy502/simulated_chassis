@@ -13,8 +13,8 @@ ros2 service call /write_state cartographer_ros_msgs/srv/WriteState "{filename: 
 
 # 转换为 .pgm + .yaml
 ros2 run cartographer_ros cartographer_pbstream_to_ros_map \
-    -pbstream_filename my_map.pbstream \
-    -map_filestem my_map
+    -pbstream_filename my_map_optimized.pbstream \
+    -map_filestem my_map_optimized
 
 # 先录制 bag 包（在线建图时录制）
 ros2 bag record -o my_bag --topics /points2 /odom /imu /tf /tf_static /clock
@@ -45,7 +45,7 @@ ros2 launch simulated_chassis slam3d_offline.launch.py \
 # 启动导航
 source install/setup.bash
 ros2 launch simulated_chassis navigation.launch.py \
-    pbstream_file:=/mnt/d/github/simulated_chassis/my_map_optimized.pbstream \
+    pbstream_file:=/mnt/d/github/simulated_chassis/my_map_lg_optimized.pbstream \
     use_sim_time:=true
 
 
@@ -75,14 +75,18 @@ ros2 topic pub /three_wheel_base_controller/cmd_vel geometry_msgs/msg/Twist '{li
 ## 子图显示
 ![alt text](images/image3.png)
 
-## gazebo 
-ign topic -e -t /clock
+## gazebo
+
+# 查看当前 Gazebo 版本
+gz sim --version
+
+gz topic -e -t /clock
 
 # 控制器状态查看
 
 ## slam 建图遇到几个坑
 ```
-1，tf完整，但是rviz没有地图，仿真时候，需要指定imu和雷达的frame_id <ignition_frame_id>lidar_link</ignition_frame_id> ,<ignition_frame_id>imu_link</ignition_frame_id>
+1，tf完整，但是rviz没有地图，仿真时候，需要指定imu和雷达的frame_id <gz_frame_id>lidar_link</gz_frame_id> ,<gz_frame_id>imu_link</gz_frame_id>
 2，步骤1做了，但是还是没地图，建图时候，gazebo修改世界，将机器人模型保存到了世界中，导致slam建图，提示雷达坐标系不存在，urdf目录加载的机器人被世界的机器人覆盖了，frame id异常了
 3、slam建图和离线建图，配置目前都用保守参数，
 4、nav2导航，配置参数雷达话题要和实际话题一致，不然无法显示地图

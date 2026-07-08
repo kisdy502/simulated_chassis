@@ -24,7 +24,7 @@ options = {
   rangefinder_sampling_ratio = 1.,
   odometry_sampling_ratio = 1.,
   fixed_frame_pose_sampling_ratio = 1.,
-  imu_sampling_ratio = 0.2,
+  imu_sampling_ratio = 0.65,
   landmarks_sampling_ratio = 1.,
 }
 
@@ -35,16 +35,17 @@ MAP_BUILDER.num_background_threads = 4
 
 -- ✅ 3D 轨迹构建器配置
 TRAJECTORY_BUILDER_3D.min_range = 0.2
-TRAJECTORY_BUILDER_3D.max_range = 24.0
-TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.1
+TRAJECTORY_BUILDER_3D.max_range = 30.0
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
--- 体素滤波：3cm降采样，平衡精度与计算量
-TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.05
+TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08       -- 5cm 精度，比 10cm 更精细
 
--- ✅ 回环检测
+-- 实时匹配：窗口稍加大，减少位姿跳变（不增加 CPU 负担）
 TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = true
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.12
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(1.)
+TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.2
+TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(2.0)
+
+-- 子图帧数稍微增加，提升局部一致性（160→130，优化频率略降但子图更稳定）
+TRAJECTORY_BUILDER_3D.submaps.num_range_data = 130
 
 return options

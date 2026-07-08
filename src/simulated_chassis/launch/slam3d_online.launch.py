@@ -27,11 +27,18 @@ def generate_launch_description():
     # 启动参数
     declared_arguments = [
         DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='true',
+            description='使用仿真时间'
+        ),
+        DeclareLaunchArgument(
             'configuration_basename',
             default_value='slam_3d_online.lua',  # 3D配置文件
             description='Cartographer 3D Lua配置文件'
         ),
     ]
+
+    use_sim_time = LaunchConfiguration('use_sim_time')
 
     # ===== Cartographer 3D建图节点 =====
     cartographer_node = Node(
@@ -39,7 +46,7 @@ def generate_launch_description():
         executable='cartographer_node',
         name='cartographer_node',
         output='screen',
-        parameters=[{'use_sim_time': True}],
+        parameters=[{'use_sim_time': use_sim_time}],
         arguments=[
             '-configuration_directory', config_dir,
             '-configuration_basename', LaunchConfiguration('configuration_basename'),
@@ -63,7 +70,7 @@ def generate_launch_description():
         executable='cartographer_occupancy_grid_node',
         name='cartographer_occupancy_grid_node',
         output='screen',
-        parameters=[{'use_sim_time': True}],
+        parameters=[{'use_sim_time': use_sim_time}],
         arguments=[
             '-resolution', '0.05',
             '-publish_period_sec', '1.0',
@@ -80,7 +87,7 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         arguments=['-d', rviz_config],
-        parameters=[{'use_sim_time': True}],
+        parameters=[{'use_sim_time': use_sim_time}],
         output='screen',
     )
 
@@ -94,8 +101,4 @@ def generate_launch_description():
         TimerAction(period=1.0, actions=[cartographer_node]),
         TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
         TimerAction(period=3.0, actions=[rviz_node]),
-
-        LogInfo(msg=['3D建图节点 + 键盘控制 + RViz 已启动']),
-        LogInfo(msg=['使用键盘控制机器人移动完成建图']),
-        LogInfo(msg=['控制按键: i=前进, ,=后退, j=左转, l=右转']),
     ])

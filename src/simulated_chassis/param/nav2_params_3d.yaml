@@ -82,24 +82,26 @@ controller_server:
       model_dt: 0.05
       batch_size: 2000
       vx_std: 0.3
-      vy_std: 0.0                     # DiffDrive 不需要侧向
+      vy_std: 0.15                   # 降低侧向噪声，避免目标点附近漂移
       wz_std: 0.3
       
-      vx_max: 1.2
-      vx_min: -0.8
-      vy_max: 0.0                     # DiffDrive 无侧向
-      wz_max: 1.0
+      # ✅ 三舵轮速度限制
+      vx_max: 1.2                    # 最大前进速度
+      vx_min: -0.8                   # 增大后退，允许反向纠错
+      vy_max: 0.3                    # 降低侧向速度，抑制摇摆
+      wz_max: 1.0                    # 最大角速度
       
-      ax_max: 2.0
-      ax_min: -2.0
+      ax_max: 2.0                    # 最大加速度
+      ax_min: -2.0                   # 最大减速度
       
       iteration_count: 1
       prune_distance: 3.0
       transform_tolerance: 0.3
-      temperature: 0.3
+      temperature: 0.3               # 降低温度，减少随机探索
       gamma: 0.02
       
-      motion_model: "DiffDrive"
+      # ✅ 三舵轮：使用 OmniDrive
+      motion_model: "Omni"      # 从 DiffDrive 改为 OmniDrive
       
       visualize: false
       TrajectoryVisualizer:

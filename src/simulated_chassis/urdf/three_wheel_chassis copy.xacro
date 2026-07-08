@@ -305,12 +305,9 @@
       <robot_param_node>robot_state_publisher</robot_param_node>
       <!-- <robot_base_name>base_footprint</robot_base_name> -->
     </plugin>
-    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
     </plugin>
-    <plugin name="ignition::gazebo::systems::Imu" filename="ignition-gazebo-imu-system"></plugin>
-    <!-- <plugin name='ignition::gazebo::systems::Physics' filename='ignition-gazebo-physics-system'></plugin>
-    <plugin name='ignition::gazebo::systems::UserCommands' filename='ignition-gazebo-user-commands-system'></plugin>
-    <plugin name='ignition::gazebo::systems::SceneBroadcaster' filename='ignition-gazebo-scene-broadcaster-system'></plugin> -->
+    <plugin name="gz::sim::systems::Imu" filename="gz-sim-imu-system"></plugin>
   </gazebo>
 
   <!-- ==================== IMU Sensor (Edifice Compatible) ==================== -->
@@ -321,7 +318,7 @@
       <update_rate>100</update_rate>
       <visualize>false</visualize>
       <topic>/imu</topic>
-      <ignition_frame_id>imu_link</ignition_frame_id>
+      <gz_frame_id>imu_link</gz_frame_id>
       <imu>
         <angular_velocity>
           <x>
@@ -374,7 +371,7 @@
       <update_rate>10</update_rate>
       <visualize>true</visualize>
       <topic>/lidar/point_cloud</topic>
-      <ignition_frame_id>lidar_link</ignition_frame_id>
+      <gz_frame_id>lidar_link</gz_frame_id>
 
       <lidar>
         <scan>

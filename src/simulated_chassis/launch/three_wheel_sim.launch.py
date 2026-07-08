@@ -23,7 +23,7 @@ def generate_launch_description():
     robot_name = 'three_wheel_agv'
 
     xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis.xacro")
-    world_path = os.path.join(pkg_share, "world", "world_sm.sdf")
+    world_path = os.path.join(pkg_share, "world", "world_m.sdf")
     robot_description = {
         "robot_description": Command(["xacro ", xacro_path])
     }
@@ -46,7 +46,7 @@ def generate_launch_description():
     set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
 
     gazebo = ExecuteProcess(
-        cmd=["gz", "sim", "-r","-s", world_path],
+        cmd=["gz", "sim", "-r", world_path],
         output="screen",
     )
 
@@ -83,17 +83,16 @@ def generate_launch_description():
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
-            '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
-            '/lidar/point_cloud@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
-            '/imu@sensor_msgs/msg/Imu@gz.msgs.IMU',
-            '/world/test_world/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock',
+            '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked',
+            '/lidar/point_cloud@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/imu@sensor_msgs/msg/Imu[gz.msgs.IMU',
+            '/world/test_world/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
+            f'/model/{robot_name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
         ],
         parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
         remappings=[
-            # (f'/model/{robot_name}/odometry', '/odom'),
-            # (f'/model/{robot_name}/tf', '/tf'),
             ('/world/test_world/clock', '/clock'),
-            ('/lidar/point_cloud/points', 'points2')
+            ('/lidar/point_cloud/points', 'points2'),
         ],
         output='screen'
     )
@@ -137,17 +136,17 @@ def generate_launch_description():
     )
     
     # 里程计中继：控制器发布 /three_wheel_base_controller/odom，转发到 /odom
-    odom_relay_node = Node(
-        package="simulated_chassis",
-        executable="odom_relay_node",
-        output="screen",
-        parameters=[
-            {'input_topic': '/three_wheel_base_controller/odom'},
-            {'output_topic': '/odom'},
-            {'publish_tf': False},  # TF 由控制器 enable_odom_tf 发布
-            {"use_sim_time": LaunchConfiguration("use_sim_time")},
-        ],
-    )
+    # odom_relay_node = Node(
+    #     package="simulated_chassis",
+    #     executable="odom_relay_node",
+    #     output="screen",
+    #     parameters=[
+    #         {'input_topic': '/three_wheel_base_controller/odom'},
+    #         {'output_topic': '/odom'},
+    #         {'publish_tf': False},  # TF 由控制器 enable_odom_tf 发布
+    #         {"use_sim_time": LaunchConfiguration("use_sim_time")},
+    #     ],
+    # )
 
     return LaunchDescription([
         use_sim_time_arg,
@@ -161,5 +160,5 @@ def generate_launch_description():
         teleop, ##用游戏手柄替代键盘
         joy_node,
         gamepad_teleop_node,
-        odom_relay_node,
+        # odom_relay_node,
     ])

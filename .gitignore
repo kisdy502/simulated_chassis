@@ -48,6 +48,13 @@ test_results/
 core
 *.core
 
+# Bag files (large recording files)
+my_bag_sm/*.mcap
+*.mcap
+
+# Log files
+*.log
+
 # Coverage
 *.gcov
 *.gcda
@@ -55,3 +62,4 @@ core
 coverage/
 # 建图的地图和录的包
 my_bag
+my_bag_sm

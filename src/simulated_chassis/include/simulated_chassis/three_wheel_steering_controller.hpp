@@ -50,6 +50,11 @@ namespace three_wheel_controller
                            std::array<double, 3> &steering_angles,
                            std::array<double, 3> &wheel_speeds);
 
+    // 前向运动学：从实际舵角+轮速反算底盘速度（用于里程计闭环）
+    void computeForwardKinematics(const std::array<double, 3> &steering_angles,
+                                  const std::array<double, 3> &wheel_velocities,
+                                  double &vx, double &vy, double &omega);
+
     // 舵角最短路径归一化：将目标角度映射到 [-π, π] 并选择最短旋转方向
     double normalizeSteeringAngle(double current, double target) const;
 
@@ -72,9 +77,9 @@ namespace three_wheel_controller
 
     // ========== 运行时状态 ==========
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
-    geometry_msgs::msg::Twist::SharedPtr last_cmd_ ;
+    geometry_msgs::msg::Twist::SharedPtr last_cmd_;
     rclcpp::Time last_cmd_time_;
-    rclcpp::Time last_odom_time_{0, 0, RCL_ROS_TIME};  // 防止重复时间戳
+    rclcpp::Time last_odom_time_{0, 0, RCL_ROS_TIME}; // 防止重复时间戳
 
     std::vector<std::reference_wrapper<hardware_interface::LoanedCommandInterface>> steering_cmds_;
     std::vector<std::reference_wrapper<hardware_interface::LoanedCommandInterface>> drive_cmds_;
@@ -97,10 +102,6 @@ namespace three_wheel_controller
     std::string odom_frame_id_{"odom"};
     std::string base_frame_id_{"base_link"};
 
-    // // 命令接口缓存（按 wheel_configs_ 顺序）
-    // std::vector<std::reference_wrapper<hardware_interface::LoanedCommandInterface>> steering_cmd_ifaces_;
-    // std::vector<std::reference_wrapper<hardware_interface::LoanedCommandInterface>> drive_cmd_ifaces_;
-
     // 状态接口缓存
     std::vector<std::reference_wrapper<hardware_interface::LoanedStateInterface>> steering_state_ifaces_;
     std::vector<std::reference_wrapper<hardware_interface::LoanedStateInterface>> drive_state_ifaces_;
@@ -110,6 +111,28 @@ namespace three_wheel_controller
 
     // 上一周期的舵角（用于最短路径计算）
     std::array<double, 3> prev_steering_angles_{0.0, 0.0, 0.0};
+
+    // 协方差矩阵 [x, y, z, roll, pitch, yaw]
+    // 注意：z, roll, pitch 是平面机器人不可观测量，设为极大值
+    double pose_covariance_[6] = {
+        0.01,    // x: 位置初始不确定度 0.01 m² (10cm)
+        0.01,    // y: 位置初始不确定度 0.01 m² (10cm)
+        99999.0, // z: 不可观，极大值
+        99999.0, // roll: 不可观，极大值
+        99999.0, // pitch: 不可观，极大值
+        0.01     // yaw: 角度初始不确定度 0.01 rad² (~5.7°)
+    };
+
+    double twist_covariance_[6] = {
+        0.1,     // vx: 速度初始不确定度 0.1 (m/s)²
+        0.1,     // vy: 速度初始不确定度 0.1 (m/s)²
+        99999.0, // vz: 不可观
+        99999.0, // vroll: 不可观
+        99999.0, // vpitch: 不可观
+        0.1      // omega: 角速度初始不确定度 0.1 (rad/s)²
+    };
+    // x-y 协方差耦合项（独立变量）
+    double xy_coupling_ = 0.0;
   };
 
 } // namespace three_wheel_controller
