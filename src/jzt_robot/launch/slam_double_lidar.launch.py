@@ -8,9 +8,6 @@ Cartographer 建图 + RViz 可视化启动文件
 
     # 终端2: 再启动建图
     ros2 launch jzt_robot slam.launch.py
-
-    # 终端3: 控制机器人移动
-    ros2 run teleop_twist_keyboard teleop_twist_keyboard
 """
 
 import os
@@ -28,36 +25,43 @@ def generate_launch_description():
         'config'
     )
     
+    
     rviz_config = os.path.join(
         get_package_share_directory('jzt_robot'),
-        'rviz', 'common_nav2.rviz'
+        'rviz', 'nav2_double_lidar.rviz'
     )
-    
+
     # 启动参数
     declared_arguments = [
         DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='true',
+            description='使用仿真时间'
+        ),
+        DeclareLaunchArgument(
             'configuration_basename',
-            default_value='jzt_robot_2d.lua',
+            default_value='jzt_robot_2d_double_lidar.lua',
             description='Cartographer Lua配置文件'
         ),
     ]
-    
-    # Cartographer 建图节点
+
+    # Cartographer 建图节点（双雷达）
     cartographer_node = Node(
         package='cartographer_ros',
         executable='cartographer_node',
         name='cartographer_node',
         output='screen',
-        parameters=[{'use_sim_time': True}],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
         arguments=[
             '-configuration_directory', config_dir,
             '-configuration_basename', LaunchConfiguration('configuration_basename'),
             '-start_trajectory_with_default_topics', 'true',
         ],
         remappings=[
-            ('scan', '/scan'),
+            ('scan_1', '/scan_front'),
+            ('scan_2', '/scan_rear'),
             ('odom', '/odom'),
-            ('imu', '/imu'),  # 如果使用外部IMU
+            ('imu', '/imu'),
         ],
     )
     
@@ -67,7 +71,7 @@ def generate_launch_description():
         executable='cartographer_occupancy_grid_node',
         name='cartographer_occupancy_grid_node',
         output='screen',
-        parameters=[{'use_sim_time': True}],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
         arguments=[
             '-resolution', '0.05',
             '-publish_period_sec', '1.0',
@@ -80,34 +84,10 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         arguments=['-d', rviz_config],
-        parameters=[{'use_sim_time': True}],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
         output='screen',
     )
     
-    # joy 手柄驱动
-    joy_node = Node(
-        package='joy',
-        executable='joy_node',
-        name='joy_node',
-        output='screen',
-        parameters=[{
-            'device_id': 0,
-            'autorepeat_rate': 20.0,
-        }],
-    )
-
-    # Gamepad 遥控节点
-    gamepad_teleop_node = Node(
-        package='jzt_robot',
-        executable='gamepad_teleop_node',
-        name='gamepad_teleop_node',
-        output='screen',
-        parameters=[{
-            # 'cmd_topic': '/ackermann_steering_controller/reference_unstamped',
-            'cmd_topic': '/cmd_vel',
-            # 'cmd_topic': '/mecanum_drive_controller/reference_unstamped'
-        }]
-    )
 
     return LaunchDescription([
         LogInfo(msg=['==========================================']),
@@ -118,9 +98,7 @@ def generate_launch_description():
 
         TimerAction(period=1.0, actions=[cartographer_node]),
         TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
-        TimerAction(period=2.5, actions=[joy_node]),
-        TimerAction(period=3.0, actions=[rviz_node, gamepad_teleop_node]),
+        TimerAction(period=3.0, actions=[rviz_node]),
 
-        LogInfo(msg=['建图节点 + 手柄遥控 + RViz 已启动']),
-        LogInfo(msg=['使用手柄控制机器人移动完成建图']),
+        LogInfo(msg=['建图节点  + RViz 已启动']),
     ])

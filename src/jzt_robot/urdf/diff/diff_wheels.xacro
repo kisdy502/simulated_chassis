@@ -29,6 +29,15 @@
         <axis xyz="0 1 0" />
     </joint>
 
+    <!-- ==================== 左轮 ==================== -->
+    <!-- <joint name="left_wheel_joint" type="revolute">
+        <parent link="base_link" />
+        <child link="left_wheel_link" />
+        <origin xyz="${wheel_x} ${wheel_y} ${wheel_z}" />
+        <axis xyz="0 1 0" />
+        <limit lower="-1e9" upper="1e9" effort="100.0" velocity="100.0" />
+    </joint> -->
+
     <!-- ==================== 右轮 ==================== -->
     <link name="right_wheel_link">
         <visual>
@@ -57,25 +66,64 @@
         <axis xyz="0 1 0" />
     </joint>
 
-    <!-- ==================== 脚轮宏 ==================== -->
+    <!-- ==================== 右轮 ==================== -->
+    <!-- <joint name="right_wheel_joint" type="revolute">
+        <parent link="base_link" />
+        <child link="right_wheel_link" />
+        <origin xyz="${wheel_x} ${-wheel_y} ${wheel_z}" />
+        <axis xyz="0 1 0" />
+        <limit lower="-1e9" upper="1e9" effort="100.0" velocity="100.0" />
+    </joint> -->
+
+    <!-- ==================== 脚轮宏（圆柱形，黑色，含支架） ==================== -->
     <xacro:macro name="caster_wheel" params="prefix x y z">
+        <!-- 支架：连接底盘底部到万向轮 -->
+        <link name="${prefix}_bracket_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <cylinder length="0.05" radius="0.012" />
+                </geometry>
+                <material name="dark_grey">
+                    <color rgba="0.3 0.3 0.3 1.0" />
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <cylinder length="0.05" radius="0.012" />
+                </geometry>
+            </collision>
+            <inertial>
+                <mass value="0.05" />
+                <xacro:cylinder_inertia m="0.05" r="0.012" l="0.05" />
+            </inertial>
+        </link>
+
+        <joint name="${prefix}_bracket_joint" type="fixed">
+            <parent link="base_link" />
+            <child link="${prefix}_bracket_link" />
+            <origin xyz="${x} ${y} -0.085" />
+        </joint>
+
+        <!-- 万向轮 -->
         <link name="${prefix}_link">
             <visual>
                 <origin xyz="0 0 0" rpy="${PI_2} 0 0" />
                 <geometry>
-                    <sphere radius="${caster_radius}" />
+                    <cylinder length="${caster_width}" radius="${caster_radius}" />
                 </geometry>
                 <material name="black" />
             </visual>
             <collision>
                 <origin xyz="0 0 0" rpy="${PI_2} 0 0" />
                 <geometry>
-                    <sphere radius="${caster_radius}" />
+                    <cylinder length="${caster_width}" radius="${caster_radius}" />
                 </geometry>
             </collision>
             <inertial>
                 <mass value="${caster_mass}" />
-                <xacro:sphere_inertia m="${caster_mass}" r="${caster_radius}" />
+                <xacro:cylinder_inertia m="${caster_mass}" r="${caster_radius}" l="${caster_width}" />
             </inertial>
         </link>
 
@@ -87,9 +135,9 @@
     </xacro:macro>
 
     <!-- 四个脚轮 -->
-    <xacro:caster_wheel prefix="caster_front_right" x="0.28" y="0.18" z="-0.076" />
-    <xacro:caster_wheel prefix="caster_front_left"  x="0.28" y="-0.18" z="-0.076" />
-    <xacro:caster_wheel prefix="caster_rear_right"  x="-0.28" y="0.18" z="-0.076" />
-    <xacro:caster_wheel prefix="caster_rear_left"   x="-0.28" y="-0.18" z="-0.076" />
+    <xacro:caster_wheel prefix="caster_front_right" x="0.24" y="0.14" z="-0.115" />
+    <xacro:caster_wheel prefix="caster_front_left"  x="0.24" y="-0.14" z="-0.115" />
+    <xacro:caster_wheel prefix="caster_rear_right"  x="-0.24" y="0.14" z="-0.115" />
+    <xacro:caster_wheel prefix="caster_rear_left"   x="-0.24" y="-0.14" z="-0.115" />
 
 </robot>

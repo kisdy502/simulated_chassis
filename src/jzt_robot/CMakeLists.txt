@@ -30,6 +30,10 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/urdf
 )
 install(DIRECTORY
+  world/
+  DESTINATION share/${PROJECT_NAME}/world
+)
+install(DIRECTORY
   meshes/
   DESTINATION share/${PROJECT_NAME}/meshes
 )

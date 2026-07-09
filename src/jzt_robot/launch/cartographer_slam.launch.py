@@ -34,6 +34,11 @@ def generate_launch_description():
     # 启动参数
     declared_arguments = [
         DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='true',
+            description='使用仿真时间'
+        ),
+        DeclareLaunchArgument(
             'configuration_basename',
             default_value='backpack_2d.lua',
             description='Cartographer Lua配置文件'
@@ -53,7 +58,7 @@ def generate_launch_description():
         executable='cartographer_node',
         name='cartographer_node',
         output='screen',
-        parameters=[{'use_sim_time': True}],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
         arguments=[
             '-configuration_directory', config_dir,
             '-configuration_basename', configuration_basename,
@@ -74,7 +79,7 @@ def generate_launch_description():
         name='occupancy_grid_node',
         output='screen',
         parameters=[{
-            'use_sim_time': True,
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
             'resolution': 0.05,  # 5cm分辨率
             'publish_period_sec': 1.0,
         }],

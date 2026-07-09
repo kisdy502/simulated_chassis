@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
 Jazzy + Gazebo Garden/Ionic 差速机器人仿真启动文件
+参考 simulated_chassis/launch/three_wheel_sim.launch.py
 
 传感器：前270°激光 + 后270°激光 + IMU
 驱动方式：ros2_control + diff_drive_controller
 """
 import os
+import xml.etree.ElementTree as ET
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
@@ -17,6 +19,15 @@ from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
 
 
+def get_world_name(sdf_path: str) -> str:
+    """从 SDF 文件中自动提取 world name"""
+    tree = ET.parse(sdf_path)
+    world_elem = tree.getroot().find("world")
+    if world_elem is not None:
+        return world_elem.get("name", "default")
+    return "default"
+
+
 def generate_launch_description():
     pkg_name = "jzt_robot"
     pkg_share = get_package_share_directory(pkg_name)
@@ -26,10 +37,9 @@ def generate_launch_description():
     )
 
     # 机器人名称
-    robot_name = "jzDiffRobot"
-    world_name_arg = DeclareLaunchArgument(
-        "world", default_value="empty.sdf", description="Gazebo world 文件"
-    )
+    robot_name = "diff_agv01"
+    world_path = os.path.join(pkg_share, "world", "world_sm.sdf")
+    world_name = get_world_name(world_path)  # 从 SDF 自动读取，不用硬编码
 
     xacro_path = os.path.join(pkg_share, "urdf", "diff", "robot.xacro")
     robot_description = {
@@ -53,13 +63,13 @@ def generate_launch_description():
         ],
     )
 
-    # 2. Gazebo (使用 empty world 或自定义 world)
+    # 2. Gazebo
     gazebo = ExecuteProcess(
-        cmd=["gz", "sim", "-r", LaunchConfiguration("world")],
+        cmd=["gz", "sim", "-r", world_path],
         output="screen",
     )
 
-    # 3. 生成机器人 (Gazebo 启动3秒后)
+    # 3. 生成机器人 (Gazebo 启动 3 秒后)
     spawn_robot = Node(
         package="ros_gz_sim",
         executable="create",
@@ -78,7 +88,7 @@ def generate_launch_description():
         )
     )
 
-    # 4. ros2_control 控制器 (生成后3秒)
+    # 4. ros2_control 控制器 (Gazebo 启动 6 秒后)
     controller_spawners = TimerAction(
         period=6.0,
         actions=[
@@ -96,6 +106,7 @@ def generate_launch_description():
     )
 
     # 5. ros_gz_bridge: Gazebo 话题 → ROS2 话题
+    clock_gz_topic = f"/world/{world_name}/clock"
     bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
@@ -104,17 +115,16 @@ def generate_launch_description():
             f"/model/{robot_name}/laser_front_link/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
             # 后向激光
             f"/model/{robot_name}/laser_rear_link/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
-            # IMU
             "/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",
-            # 时钟
-            "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
-            # 里程计
+            f"{clock_gz_topic}@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
             f"/model/{robot_name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+            f"/model/{robot_name}/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
         ],
         parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
         remappings=[
             (f"/model/{robot_name}/laser_front_link/scan", "/scan_front"),
             (f"/model/{robot_name}/laser_rear_link/scan", "/scan_rear"),
+            (clock_gz_topic, "/clock"),
         ],
         output="screen",
     )
@@ -125,20 +135,19 @@ def generate_launch_description():
         executable="teleop_twist_keyboard",
         name="teleop_twistkeyboard",
         prefix="xterm -e",
+        parameters=[{"stamped": True, "frame_id": "base_link"}],
         remappings=[("/cmd_vel", "/diff_drive_controller/cmd_vel")],
         output="screen",
     )
 
-    ld = LaunchDescription()
-    ld.add_action(use_sim_time_arg)
-    ld.add_action(world_name_arg)
-    ld.add_action(set_plugin_path)
-    ld.add_action(set_software_render)
-    ld.add_action(robot_state_pub)
-    ld.add_action(gazebo)
-    ld.add_action(spawn_after_gazebo)
-    ld.add_action(controller_spawners)
-    ld.add_action(bridge)
-    ld.add_action(teleop)
-
-    return ld
+    return LaunchDescription([
+        use_sim_time_arg,
+        set_plugin_path,
+        set_software_render,
+        robot_state_pub,
+        gazebo,
+        spawn_after_gazebo,
+        controller_spawners,
+        bridge,
+        teleop,
+    ])

@@ -1,32 +1,6 @@
 #!/usr/bin/env python3
 """
 Nav2 导航 + Cartographer定位 + RViz 可视化启动文件
-
-使用方法:
-    # 启动示例（默认参数）
-    ros2 launch jzt_robot navigation.launch.py
-
-    # 指定地图和配置
-    ros2 launch jzt_robot navigation.launch.py \
-        pbstream_file:=/home/kisdy/maps/jz_map.pbstream
-
-    # 阿克曼底盘 (默认)
-    ros2 launch jzt_robot navigation.launch.py \
-        cmd_topic:=/ackermann_steering_controller/reference_unstamped
-
-    # 差速底盘 / 麦克纳姆底盘
-    ros2 launch jzt_robot navigation.launch.py \
-        cmd_topic:=/cmd_vel
-
-    # 真机调试
-    ros2 launch jzt_robot navigation.launch.py \
-        use_sim_time:=false
-        
-    # 完整
-    ros2 launch jzt_robot navigation.launch.py \
-        pbstream_file:=/home/kisdy/maps/jz_map.pbstream \
-        cmd_topic:=/ackermann_steering_controller/reference_unstamped \
-        use_sim_time:=true
 """
 
 import os

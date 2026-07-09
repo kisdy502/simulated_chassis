@@ -3,10 +3,12 @@
 
     <!-- ==================== 前向激光雷达 (270°) ==================== -->
     <gazebo reference="laser_front_link">
-        <sensor name="laser_front_sensor" type="ray">
+        <sensor name="laser_front_sensor" type="gpu_ray">
             <always_on>true</always_on>
             <update_rate>20</update_rate>
             <visualize>true</visualize>
+            <topic>/model/jzDiffRobot/laser_front_link/scan</topic>
+            <gz_frame_id>laser_front_link</gz_frame_id>
             <pose>0 0 0 0 0 0</pose>
             <ray>
                 <scan>
@@ -33,10 +35,12 @@
 
     <!-- ==================== 后向激光雷达 (270°) ==================== -->
     <gazebo reference="laser_rear_link">
-        <sensor name="laser_rear_sensor" type="ray">
+        <sensor name="laser_rear_sensor" type="gpu_ray">
             <always_on>true</always_on>
             <update_rate>20</update_rate>
             <visualize>true</visualize>
+            <topic>/model/jzDiffRobot/laser_rear_link/scan</topic>
+            <gz_frame_id>laser_rear_link</gz_frame_id>
             <pose>0 0 0 0 0 0</pose>
             <ray>
                 <scan>
@@ -114,7 +118,5 @@
             </imu>
         </sensor>
     </gazebo>
-
-</robot>
 
 </robot>

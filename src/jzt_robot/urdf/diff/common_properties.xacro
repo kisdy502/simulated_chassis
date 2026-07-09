@@ -9,26 +9,27 @@
     <xacro:property name="base_box_x" value="0.6" />
     <xacro:property name="base_box_y" value="0.4" />
     <xacro:property name="base_box_z" value="0.12" />
-    <xacro:property name="base_mass" value="0.2" />
-    <xacro:property name="base_offset_z" value="0.005" />
+    <xacro:property name="base_mass" value="50.0" />
+    <xacro:property name="base_offset_z" value="0.15" />
 
-    <!-- 轮子参数 -->
-    <xacro:property name="wheel_radius" value="0.032" />
-    <xacro:property name="wheel_width" value="0.04" />
-    <xacro:property name="wheel_mass" value="0.2" />
+    <!-- 轮子参数（直径18cm=半径9cm，可装电机转子） -->
+    <xacro:property name="wheel_radius" value="0.09" />
+    <xacro:property name="wheel_width" value="0.06" />
+    <xacro:property name="wheel_mass" value="0.5" />
 
-    <!-- 轮子位置 (相对于 base_link) -->
+    <!-- 轮子位置 (相对于 base_link，轮心在底盘底部边缘) -->
     <xacro:property name="wheel_x" value="-0.02" />
     <xacro:property name="wheel_y" value="0.18" />
     <xacro:property name="wheel_z" value="-0.06" />
 
-    <!-- 差速插件运动学参数 -->
+    <!-- 差速运动学参数 -->
     <xacro:property name="wheel_separation" value="0.36" />
-    <xacro:property name="wheel_diameter" value="0.065" />
+    <xacro:property name="wheel_diameter" value="0.18" />
 
-    <!-- 脚轮参数 -->
-    <xacro:property name="caster_radius" value="0.016" />
-    <xacro:property name="caster_mass" value="0.02" />
+    <!-- 脚轮参数（比动力轮小，z略高于地面防止动力轮悬空） -->
+    <xacro:property name="caster_radius" value="0.03" />
+    <xacro:property name="caster_width" value="0.02" />
+    <xacro:property name="caster_mass" value="0.05" />
 
     <!-- 颜色定义 -->
     <material name="purple">

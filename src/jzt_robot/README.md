@@ -12,48 +12,14 @@ source install/setup.bash
 ros2 launch jzt_robot gazebo_diff.launch.py
 ```
 
-### 1.1 启动 Gazebo 阿克曼仿真（始终运行）差速，阿克曼二选一
-
-```bash
-conda deactivate
-source install/setup.bash
-ros2 launch jzt_robot gazebo_ackermann.launch.py \
-world_name:=jzt_factory_sz.world
-```
-
-> **重要**: Gazebo 启动后保持运行，不要关闭。无论建图还是导航都基于此仿真环境。
-> **重要**: 阿克曼的底盘，移动控制话题和差速不一样，用的是
-> **重要**: ros2_control (ackermann_steering_controller) /ackermann_steering_controller/reference_unstamped
-> **重要**: ros2 topic pub /ackermann_steering_controller/reference_unstamped geometry_msgs/msg/Twist '{linear: {x: 0.6}, angular: {z: 0.4}}' --rate 5
-
-### 1.2 启动 Gazebo 麦克纳姆轮仿真
-
-```bash
-conda deactivate
-source install/setup.bash
-ros2 launch jzt_robot gazebo_mecanum.launch.py use_sim_time:=true
-```
-
----
-
 ### 2. 建图模式
 
 ````bash
-# 在新的终端中启动建图 + RViz
-conda deactivate
-source install/setup.bash
-ros2 launch jzt_robot slam.launch.py
-
 ## 双雷达
-```bash
-ros2 launch slam.launch_double_lidar.py
+source install/setup.bash
+ros2 launch jzt_robot slam_double_lidar.launch.py
 ````
 
-# 键盘控制机器人移动（第三个终端）
-
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-
-````
 
 **建图完成后保存地图:**
 
@@ -320,23 +286,4 @@ ros2 service list
 
 ros2 service type /service_name
 
-# 手动调用 service
 
-## 自定义nav2 插件
-
-DOCKING_DEBUG: dist=0.2791m x=0.2789 y=-0.0098 yaw=0.0547(3.1°) | cmd_v=0.285 cmd_w=-0.032
-[component_container-3] [INFO] [1779442292.586209808] [docking_controller]: DOCKING_DEBUG: dist=0.1023m x=0.1022 y=-0.0037 yaw=0.0522(3.0°) | cmd_v=0.100 cmd_w=-0.019
-[component_container-3] [INFO] [1779442293.146908635] [docking_controller]: Docking succeeded! Errors: x=0.0481, y=-0.0011, yaw=0.0682
-[component_container-3] [INFO] [1779442293.166290975] [docking_controller]: Docking done, switched back to nav2
-[cmd_vel_mux_node-15] [INFO] [1779442293.166412844] [cmd_vel_mux_node]: Switching cmd_vel source: docking -> nav2
-[cmd_vel_mux_node-15] [WARN] [1779442293.170374109] [cmd_vel_mux_node]: Nav2 cmd_vel timeout! Sending zero velocity.
-[cmd_vel_mux_node-15] [WARN] [1779442294.171917418] [cmd_vel_mux_node]: Nav2 cmd_vel timeout! Sending zero velocity.
-[bt_navigator-8] [INFO] [1779442294.247193591] [bt_navigator_navigate_to_pose_rclcpp_node]: DockingAction succeeded
-[bt_navigator-8] [INFO] [1779442294.347270144] [bt_navigator]: Goal succeeded
-[cmd_vel_mux_node-15] [WARN] [1779442295.180391576] [cmd_vel_mux_node]: Nav2 cmd_vel timeout! Sending zero velocity.
-[cmd_vel_mux_node-15] [WARN] [1779442296.180398160] [cmd_vel_mux_node]: Nav2 cmd_vel timeout! Sending zero velocity.
-[cmd_vel_mux_node-15] [WARN] [1779442297.180404323] [cmd_vel_mux_node]: Nav2 cmd_vel timeout! Sending zero velocity.
-[cmd_vel_mux_node-15] [WARN] [1779442298.180451664] [cmd_vel_mux_node]: Nav2 cmd_vel timeout! Sending zero velocity.
-[cmd_vel_mux_node-15] [WARN] [1779442299.180479739] [cmd_vel_mux_node]: Nav2 cmd_vel timeout! Sending zero velocity.
-[cmd_vel_mux_node-15] [WARN] [1779442300.190420800] [cmd_vel_mux_node]: Nav2 cmd_vel timeout! Sending zero velocity.
-[cmd_vel_mux_node-15] [WARN] [1779442301.190440639] [cmd_vel_mux_node]: Nav2 cmd_vel timeout! Sending zero velocity.
