@@ -1,11 +1,15 @@
 <?xml version="1.0"?>
-<robot name="jzDiffRobot"
+<robot name="$(arg robot_name)"
     xmlns:xacro="http://ros.org/wiki/xacro">
 
     <!--
     差速底盘 XACRO 总入口 (适配 ROS2 Jazzy + Gazebo Garden/Ionic)
     传感器：前270° 激光 + 后270° 激光 + IMU
     -->
+
+    <xacro:arg name="robot_name" default="jzDiffRobot"/>
+    <!-- 转为 property 供子文件使用 -->
+    <xacro:property name="robot_name" value="$(arg robot_name)"/>
 
     <!-- 载入核心结构（常量、底盘、轮子） -->
     <xacro:include filename="common_properties.xacro" />

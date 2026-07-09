@@ -2,8 +2,21 @@ cmake_minimum_required(VERSION 3.8)
 project(jzt_robot)
 
 find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
-# 纯配置文件包，无 C++ 源码，仅安装目录
+# Twist → TwistStamped 转发节点
+add_executable(twist_to_stamped_relay
+  src/twist_to_stamped_relay.cpp
+)
+ament_target_dependencies(twist_to_stamped_relay
+  rclcpp
+  geometry_msgs
+)
+
+install(TARGETS twist_to_stamped_relay
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 install(DIRECTORY
   launch/

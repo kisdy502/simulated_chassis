@@ -149,6 +149,9 @@ namespace agv_bridge
     {
         // 创建QoS配置
         auto qos = rclcpp::QoS(10);
+        auto lidar_qos = rclcpp::QoS(10);
+        lidar_qos.best_effort();  // 改成 best_effort
+
 
         // 订阅里程计
         odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
@@ -157,7 +160,7 @@ namespace agv_bridge
 
         // 订阅雷达数据
         scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "scan", qos,
+            "scan", lidar_qos,
             std::bind(&AgvBridgeNode::scan_callback, this, std::placeholders::_1));
 
         // 订阅速度命令

@@ -35,15 +35,19 @@ def generate_launch_description():
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time", default_value="true", description="使用仿真时间"
     )
+    robot_name_arg = DeclareLaunchArgument(
+        "robot_name", default_value="diff_agv01", description="机器人名称"
+    )
 
-    # 机器人名称
+    # 机器人名称（Python 字符串，用于 f-string；也传给 xacro）
     robot_name = "diff_agv01"
-    world_path = os.path.join(pkg_share, "world", "world_sm.sdf")
+    robot_name_launch = LaunchConfiguration("robot_name")
+    world_path = os.path.join(pkg_share, "world", "world_m.sdf")
     world_name = get_world_name(world_path)  # 从 SDF 自动读取，不用硬编码
 
     xacro_path = os.path.join(pkg_share, "urdf", "diff", "robot.xacro")
     robot_description = {
-        "robot_description": Command(["xacro ", xacro_path])
+        "robot_description": Command(["xacro ", xacro_path, " robot_name:=", robot_name_launch])
     }
 
     # 环境变量
@@ -107,6 +111,7 @@ def generate_launch_description():
 
     # 5. ros_gz_bridge: Gazebo 话题 → ROS2 话题
     clock_gz_topic = f"/world/{world_name}/clock"
+
     bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
@@ -122,8 +127,8 @@ def generate_launch_description():
         ],
         parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
         remappings=[
-            (f"/model/{robot_name}/laser_front_link/scan", "/scan_front"),
-            (f"/model/{robot_name}/laser_rear_link/scan", "/scan_rear"),
+            (f"/model/{robot_name}/laser_front_link/scan", "/scan_1"),
+            (f"/model/{robot_name}/laser_rear_link/scan", "/scan_2"),
             (clock_gz_topic, "/clock"),
         ],
         output="screen",
@@ -135,13 +140,34 @@ def generate_launch_description():
         executable="teleop_twist_keyboard",
         name="teleop_twistkeyboard",
         prefix="xterm -e",
-        parameters=[{"stamped": True, "frame_id": "base_link"}],
-        remappings=[("/cmd_vel", "/diff_drive_controller/cmd_vel")],
+        parameters=[{"stamped": False}],  # 发 Twist，不是 TwistStamped
+        # 不 remapping，默认就是 /cmd_vel
+        output="screen",
+    )
+
+    # 里程计转发：/diff_drive_controller/odom → /odom
+    odom_relay = Node(
+        package="topic_tools",
+        executable="relay",
+        arguments=["/diff_drive_controller/odom", "/odom"],
+        output="screen",
+    )
+
+    # 速度转发: /cmd_vel (Twist) → /diff_drive_controller/cmd_vel (TwistStamped)
+    cmd_vel_relay = Node(
+        package="jzt_robot",
+        executable="twist_to_stamped_relay",
+        parameters=[{
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+            "input_topic": "/cmd_vel",
+            "output_topic": "/diff_drive_controller/cmd_vel",
+        }],
         output="screen",
     )
 
     return LaunchDescription([
         use_sim_time_arg,
+        robot_name_arg,
         set_plugin_path,
         set_software_render,
         robot_state_pub,
@@ -150,4 +176,6 @@ def generate_launch_description():
         controller_spawners,
         bridge,
         teleop,
+        odom_relay,
+        cmd_vel_relay,
     ])

@@ -13,8 +13,8 @@ ros2 service call /write_state cartographer_ros_msgs/srv/WriteState "{filename: 
 
 # 转换为 .pgm + .yaml
 ros2 run cartographer_ros cartographer_pbstream_to_ros_map \
-    -pbstream_filename my_map_optimized.pbstream \
-    -map_filestem my_map_optimized
+    -pbstream_filename my_map_m_optimized.pbstream \
+    -map_filestem my_map_m_optimized
 
 # 先录制 bag 包（在线建图时录制）
 ros2 bag record -o my_bag --topics /points2 /odom /imu /tf /tf_static /clock

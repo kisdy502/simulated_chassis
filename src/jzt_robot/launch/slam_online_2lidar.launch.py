@@ -40,7 +40,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'configuration_basename',
-            default_value='jzt_robot_2d_double_lidar.lua',
+            default_value='slam_2d_online.lua',
             description='Cartographer Lua配置文件'
         ),
     ]
@@ -58,8 +58,6 @@ def generate_launch_description():
             '-start_trajectory_with_default_topics', 'true',
         ],
         remappings=[
-            ('scan_1', '/scan_front'),
-            ('scan_2', '/scan_rear'),
             ('odom', '/odom'),
             ('imu', '/imu'),
         ],

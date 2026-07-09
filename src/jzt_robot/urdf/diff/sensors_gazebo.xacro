@@ -7,7 +7,7 @@
             <always_on>true</always_on>
             <update_rate>20</update_rate>
             <visualize>true</visualize>
-            <topic>/model/jzDiffRobot/laser_front_link/scan</topic>
+            <topic>/model/${robot_name}/laser_front_link/scan</topic>
             <gz_frame_id>laser_front_link</gz_frame_id>
             <pose>0 0 0 0 0 0</pose>
             <ray>
@@ -39,7 +39,7 @@
             <always_on>true</always_on>
             <update_rate>20</update_rate>
             <visualize>true</visualize>
-            <topic>/model/jzDiffRobot/laser_rear_link/scan</topic>
+            <topic>/model/${robot_name}/laser_rear_link/scan</topic>
             <gz_frame_id>laser_rear_link</gz_frame_id>
             <pose>0 0 0 0 0 0</pose>
             <ray>
