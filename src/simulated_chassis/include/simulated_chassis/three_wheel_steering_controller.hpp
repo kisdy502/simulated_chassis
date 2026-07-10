@@ -91,12 +91,12 @@ namespace three_wheel_controller
     double wheel_radius_;
     double chassis_radius_;
     double odom_x_{0.0}, odom_y_{0.0}, odom_yaw_{0.0};
-    static constexpr double CMD_TIMEOUT = 0.5; // 0.5秒超时
+    static constexpr double CMD_TIMEOUT = 0.8; // 0.5秒超时
 
     double max_linear_velocity_{1.5};        // m/s
     double max_angular_velocity_{1.0};       // rad/s
     double max_wheel_speed_{15.0};           // rad/s (约1.5m/s / 0.1m)
-    double cmd_timeout_{0.5};                // s
+    double cmd_timeout_{0.8};                // s
     bool enable_reverse_optimization_{true}; // 是否启用后退优化
     bool publish_tf_{false};
     std::string odom_frame_id_{"odom"};
@@ -112,27 +112,6 @@ namespace three_wheel_controller
     // 上一周期的舵角（用于最短路径计算）
     std::array<double, 3> prev_steering_angles_{0.0, 0.0, 0.0};
 
-    // 协方差矩阵 [x, y, z, roll, pitch, yaw]
-    // 注意：z, roll, pitch 是平面机器人不可观测量，设为极大值
-    double pose_covariance_[6] = {
-        0.01,    // x: 位置初始不确定度 0.01 m² (10cm)
-        0.01,    // y: 位置初始不确定度 0.01 m² (10cm)
-        99999.0, // z: 不可观，极大值
-        99999.0, // roll: 不可观，极大值
-        99999.0, // pitch: 不可观，极大值
-        0.01     // yaw: 角度初始不确定度 0.01 rad² (~5.7°)
-    };
-
-    double twist_covariance_[6] = {
-        0.1,     // vx: 速度初始不确定度 0.1 (m/s)²
-        0.1,     // vy: 速度初始不确定度 0.1 (m/s)²
-        99999.0, // vz: 不可观
-        99999.0, // vroll: 不可观
-        99999.0, // vpitch: 不可观
-        0.1      // omega: 角速度初始不确定度 0.1 (rad/s)²
-    };
-    // x-y 协方差耦合项（独立变量）
-    double xy_coupling_ = 0.0;
   };
 
 } // namespace three_wheel_controller

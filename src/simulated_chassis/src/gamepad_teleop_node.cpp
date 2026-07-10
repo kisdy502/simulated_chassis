@@ -3,9 +3,11 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 
-class GamepadTeleopNode : public rclcpp::Node {
+class GamepadTeleopNode : public rclcpp::Node
+{
 public:
-  GamepadTeleopNode() : Node("gamepad_teleop_node") {
+  GamepadTeleopNode() : Node("gamepad_teleop_node")
+  {
     this->declare_parameter<int>("axis_linear", 1);
     this->declare_parameter<int>("axis_angular", 0);
     this->declare_parameter<double>("deadzone", 0.1);
@@ -54,35 +56,43 @@ public:
 
 private:
   // ========== 核心优化：主导方向抑制交叉抖动 ==========
-  void applyCrossSuppression(double &linear, double &angular) {
+  void applyCrossSuppression(double &linear, double &angular)
+  {
     double abs_linear = std::abs(linear);
     double abs_angular = std::abs(angular);
 
-    if (abs_linear > dominant_threshold_ && abs_angular > dominant_threshold_) {
+    if (abs_linear > dominant_threshold_ && abs_angular > dominant_threshold_)
+    {
       return; // 都很大，不抑制
     }
 
     // 线性主导：angular < percentage of cross_suppress_ratio_ of linear → 抑制
     // angular
     if (abs_linear > dominant_threshold_ && abs_angular > deadzone_ &&
-        abs_angular < cross_suppress_ratio_ * abs_linear) {
+        abs_angular < cross_suppress_ratio_ * abs_linear)
+    {
       angular = 0.0;
-    } else if (abs_linear > dominant_threshold_ && abs_angular <= deadzone_) {
+    }
+    else if (abs_linear > dominant_threshold_ && abs_angular <= deadzone_)
+    {
       angular = 0.0;
     }
 
     // 角速度主导：linear < 30% of angular → 抑制 linear
     else if (abs_angular > dominant_threshold_ && abs_linear > deadzone_ &&
-             abs_linear < cross_suppress_ratio_ * abs_angular) {
+             abs_linear < cross_suppress_ratio_ * abs_angular)
+    {
       linear = 0.0;
     }
 
-    else if (abs_angular > dominant_threshold_ && abs_linear <= deadzone_) {
+    else if (abs_angular > dominant_threshold_ && abs_linear <= deadzone_)
+    {
       linear = 0.0;
     }
   }
 
-  void applySoftCrossSuppression(double &linear, double &angular) {
+  void applySoftCrossSuppression(double &linear, double &angular)
+  {
     double abs_linear = std::abs(linear);
     double abs_angular = std::abs(angular);
     double total = abs_linear + abs_angular;
@@ -96,12 +106,15 @@ private:
     const double major_threshold = 0.7; // 当某一方占比超过70%时，视为主导
     const double suppress_factor = 0.3; // 抑制强度，0=完全抑制，1=无抑制
 
-    if (linear_ratio > major_threshold) {
+    if (linear_ratio > major_threshold)
+    {
       // 线性主导，轻微抑制角速度
       double strength =
           (linear_ratio - major_threshold) / (1.0 - major_threshold);
       angular *= (1.0 - suppress_factor * strength);
-    } else if (angular_ratio > major_threshold) {
+    }
+    else if (angular_ratio > major_threshold)
+    {
       double strength =
           (angular_ratio - major_threshold) / (1.0 - major_threshold);
       linear *= (1.0 - suppress_factor * strength);
@@ -124,7 +137,8 @@ private:
   // }
 
   // 自适应动态阈值
-  void applyAdaptiveSuppression(double &linear, double &angular) {
+  void applyAdaptiveSuppression(double &linear, double &angular)
+  {
     double abs_l = std::abs(linear);
     double abs_a = std::abs(angular);
     double mag = std::hypot(abs_l, abs_a); // 综合强度
@@ -136,58 +150,45 @@ private:
     // 大幅度时采用软抑制，抑制强度随着幅度增大而增强
     double suppress_strength = std::clamp((mag - 0.3) / 0.7, 0.0, 1.0);
     double ratio = abs_l / (abs_a + 1e-6);
-    if (ratio > 2.0) {
+    if (ratio > 2.0)
+    {
       angular *= (1.0 - 0.5 * suppress_strength);
-    } else if (ratio < 0.5) {
+    }
+    else if (ratio < 0.5)
+    {
       linear *= (1.0 - 0.5 * suppress_strength);
     }
   }
 
   // 平滑滤波：低通滤波器，抑制高频抖动
-  double lowPassFilter(double current, double &prev, double alpha = 0.7) {
+  double lowPassFilter(double current, double &prev, double alpha = 0.7)
+  {
     double filtered =
         alpha * current + (1.0 - alpha) * prev; // 30%旧值，70%新值
     prev = filtered;
     return filtered;
   }
 
-  void publishVelocity(const geometry_msgs::msg::Twist &twist) {
+  void publishVelocity(const geometry_msgs::msg::Twist &twist)
+  {
     vel_pub_->publish(twist);
-    if (twist.linear.x == 0.0 && twist.angular.z == 0.0) {
+    if (twist.linear.x == 0.0 && twist.angular.z == 0.0)
+    {
       RCLCPP_INFO(this->get_logger(), "发送了停止速度控制！");
     }
   }
 
-  // bool hasAnyInput(const sensor_msgs::msg::Joy::SharedPtr &msg) const {
-  //   for (size_t i = 0; i < msg->axes.size(); i++) {
-  //     auto axesValue = msg->axes[i];
-  //     if (i == 4 ||
-  //         i ==
-  //             5) { // LT RT
-  //                  //
-  //                  我手上有两个北通遥控器，居然一个1.0一个-1.0，真是醉了，先兼容一下，这两个按键忽略
-  //                  // if (axesValue < 1.0 - deadzone_)
-  //                  //   return true;
-  //     } else {
-  //       if (std::abs(axesValue) > deadzone_)
-  //         return true;
-  //     }
-  //   }
-  //   for (const auto &btn : msg->buttons) {
-  //     if (btn != 0)
-  //       return true;
-  //   }
-  //   return false;
-  // }
-
-  double applyDeadzone(double value) {
+  double applyDeadzone(double value)
+  {
     if (std::abs(value) < deadzone_)
       return 0.0;
     return value;
   }
 
-  double getLinearScale() const {
-    switch (speed_level_) {
+  double getLinearScale() const
+  {
+    switch (speed_level_)
+    {
     case 0:
       return 0.3;
     case 1:
@@ -199,8 +200,10 @@ private:
     }
   }
 
-  double getAngularScale() const {
-    switch (speed_level_) {
+  double getAngularScale() const
+  {
+    switch (speed_level_)
+    {
     case 0:
       return 0.6;
     case 1:
@@ -214,7 +217,8 @@ private:
   /**
    * 如果是阿克曼就机器人，只有角速度，没有线速度，是无法移动的，这是由其运动模型决定的
    */
-  void joyCallback(const sensor_msgs::msg::Joy::SharedPtr msg) {
+  void joyCallback(const sensor_msgs::msg::Joy::SharedPtr msg)
+  {
     // const bool has_input = hasAnyInput(msg);
     // auto twist = geometry_msgs::msg::Twist();
     // // RCLCPP_INFO(this->get_logger(), "has_input=%s",
@@ -229,8 +233,10 @@ private:
     // joy_no_trigger_send_zero = 0;
 
     // 紧急停止
-    if (btn_stop_ >= 0 && btn_stop_ < static_cast<int>(msg->buttons.size())) {
-      if (msg->buttons[btn_stop_] == 1) {
+    if (btn_stop_ >= 0 && btn_stop_ < static_cast<int>(msg->buttons.size()))
+    {
+      if (msg->buttons[btn_stop_] == 1)
+      {
         publishStop(); // 直接发停止，并更新时间
         return;
       }
@@ -240,7 +246,8 @@ private:
     handleSpeedButtons(msg);
 
     if (axis_linear_ >= static_cast<int>(msg->axes.size()) ||
-        axis_angular_ >= static_cast<int>(msg->axes.size())) {
+        axis_angular_ >= static_cast<int>(msg->axes.size()))
+    {
       return;
     }
 
@@ -280,55 +287,71 @@ private:
     bool has_cmd =
         (std::abs(linear_cmd) > 1e-6 || std::abs(angular_cmd) > 1e-6);
 
-    if (has_cmd) {
+    if (has_cmd)
+    {
       publishVelocity(twist);
       last_nonzero_cmd_time_ = this->now(); // 更新最后有效指令时间
       stopped_ = false;
       RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
                            "Moving: v=%.2f, ω=%.2f", linear_cmd, angular_cmd);
-    } else {
+    }
+    else
+    {
       // 当前无有效指令，但立刻发一次停止还是留给看门狗？
       // 为了快速响应，如果之前是运动状态，这里直接发一次停止
-      if (!stopped_) {
+      if (!stopped_)
+      {
         publishStop();
       }
       // 如果已经是 stopped_ == true，不需要重复发，看门狗也不动作
     }
   }
 
-  void handleSpeedButtons(const sensor_msgs::msg::Joy::SharedPtr &msg) {
+  void handleSpeedButtons(const sensor_msgs::msg::Joy::SharedPtr &msg)
+  {
     if (btn_speed_up_ >= 0 &&
-        btn_speed_up_ < static_cast<int>(msg->buttons.size())) {
-      if (msg->buttons[btn_speed_up_] == 1 && !speed_up_pressed_) {
-        if (speed_level_ < 2) {
+        btn_speed_up_ < static_cast<int>(msg->buttons.size()))
+    {
+      if (msg->buttons[btn_speed_up_] == 1 && !speed_up_pressed_)
+      {
+        if (speed_level_ < 2)
+        {
           speed_level_++;
           RCLCPP_INFO(this->get_logger(), "Speed UP -> level %d (linear=%.1f)",
                       speed_level_, getLinearScale());
         }
         speed_up_pressed_ = true;
-      } else if (msg->buttons[btn_speed_up_] == 0) {
+      }
+      else if (msg->buttons[btn_speed_up_] == 0)
+      {
         speed_up_pressed_ = false;
       }
     }
 
     if (btn_speed_down_ >= 0 &&
-        btn_speed_down_ < static_cast<int>(msg->buttons.size())) {
-      if (msg->buttons[btn_speed_down_] == 1 && !speed_down_pressed_) {
-        if (speed_level_ > 0) {
+        btn_speed_down_ < static_cast<int>(msg->buttons.size()))
+    {
+      if (msg->buttons[btn_speed_down_] == 1 && !speed_down_pressed_)
+      {
+        if (speed_level_ > 0)
+        {
           speed_level_--;
           RCLCPP_INFO(this->get_logger(),
                       "Speed DOWN -> level %d (linear=%.1f)", speed_level_,
                       getLinearScale());
         }
         speed_down_pressed_ = true;
-      } else if (msg->buttons[btn_speed_down_] == 0) {
+      }
+      else if (msg->buttons[btn_speed_down_] == 0)
+      {
         speed_down_pressed_ = false;
       }
     }
   }
 
   // ========== 停止发布辅助函数 ==========
-  void publishStop() {
+  void publishStop()
+  {
     geometry_msgs::msg::Twist stop;
     vel_pub_->publish(stop);
     last_nonzero_cmd_time_ = this->now(); // 更新，防止看门狗立即重复触发
@@ -337,12 +360,14 @@ private:
   }
 
   // ========== 看门狗回调 ==========
-  void watchdogCallback() {
+  void watchdogCallback()
+  {
     if (stopped_)
       return; // 已停止，不重复
 
     double elapsed = (this->now() - last_nonzero_cmd_time_).seconds();
-    if (elapsed >= watchdog_timeout_) {
+    if (elapsed >= watchdog_timeout_)
+    {
       publishStop();
       RCLCPP_WARN(this->get_logger(), "看门狗超时 (%.2fs) -> 强制停止",
                   elapsed);
@@ -376,7 +401,8 @@ private:
   bool stopped_ = true;
 };
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<GamepadTeleopNode>());
   rclcpp::shutdown();

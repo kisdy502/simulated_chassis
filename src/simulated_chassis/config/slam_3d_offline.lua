@@ -28,30 +28,38 @@ options = {
   landmarks_sampling_ratio = 1.,
 }
 
+-- ==== 与在线建图一致的核心参数 ====
 MAP_BUILDER.use_trajectory_builder_2d = false
 MAP_BUILDER.use_trajectory_builder_3d = true
-MAP_BUILDER.num_background_threads = 8
 
--- ✅ 离线：稍微提高精度
+-- 3D 轨迹构建器
 TRAJECTORY_BUILDER_3D.min_range = 0.2
-TRAJECTORY_BUILDER_3D.max_range = 30.0
-TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.03      -- 从 0.05 改小，保留更多细节
-TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 4  -- 从 2 增加到 4，提高匹配稳定性
+TRAJECTORY_BUILDER_3D.max_range = 35.0
+TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
+TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.03      -- 离线保留更多特征点
+TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
+TRAJECTORY_BUILDER_3D.submaps.num_range_data = 140
 
--- ✅ 回环检测（与在线一致）
-TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = true
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.6
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(1.)
+TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0
+TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2
+TRAJECTORY_BUILDER_3D.ceres_scan_matcher.ceres_solver_options.max_num_iterations = 30  -- 帧间匹配更精细
 
--- 回环搜索窗口（大地图必须大）
--- POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_xy_search_window = 4.0
--- POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_z_search_window = 1.0
--- POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.angular_search_window = math.rad(20.0)  -- 20° 搜索
+-- 全局优化
+POSE_GRAPH.optimize_every_n_nodes = 40
+POSE_GRAPH.constraint_builder.sampling_ratio = 0.5
+POSE_GRAPH.constraint_builder.min_score = 0.65
+POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
+POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_xy_search_window = 7.0
+POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.angular_search_window = math.rad(20.)
+POSE_GRAPH.constraint_builder.ceres_scan_matcher_3d.ceres_solver_options.max_num_iterations = 30
+POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2
+POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4
+POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
+POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
 
--- 些尝试性优化，看能不能大幅度提升建图质量
---  每个节点都优化（离线不受实时限制）
-POSE_GRAPH.optimize_every_n_nodes = 30
--- ✅ 最终优化：大量迭代打磨结果
-POSE_GRAPH.max_num_final_iterations = 300
+-- ==== 离线专属优化（不受实时限制） ====
+MAP_BUILDER.num_background_threads = 8         -- 离线可用更多线程
+POSE_GRAPH.max_num_final_iterations = 300       -- 默认 200，离线稍加（之前 1000 会崩）
+
 return options

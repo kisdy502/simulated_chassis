@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import xml.etree.ElementTree as ET
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
@@ -9,6 +10,15 @@ from launch.actions import (
 from launch.event_handlers import OnProcessStart
 from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
+
+
+def get_world_name(sdf_path: str) -> str:
+    """从 SDF 文件中自动提取 world name"""
+    tree = ET.parse(sdf_path)
+    world_elem = tree.getroot().find("world")
+    if world_elem is not None:
+        return world_elem.get("name", "default")
+    return "default"
 
 
 def generate_launch_description():
@@ -24,6 +34,9 @@ def generate_launch_description():
 
     xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis.xacro")
     world_path = os.path.join(pkg_share, "world", "world_m.sdf")
+    world_name = get_world_name(world_path)  # 从 SDF 自动读取，避免硬编码
+    clock_gz_topic = f"/world/{world_name}/clock"
+
     robot_description = {
         "robot_description": Command(["xacro ", xacro_path])
     }
@@ -46,7 +59,7 @@ def generate_launch_description():
     set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
 
     gazebo = ExecuteProcess(
-        cmd=["gz", "sim", "-r", world_path],
+        cmd=["gz", "sim", "-r", "-s", world_path],
         output="screen",
     )
 
@@ -86,12 +99,14 @@ def generate_launch_description():
             '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked',
             '/lidar/point_cloud@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
             '/imu@sensor_msgs/msg/Imu[gz.msgs.IMU',
-            '/world/test_world/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
+            f'{clock_gz_topic}@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
             f'/model/{robot_name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
         ],
-        parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
+        parameters=[{
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        }],
         remappings=[
-            ('/world/test_world/clock', '/clock'),
+            (clock_gz_topic, '/clock'),
             ('/lidar/point_cloud/points', 'points2'),
         ],
         output='screen'

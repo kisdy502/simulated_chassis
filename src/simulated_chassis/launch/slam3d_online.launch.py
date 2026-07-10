@@ -21,7 +21,7 @@ def generate_launch_description():
 
     rviz_config = os.path.join(
         get_package_share_directory('simulated_chassis'),
-        'rviz', 'cartographer_3d.rviz'  # 新建3D专用RViz配置
+        'rviz', 'slam_3d.rviz'  # 新建3D专用RViz配置
     )
 
     # 启动参数
@@ -94,11 +94,10 @@ def generate_launch_description():
     return LaunchDescription([
         LogInfo(msg=['==========================================']),
         LogInfo(msg=['Cartographer 3D建图模式启动']),
-        LogInfo(msg=['==========================================']),
 
         *declared_arguments,
+        cartographer_node,
+        cartographer_occupancy_grid_node,
+        rviz_node
 
-        TimerAction(period=1.0, actions=[cartographer_node]),
-        TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
-        TimerAction(period=3.0, actions=[rviz_node]),
     ])

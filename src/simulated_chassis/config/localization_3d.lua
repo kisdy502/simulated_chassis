@@ -39,7 +39,7 @@ MAP_BUILDER.num_background_threads = 4
 
 -- 前端参数（可以比建图更宽松，因为地图已存在）
 TRAJECTORY_BUILDER_3D.min_range = 0.2
-TRAJECTORY_BUILDER_3D.max_range = 24.0
+TRAJECTORY_BUILDER_3D.max_range = 35.0
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.15   -- 定位可以用更粗体素，加快速度
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180

@@ -299,10 +299,10 @@ namespace three_wheel_controller
         if (last_cmd_)
         {
             double dt = (time - last_cmd_time_).seconds();
-            RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 10000,
-                                 "time=%.3f, last_cmd_time=%.3f, dt=%.3f",
-                                 time.seconds(), last_cmd_time_.seconds(), dt);
-            if (dt < CMD_TIMEOUT) // 0.5秒超时
+            // RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 10000,
+            //                      "time=%.3f, last_cmd_time=%.3f, dt=%.3f",
+            //                      time.seconds(), last_cmd_time_.seconds(), dt);
+            if (dt < cmd_timeout_) // 0.5秒超时
             {
                 vx = last_cmd_->linear.x;
                 vy = last_cmd_->linear.y;
@@ -314,8 +314,8 @@ namespace three_wheel_controller
                 last_cmd_->linear.y = 0.0;
                 last_cmd_->angular.z = 0.0;
                 // 可选：打一次日志
-                RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 15000,
-                                     "Command timeout, zeroing velocity");
+                // RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 15000,
+                //                      "Command timeout, zeroing velocity");
             }
 
             // 3. 输入速度限制（保护）
@@ -366,7 +366,7 @@ namespace three_wheel_controller
             // 9. 记录当前舵角供下一周期使用
             prev_steering_angles_ = steering_angles;
 
-            // 10. 里程计 — 从轮子 state interface 读实际舵角+轮速，前向运动学反算
+            // 10. 读实际舵角+轮速 → 前向运动学反算实际速度
             std::array<double, 3> actual_steering{0, 0, 0};
             std::array<double, 3> actual_wheel_vel{0, 0, 0};
             for (size_t i = 0; i < 3; ++i)
@@ -382,11 +382,10 @@ namespace three_wheel_controller
                 actual_steering[i] = steer_opt.value();
                 actual_wheel_vel[i] = wheel_opt.value();
             }
-
             double est_vx, est_vy, est_omega;
             computeForwardKinematics(actual_steering, actual_wheel_vel, est_vx, est_vy, est_omega);
 
-            // ========== 精确积分（必须用 EST 值）==========
+            // 11. 用反算的实际速度做里程计积分
             double dt2 = period.seconds();
             if (dt2 > 0.0 && dt2 < 1.0)
             {
@@ -406,7 +405,6 @@ namespace three_wheel_controller
                     odom_y_ += -R * (std::cos(theta0 + dtheta) - std::cos(theta0));
                     odom_yaw_ += dtheta;
                 }
-
                 while (odom_yaw_ > M_PI)
                     odom_yaw_ -= 2.0 * M_PI;
                 while (odom_yaw_ < -M_PI)
@@ -414,6 +412,7 @@ namespace three_wheel_controller
             }
 
             publishOdometry(time, est_vx, est_vy, est_omega);
+
             return controller_interface::return_type::OK;
         }
 
@@ -464,13 +463,8 @@ namespace three_wheel_controller
         const std::array<double, 3> &wheel_velocities,
         double &vx, double &vy, double &omega)
     {
-        // ========== 1. 构建加权最小二乘系统 ==========
-        // A^T A * [vx, vy, omega]^T = A^T b
-        // 其中 A 是 6x3 矩阵，b 是 6x1 向量
-
-        double ATA[3][3] = {{0}};            // A^T A
-        double ATb[3] = {0};                 // A^T b
-        // double weights[3] = {1.0, 1.0, 1.0}; // ← 移到这，初始化1.0
+        double ATA[3][3] = {{0}};
+        double ATb[3] = {0};
 
         for (size_t i = 0; i < 3; ++i)
         {
@@ -482,59 +476,41 @@ namespace three_wheel_controller
             double c = std::cos(alpha);
             double s = std::sin(alpha);
 
-            // === 权重计算：舵角可靠性 ===
-            double w = std::abs(c); // |cos(α)|: 90°时→0, 0°时→1
-            if (w < 0.2)
-                w = 0.2; // 最低保留20%
+            // 约束方程与逆运动学一致：
+            // v_w * cos(α) = vx - ω*yi
+            // v_w * sin(α) = vy + ω*xi
 
-            // 异常检测：cos²+sin² 应≈1
-            double dir_norm = c * c + s * s;
-            if (std::abs(dir_norm - 1.0) > 0.15)
-            {
-                w = 0.05; // 编码器异常，几乎不用
-                // RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
-                //                      "Wheel[%zu] steering angle invalid: cos²+sin²=%.3f", i, dir_norm);
-            }
+            // 统一权重（先简化测试）
+            double w = 1.0;
+            double w2 = w * w;
 
-            double w2 = w * w; // 权重平方（因为 A^T A 和 A^T b 都要乘 w）
-
-            // 约束1: v_w * c = vx - ω*yi  →  [1, 0, -yi] * [vx,vy,ω]^T = v_w*c
-            // 约束2: v_w * s = vy + ω*xi  →  [0, 1,  xi] * [vx,vy,ω]^T = v_w*s
-
-            // A^T A 累加
-            ATA[0][0] += w2 * 1.0;
-            ATA[0][1] += 0.0;
-            ATA[0][2] += w2 * (-yi);
-            ATA[1][0] += 0.0;
-            ATA[1][1] += w2 * 1.0;
-            ATA[1][2] += w2 * xi;
-            ATA[2][0] += w2 * (-yi);
-            ATA[2][1] += w2 * xi;
-            ATA[2][2] += w2 * (xi * xi + yi * yi);
-
-            // A^T b 累加
+            // === X约束: vx - ω*yi = v_w * cos(α) ===
+            ATA[0][0] += w2;
+            ATA[0][2] += w2 * (-yi); // ← 改回 -yi
+            ATA[2][0] += w2 * (-yi); // ← 改回 -yi
+            ATA[2][2] += w2 * yi * yi;
             ATb[0] += w2 * v_w * c;
+            ATb[2] += w2 * (-yi) * v_w * c; // ← 改回 -yi
+
+            // === Y约束: vy + ω*xi = v_w * sin(α) ===
+            ATA[1][1] += w2;
+            ATA[1][2] += w2 * xi; // ← 改回 +xi
+            ATA[2][1] += w2 * xi; // ← 改回 +xi
+            ATA[2][2] += w2 * xi * xi;
             ATb[1] += w2 * v_w * s;
-            ATb[2] += w2 * (-yi * v_w * c + xi * v_w * s);
-            // weights[i] = w;
+            ATb[2] += w2 * xi * v_w * s; // ← 改回 +xi
         }
 
-        // ========== 2. 求解 3x3 线性系统 (ATA * x = ATb) ==========
-        // 用克拉默法则 / 伴随矩阵求逆
-
+        // ========== 求解线性系统 ==========
         double det = ATA[0][0] * (ATA[1][1] * ATA[2][2] - ATA[1][2] * ATA[2][1]) - ATA[0][1] * (ATA[1][0] * ATA[2][2] - ATA[1][2] * ATA[2][0]) + ATA[0][2] * (ATA[1][0] * ATA[2][1] - ATA[1][1] * ATA[2][0]);
 
         if (std::abs(det) < 1e-9)
         {
-            // RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 5000,
-            //                      "Forward kinematics singular! det=%.2e", det);
             vx = vy = omega = 0.0;
             return;
         }
 
         double inv_det = 1.0 / det;
-
-        // 伴随矩阵
         double invATA[3][3];
         invATA[0][0] = (ATA[1][1] * ATA[2][2] - ATA[1][2] * ATA[2][1]) * inv_det;
         invATA[0][1] = -(ATA[0][1] * ATA[2][2] - ATA[0][2] * ATA[2][1]) * inv_det;
@@ -550,22 +526,18 @@ namespace three_wheel_controller
         vy = invATA[1][0] * ATb[0] + invATA[1][1] * ATb[1] + invATA[1][2] * ATb[2];
         omega = invATA[2][0] * ATb[0] + invATA[2][1] * ATb[1] + invATA[2][2] * ATb[2];
 
-        // ========== 3. 调试日志（5秒一次）==========
-        // RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 5000,
-        //                      "\n===== Forward Kinematics Debug (5s) =====\n"
-        //                      "  [Raw Input]\n"
-        //                      "    Wheel0: steer=%+.4f rad (%+.2f°), wheel_vel=%+.4f rad/s, weight=%.3f\n"
-        //                      "    Wheel1: steer=%+.4f rad (%+.2f°), wheel_vel=%+.4f rad/s, weight=%.3f\n"
-        //                      "    Wheel2: steer=%+.4f rad (%+.2f°), wheel_vel=%+.4f rad/s, weight=%.3f\n"
-        //                      "  [Computed]\n"
-        //                      "    vx=%+.6f m/s, vy=%+.6f m/s, omega=%+.6f rad/s (%.4f°/s)\n"
-        //                      "    v_norm=%.6f m/s, yaw_rate=%.4f°/s\n"
+        // 调试日志
+        // RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
+        //                      "\n===== Forward Kinematics Debug =====\n"
+        //                      "  Wheel0: steer=%+.4f rad (%+.2f°), vel=%+.4f rad/s\n"
+        //                      "  Wheel1: steer=%+.4f rad (%+.2f°), vel=%+.4f rad/s\n"
+        //                      "  Wheel2: steer=%+.4f rad (%+.2f°), vel=%+.4f rad/s\n"
+        //                      "  Result: vx=%+.4f m/s, vy=%+.4f m/s, omega=%+.4f rad/s (%+.1f°/s)\n"
         //                      "========================================",
-        //                      steering_angles[0], steering_angles[0] * 180.0 / M_PI, wheel_velocities[0], weights[0],
-        //                      steering_angles[1], steering_angles[1] * 180.0 / M_PI, wheel_velocities[1], weights[1],
-        //                      steering_angles[2], steering_angles[2] * 180.0 / M_PI, wheel_velocities[2], weights[2],
-        //                      vx, vy, omega, omega * 180.0 / M_PI,
-        //                      std::hypot(vx, vy), omega * 180.0 / M_PI);
+        //                      steering_angles[0], steering_angles[0] * 180.0 / M_PI, wheel_velocities[0],
+        //                      steering_angles[1], steering_angles[1] * 180.0 / M_PI, wheel_velocities[1],
+        //                      steering_angles[2], steering_angles[2] * 180.0 / M_PI, wheel_velocities[2],
+        //                      vx, vy, omega, omega * 180.0 / M_PI);
     }
 
     /**
@@ -693,107 +665,7 @@ namespace three_wheel_controller
         {
             return;
         }
-        const double dt = (time - last_odom_time_).seconds();
         last_odom_time_ = time;
-
-        // ========== 协方差计算 ==========
-        // 基础噪声参数（根据你的编码器精度调整）
-        const double k_linear = 0.05;  // 线速度 5% 噪声
-        const double k_angular = 0.10; // 角速度 10% 噪声
-        // const double k_steer = 0.02;   // 舵角噪声对速度的贡献 (rad)
-        // 速度大小
-        double v = std::hypot(vx, vy);
-
-        // 当前速度的标准差
-        double sigma_vx = k_linear * std::abs(vx) + 0.01;
-        double sigma_vy = k_linear * std::abs(vy) + 0.01;
-        double sigma_omega = k_angular * std::abs(omega) + 0.02;
-
-        // 舵角误差导致的速度不确定性（转弯时更明显）
-        if (std::abs(omega) > 0.01)
-        {
-            // 转弯时，方向不确定性增大
-            sigma_vy += 0.02 * v * std::abs(omega);
-        }
-
-        // 填充速度协方差
-        twist_covariance_[0] = sigma_vx * sigma_vx; // vx
-        twist_covariance_[1] = 0.0;                 // vx-vy 耦合
-        twist_covariance_[2] = 0.0;
-        twist_covariance_[3] = 0.0;
-        twist_covariance_[4] = 0.0;
-        twist_covariance_[5] = sigma_omega * sigma_omega; // omega
-
-        // ========== 2. 传播位姿协方差 ==========
-        if (dt > 0.0 && dt < 1.0)
-        {
-            // 速度误差传播到位置误差
-            // 简化模型：位置误差 = 速度误差 * dt
-            double sigma_x_from_vx = sigma_vx * dt;
-            double sigma_y_from_vy = sigma_vy * dt;
-
-            // 角度误差累积（陀螺积分漂移）
-            double sigma_yaw_from_omega = sigma_omega * dt;
-
-            // 旋转带来的耦合误差（转弯时 x 和 y 方向会耦合）
-            double coupling = 0.0;
-            if (std::abs(omega) > 0.01 && v > 0.1)
-            {
-                // 转弯半径 R = v / omega，误差导致半径变化
-                double R = v / std::abs(omega);
-                double sigma_R = 0.02 * R; // 半径估计误差 2%
-                coupling = sigma_R * sigma_R * dt * dt * 0.5;
-            }
-
-            // 更新协方差（考虑速度越高，累积越快）
-            double speed_factor = 1.0 + 0.5 * v; // 速度越高，协方差增长越快
-
-            pose_covariance_[0] += (sigma_x_from_vx * sigma_x_from_vx + coupling) * speed_factor;
-            pose_covariance_[1] += (sigma_y_from_vy * sigma_y_from_vy + coupling) * speed_factor;
-            pose_covariance_[5] += sigma_yaw_from_omega * sigma_yaw_from_omega * speed_factor;
-
-            // ✅ 更新 x-y 耦合项（使用独立变量）
-            if (std::abs(omega) > 0.01)
-            {
-                xy_coupling_ += coupling * std::sin(omega * dt) * speed_factor;
-            }
-            else
-            {
-                xy_coupling_ *= 0.99; // 直线时衰减
-            }
-
-            // 静止时协方差缓慢收敛（有界）
-            if (v < 0.01 && std::abs(omega) < 0.005)
-            {
-                // 静止状态：协方差收敛到基础噪声水平
-                const double BASE_COV = 0.0001; // 基础协方差（10cm²）
-                for (int i = 0; i < 6; ++i)
-                {
-                    if (i == 3 || i == 4)
-                        continue;                 // roll, pitch 保持高值
-                    pose_covariance_[i] *= 0.999; // 缓慢衰减
-                    if (pose_covariance_[i] < BASE_COV)
-                    {
-                        pose_covariance_[i] = BASE_COV;
-                    }
-                }
-                xy_coupling_ *= 0.99; // 静止时耦合也衰减
-            }
-
-            // 上限保护
-            const double MAX_COV = 100.0; // 最大协方差（10m²）
-            for (int i = 0; i < 6; ++i)
-            {
-                if (std::isnan(pose_covariance_[i]) || !std::isfinite(pose_covariance_[i]))
-                {
-                    pose_covariance_[i] = 0.01;
-                }
-                if (pose_covariance_[i] > MAX_COV)
-                {
-                    pose_covariance_[i] = MAX_COV;
-                }
-            }
-        }
 
         odom_msg_.header.stamp = time;
         odom_msg_.header.frame_id = odom_frame_id_;
@@ -811,32 +683,27 @@ namespace three_wheel_controller
         odom_msg_.twist.twist.linear.y = vy;
         odom_msg_.twist.twist.angular.z = omega;
 
-        // ========== 4. 填充协方差矩阵 ==========
-        // Pose covariance (6x6, row-major)
-        // 只填对角线和必要的耦合项
-        // 对角线
-        odom_msg_.pose.covariance[0] = pose_covariance_[0];  // x
-        odom_msg_.pose.covariance[7] = pose_covariance_[1];  // y
-        odom_msg_.pose.covariance[14] = pose_covariance_[2]; // z (固定)
-        odom_msg_.pose.covariance[21] = 99999.0;             // roll (不可观测)
-        odom_msg_.pose.covariance[28] = 99999.0;             // pitch (不可观测)
-        odom_msg_.pose.covariance[35] = pose_covariance_[5]; // yaw
+        // ===== 协方差：仿真用常值即可 =====
+        // 值小 = Cartographer 更信任里程计；值大 = 更依赖激光匹配
+        // 0.01 表示约 10cm 的不确定度，调试时可调整
 
-        // ✅ 耦合项使用独立变量
-        if (std::abs(xy_coupling_) > 0.001)
-        {
-            odom_msg_.pose.covariance[1] = xy_coupling_; // x-y
-            odom_msg_.pose.covariance[6] = xy_coupling_; // y-x
-        }
+        // Pose covariance
+        std::fill(std::begin(odom_msg_.pose.covariance), std::end(odom_msg_.pose.covariance), 0.0);
+        odom_msg_.pose.covariance[0] = 0.01;     // x
+        odom_msg_.pose.covariance[7] = 0.01;     // y
+        odom_msg_.pose.covariance[14] = 99999.0; // z (不可观测)
+        odom_msg_.pose.covariance[21] = 99999.0; // roll
+        odom_msg_.pose.covariance[28] = 99999.0; // pitch
+        odom_msg_.pose.covariance[35] = 0.02;    // yaw
 
-        // Twist covariance (同样6x6)
-        // 只填 vx, vy, omega
-        odom_msg_.twist.covariance[0] = twist_covariance_[0];  // vx
-        odom_msg_.twist.covariance[7] = twist_covariance_[1];  // vy
-        odom_msg_.twist.covariance[14] = 99999.0;              // vz
-        odom_msg_.twist.covariance[21] = 99999.0;              // vroll
-        odom_msg_.twist.covariance[28] = 99999.0;              // vpitch
-        odom_msg_.twist.covariance[35] = twist_covariance_[5]; // omega
+        // Twist covariance
+        std::fill(std::begin(odom_msg_.twist.covariance), std::end(odom_msg_.twist.covariance), 0.0);
+        odom_msg_.twist.covariance[0] = 0.01;     // vx
+        odom_msg_.twist.covariance[7] = 0.01;     // vy
+        odom_msg_.twist.covariance[14] = 99999.0; // vz
+        odom_msg_.twist.covariance[21] = 99999.0; // vroll
+        odom_msg_.twist.covariance[28] = 99999.0; // vpitch
+        odom_msg_.twist.covariance[35] = 0.02;    // omega
 
         odom_pub_->publish(odom_msg_);
 
@@ -856,13 +723,10 @@ namespace three_wheel_controller
         }
 
         // ========== 5. 可选的调试日志 ==========
-        // RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
-        //                      "Odom stamp=%.3f | Cov: x=%.4f, y=%.4f, yaw=%.4f | "
-        //                      "Pose: x=%.3f, y=%.3f, yaw=%.1f° | Twist: vx=%.3f, vy=%.3f, omega=%.3f",
-        //                      time.seconds(),
-        //                      pose_covariance_[0], pose_covariance_[1], pose_covariance_[5],
-        //                      odom_x_, odom_y_, odom_yaw_ * 180.0 / M_PI,
-        //                      vx, vy, omega);
+        RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
+                             "Odom stamp=%.3f ,Pose: x=%.3f, y=%.3f, yaw=%.1f° | Twist: vx=%.3f, vy=%.3f, omega=%.3f",
+                             time.seconds(), odom_x_, odom_y_, odom_yaw_ * 180.0 / M_PI,
+                             vx, vy, omega);
     }
 
 } // namespace three_wheel_controller

@@ -63,3 +63,5 @@ coverage/
 # 建图的地图和录的包
 my_bag
 my_bag_sm
+
+*.pbstream

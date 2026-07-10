@@ -78,6 +78,7 @@ def generate_launch_description():
         executable="pointcloud_to_laserscan_node",
         name="pointcloud_to_laserscan",
         parameters=[{
+            "use_sim_time": use_sim_time,
             "target_frame": "base_link",      # 输出的 LaserScan 的 frame_id
             "transform_tolerance": 0.01,
             "min_height": 0.0,                # 只取 z=0 附近的点

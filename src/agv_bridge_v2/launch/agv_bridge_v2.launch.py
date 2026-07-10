@@ -68,31 +68,31 @@ def generate_launch_description():
         arguments=["--ros-args", "--log-level", "info", "-p", "use_sim_time:=true"],
     )
 
-    pointcloud_to_laserscan_node = Node(
-        package='pointcloud_to_laserscan',
-        executable='pointcloud_to_laserscan_node',
-        name='pointcloud_to_laserscan',
-        remappings=[
-            ('cloud_in', '/points2'),
-            ('scan', '/scan'),
-        ],
-        parameters=[{
-            'target_frame': 'lidar_link',      # 雷达坐标系
-            'transform_tolerance': 0.01,
-            'min_height': -0.1,                 # 截取高度下限
-            'max_height': 0.1,                  # 截取高度上限
-            'angle_min': -3.14159,
-            'angle_max': 3.14159,
-            'angle_increment': 0.0087,          # ~0.5°
-            'scan_time': 0.1,
-            'range_min': 0.2,
-            'range_max': 30.0,
-            'use_inf': True,
-            'inf_epsilon': 1.0,
-            'concurrency_level': 1,
-        }],
-        arguments=["--ros-args", "-p", "use_sim_time:=true"],
-    )
+    # pointcloud_to_laserscan_node = Node(
+    #     package='pointcloud_to_laserscan',
+    #     executable='pointcloud_to_laserscan_node',
+    #     name='pointcloud_to_laserscan',
+    #     remappings=[
+    #         ('cloud_in', '/points2'),
+    #         ('scan', '/scan'),
+    #     ],
+    #     parameters=[{
+    #         'target_frame': 'lidar_link',      # 雷达坐标系
+    #         'transform_tolerance': 0.01,
+    #         'min_height': -0.1,                 # 截取高度下限
+    #         'max_height': 0.1,                  # 截取高度上限
+    #         'angle_min': -3.14159,
+    #         'angle_max': 3.14159,
+    #         'angle_increment': 0.0087,          # ~0.5°
+    #         'scan_time': 0.1,
+    #         'range_min': 0.2,
+    #         'range_max': 30.0,
+    #         'use_inf': True,
+    #         'inf_epsilon': 1.0,
+    #         'concurrency_level': 1,
+    #     }],
+    #     arguments=["--ros-args", "-p", "use_sim_time:=true"],
+    # )
 
     return LaunchDescription(
         [
@@ -104,6 +104,6 @@ def generate_launch_description():
             imu_serial_port_arg,
             imu_baud_rate_arg,
             agv_bridge_node,
-            pointcloud_to_laserscan_node
+            # pointcloud_to_laserscan_node
         ]
     )
