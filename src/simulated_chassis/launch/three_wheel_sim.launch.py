@@ -56,10 +56,16 @@ def generate_launch_description():
         "/opt/ros/jazzy/lib"
     )
 
-    set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
+    # set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
+    #  # 强制软件渲染 + Mesa 版本覆盖
+    # set_mesa_gl = SetEnvironmentVariable("MESA_GL_VERSION_OVERRIDE", "4.5")
+    # set_mesa_glsl = SetEnvironmentVariable("MESA_GLSL_VERSION_OVERRIDE", "450")
+    
+    # # 禁用 EGL 显式设备选择（关键！）
+    # set_egl_platform = SetEnvironmentVariable("EGL_PLATFORM", "surfaceless")
 
     gazebo = ExecuteProcess(
-        cmd=["gz", "sim", "-r", "-s", world_path],
+        cmd=["gz", "sim", "-r", "-s", "--render-engine", "ogre", "--render-engine-api-backend", "opengl", world_path],
         output="screen",
     )
 
@@ -166,7 +172,7 @@ def generate_launch_description():
     return LaunchDescription([
         use_sim_time_arg,
         set_plugin_path,
-        set_software_render,
+        # set_software_render,
         robot_state_pub,
         gazebo,
         spawn_after_gazebo,

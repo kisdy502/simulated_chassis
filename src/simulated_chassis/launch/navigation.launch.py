@@ -31,7 +31,7 @@ def generate_launch_description():
     # ===== 文件路径 =====
     cartographer_config_dir = os.path.join(pkg_share, 'config')
     nav2_params_file = os.path.join(pkg_share, 'param', 'nav2_params_3d.yaml')
-    rviz_config = os.path.join(pkg_share, 'rviz', 'cartographer_3d.rviz')
+    rviz_config = os.path.join(pkg_share, 'rviz', 'nav_3d.rviz')
     default_pbstream = os.path.join(pkg_share, 'maps', 'my_map_optimized.pbstream')
 
     # ===== 启动参数 =====
