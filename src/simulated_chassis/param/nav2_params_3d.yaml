@@ -203,7 +203,7 @@ local_costmap:
       height: 8
       resolution: 0.05
       footprint: "[[-0.3, -0.2], [-0.3, 0.2], [0.3, 0.2], [0.3, -0.2]]"
-      inflation_radius: 0.38
+      inflation_radius: 0.55
       
       # ✅ 三舵轮：只用3D雷达点云
       plugins: ["obstacle_layer", "inflation_layer"]
@@ -211,7 +211,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 5.0
-        inflation_radius: 0.38
+        inflation_radius: 0.55
       
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -284,7 +284,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.38
+        inflation_radius: 0.55
       
       always_send_full_costmap: True
 
