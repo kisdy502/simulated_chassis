@@ -28,12 +28,32 @@ planner_server:
   ros__parameters:
     use_sim_time: True
     expected_planner_frequency: 2.0
+    # planner_plugins: ["GridBased"]
+    # GridBased:
+    #   plugin: "nav2_navfn_planner::NavfnPlanner"
+    #   tolerance: 0.2
+    #   use_astar: false
+    #   allow_unknown: true   # ✅ 改为 true，允许未知区域
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.2
-      use_astar: false
-      allow_unknown: true   # ✅ 改为 true，允许未知区域
+      plugin: "nav2_smac_planner::SmacPlannerHybrid"
+      # --- 以下是关键参数 ---
+      tolerance: 0.5                 # 到达目标点的容差
+      allow_unknown: true            # 允许在未知区域规划
+      max_iterations: 1000000        # 最大迭代次数
+      max_on_approach_iterations: 1000 # 接近目标时的最大迭代次数
+      max_planning_time: 2.0         # 最大规划时间
+      cost_penalty: 2.0              # 动态障碍物代价惩罚
+      retrospective_penalty: 0.015   # 回溯惩罚，避免走回头路
+      # --- 运动学约束 ---
+      minimum_turning_radius: 0.05   # 最小转弯半径，全向底盘可以设得很小
+      reverse_penalty: 1.0           # 倒车惩罚，1.0表示不惩罚
+      change_penalty: 0.1            # 改变运动方向的惩罚
+      # --- 规划分辨率 ---
+      # 通常设置为代价地图分辨率的倍数，例如 2 或 3 倍
+      # 你的代价地图分辨率是 0.05，这里可以设为 0.1 或 0.15
+      downsample_costmap: false      # 是否降采样代价地图
+      downsampling_factor: 1         # 降采样因子
 
 planner_server_rclcpp_node:
   ros__parameters:
@@ -74,7 +94,7 @@ controller_server:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.35
 
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
@@ -96,7 +116,7 @@ controller_server:
       
       iteration_count: 1
       prune_distance: 1.5
-      transform_tolerance: 0.3
+      transform_tolerance: 0.5
       temperature: 0.1             # 降低温度，减少随机探索
       gamma: 0.02
       
@@ -208,7 +228,7 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 7.5
           obstacle_min_range: 0.0
-          min_obstacle_height: -0.5          # ✅ 地面以下忽略
+          min_obstacle_height: 0.05          # ✅ 地面以下忽略
           max_obstacle_height: 0.5           # ✅ 只检测地面附近
       
       static_layer:
@@ -254,7 +274,7 @@ global_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 7.5
           obstacle_min_range: 0.0
-          min_obstacle_height: -0.5
+          min_obstacle_height: 0.05
           max_obstacle_height: 0.5
       
       static_layer:

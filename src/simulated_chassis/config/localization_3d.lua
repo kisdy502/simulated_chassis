@@ -40,7 +40,7 @@ MAP_BUILDER.num_background_threads = 4
 TRAJECTORY_BUILDER_3D.min_range = 0.2
 TRAJECTORY_BUILDER_3D.max_range = 35.0
 -- ✅ 从建图的0.05调整为0.10，在速度和精度间取得平衡
-TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.10
+TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.06
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
 
@@ -49,7 +49,7 @@ TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
 
 -- ✅ 实时匹配参数（参考建图配置）
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.15
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(2.0)
+TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(5.0)
 
 -- ✅ 子图帧数适中（定位不需要太多累积）
 TRAJECTORY_BUILDER_3D.submaps.num_range_data = 100
@@ -61,17 +61,17 @@ TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 3e2       -- 略低�
 -- ==================== 后端：纯定位优化 ====================
 
 -- ✅ 优化频率：定位模式可以更慢（减少CPU占用）
-POSE_GRAPH.optimize_every_n_nodes = 60      -- 从40增加到60
+POSE_GRAPH.optimize_every_n_nodes = 40      -- 从40增加到60
 
 -- ✅ 约束采样：定位时采样率可以降低
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.3
 
 -- ✅ 降低约束阈值，更容易匹配到已有地图（定位宽容度）
-POSE_GRAPH.constraint_builder.min_score = 0.45
-POSE_GRAPH.constraint_builder.global_localization_min_score = 0.50
+POSE_GRAPH.constraint_builder.min_score = 0.55
+POSE_GRAPH.constraint_builder.global_localization_min_score = 0.6
 
 -- ✅ 全局约束搜索间隔（定位时不需要频繁搜索）
-POSE_GRAPH.global_constraint_search_after_n_seconds = 20.0
+POSE_GRAPH.global_constraint_search_after_n_seconds = 15.0
 
 -- ✅ 优化问题权重（参考建图配置）
 POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2
