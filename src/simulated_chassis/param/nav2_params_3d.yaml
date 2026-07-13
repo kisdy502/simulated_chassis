@@ -27,7 +27,7 @@ behavior_server:
 planner_server:
   ros__parameters:
     use_sim_time: True
-    expected_planner_frequency: 2.0
+    expected_planner_frequency: 1.0
     # planner_plugins: ["GridBased"]
     # GridBased:
     #   plugin: "nav2_navfn_planner::NavfnPlanner"
@@ -43,17 +43,17 @@ planner_server:
       max_iterations: 1000000        # 最大迭代次数
       max_on_approach_iterations: 1000 # 接近目标时的最大迭代次数
       max_planning_time: 2.0         # 最大规划时间
-      cost_penalty: 2.0              # 动态障碍物代价惩罚
-      retrospective_penalty: 0.015   # 回溯惩罚，避免走回头路
+      cost_penalty: 0.0              # 动态障碍物代价惩罚
+      retrospective_penalty: 0.00  # 回溯惩罚，避免走回头路
       # --- 运动学约束 ---
-      minimum_turning_radius: 0.05   # 最小转弯半径，全向底盘可以设得很小
-      reverse_penalty: 1.0           # 倒车惩罚，1.0表示不惩罚
-      change_penalty: 0.1            # 改变运动方向的惩罚
+      minimum_turning_radius: 0.0   # 最小转弯半径，全向底盘可以设得很小
+      reverse_penalty: 0.0           # 倒车惩罚，>1.0 抑制倒退路径
+      change_penalty: 0.0            # 改变运动方向的惩罚
       # --- 规划分辨率 ---
       # 通常设置为代价地图分辨率的倍数，例如 2 或 3 倍
       # 你的代价地图分辨率是 0.05，这里可以设为 0.1 或 0.15
-      downsample_costmap: false      # 是否降采样代价地图
-      downsampling_factor: 1         # 降采样因子
+      downsample_costmap: true       # 降采样加速大范围规划
+      downsampling_factor: 2         # 0.05 -> 0.10m，搜索空间减少75%
 
 planner_server_rclcpp_node:
   ros__parameters:
@@ -93,31 +93,31 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.35
+      xy_goal_tolerance: 0.35
+      yaw_goal_tolerance: 0.50
 
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
-      time_steps: 56
+      time_steps: 36
       model_dt: 0.05
-      batch_size: 1000
+      batch_size: 1200
       vx_std: 0.3
-      vy_std: 0.08                   # 降低侧向噪声，避免目标点附近漂移
-      wz_std: 0.3
+      vy_std: 0.1                   # 降低侧向噪声，避免目标点附近漂移
+      wz_std: 0.25
       
-      # ✅ 三舵轮速度限制
-      vx_max: 1.2                    # 最大前进速度
-      vx_min: -0.8                   # 增大后退，允许反向纠错
-      vy_max: 0.3                    # 降低侧向速度，抑制摇摆
+      # ✅ 三舵轮速度限制（按物理实际能力设置）
+      vx_max: 1.5                    # 最大前进速度
+      vx_min: -1.0                   # 最大倒退速度
+      vy_max: 1.0                    # 最大侧向速度
       wz_max: 1.0                    # 最大角速度
       
-      ax_max: 2.0                    # 最大加速度
-      ax_min: -2.0                   # 最大减速度
+      ax_max: 3.0                    # 最大加速度
+      ax_min: -3.0                   # 最大减速度
       
       iteration_count: 1
       prune_distance: 1.5
       transform_tolerance: 0.5
-      temperature: 0.1             # 降低温度，减少随机探索
+      temperature: 0.2             # 降低温度，减少随机探索
       gamma: 0.02
       
       # ✅ 三舵轮：使用 OmniDrive
@@ -147,13 +147,13 @@ controller_server:
         enabled: True
         cost_power: 1
         cost_weight: 10.0
-        threshold_to_consider: 1.4
+        threshold_to_consider: 2.0
       
       ObstaclesCritic:
         enabled: True
         cost_power: 1
-        repulsion_weight: 7.5
-        critical_weight: 6.0
+        repulsion_weight: 5.0
+        critical_weight: 4.0
         consider_footprint: false
         collision_cost: 10000.0
         collision_margin_distance: 0.1
@@ -171,18 +171,18 @@ controller_server:
       PathAlignCritic:
         enabled: True
         cost_power: 1
-        cost_weight: 10.0
+        cost_weight: 3.0
         max_path_occupancy_ratio: 0.05
         trajectory_point_step: 3
         threshold_to_consider: 0.5
-        offset_from_furthest: 20
+        offset_from_furthest: 10
         use_path_orientations: false
       
       PathFollowCritic:
         enabled: True
         cost_power: 1
-        cost_weight: 5.0
-        offset_from_furthest: 5
+        cost_weight: 4.0
+        offset_from_furthest: 1  # ✅ 从 5 减小到 1
         threshold_to_consider: 1.4
 
 controller_server_rclcpp_node:
@@ -203,7 +203,7 @@ local_costmap:
       height: 8
       resolution: 0.05
       footprint: "[[-0.3, -0.2], [-0.3, 0.2], [0.3, 0.2], [0.3, -0.2]]"
-      inflation_radius: 0.55
+      inflation_radius: 0.65
       
       # ✅ 三舵轮：只用3D雷达点云
       plugins: ["obstacle_layer", "inflation_layer"]
@@ -211,7 +211,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 5.0
-        inflation_radius: 0.55
+        inflation_radius: 0.65
       
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -271,9 +271,9 @@ global_costmap:
           marking: True
           data_type: "PointCloud2"
           raytrace_max_range: 10.0
-          raytrace_min_range: 0.0
+          raytrace_min_range: 0.3
           obstacle_max_range: 7.5
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.3
           min_obstacle_height: 0.05
           max_obstacle_height: 0.5
       
@@ -284,7 +284,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        inflation_radius: 0.65
       
       always_send_full_costmap: True
 

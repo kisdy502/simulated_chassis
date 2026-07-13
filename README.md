@@ -45,7 +45,7 @@ ros2 launch simulated_chassis slam3d_offline.launch.py \
 # 启动导航
 source install/setup.bash
 ros2 launch simulated_chassis navigation.launch.py \
-    pbstream_file:=/mnt/d/github/simulated_chassis/my_map_lg_optimized.pbstream 
+    pbstream_file:=/mnt/d/github/simulated_chassis/my_map_optimized.pbstream 
 
 
 ## 前进
