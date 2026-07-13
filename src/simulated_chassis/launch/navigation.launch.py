@@ -145,10 +145,11 @@ def generate_launch_description():
 
         # 按顺序启动（给各节点留出启动时间）
         TimerAction(period=0.5, actions=[cartographer_node]),
-        TimerAction(period=2.0, actions=[occupancy_grid_node]),
-        TimerAction(period=3.0, actions=[cmd_vel_relay]),
-        TimerAction(period=4.0, actions=[nav2_launch]),
-        TimerAction(period=6.0, actions=[rviz_node]),
+        TimerAction(period=1.0, actions=[occupancy_grid_node]),
+        TimerAction(period=1.5, actions=[cmd_vel_relay]),
+        TimerAction(period=3.0, actions=[rviz_node]),
+        TimerAction(period=8.0, actions=[nav2_launch]),
+  
 
         # LogInfo(msg=['导航节点已启动']),
         # LogInfo(msg=['在 RViz 中设置 2D Goal 启动自主导航']),
