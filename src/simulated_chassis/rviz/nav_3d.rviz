@@ -10,8 +10,8 @@ Panels:
         - /Path1
         - /Map3
         - /Pose1
-        - /Pose1/Status1
         - /Polygon1
+        - /SubmapsDisplay1
       Splitter Ratio: 0.5
     Tree Height: 528
   - Class: rviz_common/Selection
@@ -347,6 +347,100 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /polygon_slowdown
       Value: true
+    - Class: cartographer_rviz/SubmapsDisplay
+      Enabled: true
+      Fade-out distance: 1
+      High Resolution: true
+      Low Resolution: false
+      Name: SubmapsDisplay
+      Submap query service: /submap_query
+      Submaps:
+        All: true
+        All Submap Pose Markers: true
+        Trajectory 0:
+          0.280: true
+          1.280: true
+          10.280: true
+          11.280: true
+          12.280: true
+          13.280: true
+          14.280: true
+          15.280: true
+          16.280: true
+          17.280: true
+          18.280: true
+          19.280: true
+          2.280: true
+          20.280: true
+          21.280: true
+          22.280: true
+          23.280: true
+          24.280: true
+          25.280: true
+          26.280: true
+          27.280: true
+          28.280: true
+          29.280: true
+          3.280: true
+          30.280: true
+          31.280: true
+          32.280: true
+          33.280: true
+          34.280: true
+          35.280: true
+          36.280: true
+          37.280: true
+          38.280: true
+          39.280: true
+          4.280: true
+          40.280: true
+          41.280: true
+          42.280: true
+          43.280: true
+          44.280: true
+          45.280: true
+          46.280: true
+          47.280: true
+          48.280: true
+          49.280: true
+          5.280: true
+          50.280: true
+          51.280: true
+          52.280: true
+          53.280: true
+          54.280: true
+          55.280: true
+          56.280: true
+          57.280: true
+          58.280: true
+          59.280: true
+          6.280: true
+          60.280: true
+          61.280: true
+          62.150: true
+          63.10: true
+          7.280: true
+          8.280: true
+          9.280: true
+          Submap Pose Markers: true
+          Value: true
+        Trajectory 1:
+          0.200: true
+          1.200: true
+          2.200: true
+          3.182: true
+          4.82: true
+          Submap Pose Markers: true
+          Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /submap_list
+      Tracking frame: base_link
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -393,25 +487,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.1183621883392334
+      Distance: 13.870487213134766
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 9.362798690795898
-        Y: 2.4634687900543213
-        Z: 9.367206573486328
+        X: -2.9718737602233887
+        Y: -1.7011724710464478
+        Z: 11.055906295776367
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.1797964572906494
+      Pitch: 1.119796633720398
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 1.5985758304595947
+      Yaw: 1.368576169013977
     Saved: ~
 Window Geometry:
   Displays:
@@ -429,5 +523,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1428
-  X: 0
-  Y: 0
+  X: -32
+  Y: -32

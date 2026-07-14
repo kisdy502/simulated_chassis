@@ -46,7 +46,7 @@ TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
 
 -- 子图帧数稍微增加，提升局部一致性（160→130，优化频率略降但子图更稳定）
-TRAJECTORY_BUILDER_3D.submaps.num_range_data = 140
+TRAJECTORY_BUILDER_3D.submaps.num_range_data = 110
 
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0 -- 平移权重
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2    -- 默认 400
@@ -55,9 +55,11 @@ POSE_GRAPH.optimize_every_n_nodes = 40
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.5
 POSE_GRAPH.constraint_builder.min_score = 0.65
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
-POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2  -- 默认 110
+POSE_GRAPH.optimization_problem.acceleration_weight = 1.8e2  -- 默认 110
 POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000
 POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
+
+POSE_GRAPH.optimization_problem.local_slam_pose_translation_weight = 1e6  -- 新增
 
 return options

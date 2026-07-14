@@ -370,15 +370,15 @@
         <frame_id>lidar_link</frame_id>
         <scan>
           <horizontal>
-            <samples>360</samples>
+            <samples>720</samples>
             <resolution>1</resolution>
             <min_angle>-3.1415926</min_angle>
             <max_angle>3.1415926</max_angle>
           </horizontal>
           <vertical>
-            <samples>16</samples>
-            <min_angle>-0.2618</min_angle>
-            <max_angle>0.2618</max_angle>
+            <samples>32</samples>
+            <min_angle>-0.349</min_angle>   <!-- ±20° 视野更大 -->
+            <max_angle>0.349</max_angle>
           </vertical>
         </scan>
         <range>

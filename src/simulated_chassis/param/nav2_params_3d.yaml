@@ -17,7 +17,7 @@ behavior_server:
       plugin: "nav2_behaviors::Wait"
     global_frame: map
     robot_base_frame: base_link
-    transform_tolerance: 1.5
+    transform_tolerance: 0.3
     use_sim_time: True
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0          # 三舵轮角速度限制
@@ -28,32 +28,37 @@ planner_server:
   ros__parameters:
     use_sim_time: True
     expected_planner_frequency: 1.0
-    planner_plugins: ["GridBased"]
-    GridBased:
-      plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.35
-      use_astar: false
-      allow_unknown: true   # ✅ 改为 true，允许未知区域
     # planner_plugins: ["GridBased"]
     # GridBased:
-    #   plugin: "nav2_smac_planner::SmacPlannerHybrid"
-    #   # --- 以下是关键参数 ---
-    #   tolerance: 0.5                 # 到达目标点的容差
-    #   allow_unknown: true            # 允许在未知区域规划
-    #   max_iterations: 1000000        # 最大迭代次数
-    #   max_on_approach_iterations: 1000 # 接近目标时的最大迭代次数
-    #   max_planning_time: 2.0         # 最大规划时间
-    #   cost_penalty: 0.0              # 动态障碍物代价惩罚
-    #   retrospective_penalty: 0.00  # 回溯惩罚，避免走回头路
-    #   # --- 运动学约束 ---
-    #   minimum_turning_radius: 0.001   # 最小转弯半径，全向底盘可以设得很小
-    #   reverse_penalty: 0.0           # 倒车惩罚，>1.0 抑制倒退路径
-    #   change_penalty: 0.0            # 改变运动方向的惩罚
-    #   # --- 规划分辨率 ---
-    #   # 通常设置为代价地图分辨率的倍数，例如 2 或 3 倍
-    #   # 你的代价地图分辨率是 0.05，这里可以设为 0.1 或 0.15
-    #   downsample_costmap: true       # 降采样加速大范围规划
-    #   downsampling_factor: 2         # 0.05 -> 0.10m，搜索空间减少75%
+    #   plugin: "nav2_navfn_planner::NavfnPlanner"
+    #   tolerance: 0.35
+    #   use_astar: false
+    #   allow_unknown: true   # ✅ 改为 true，允许未知区域
+    # 使用 SmacPlanner2D（支持全向/差速/三舵轮）
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_smac_planner::SmacPlanner2D"
+      
+      # --- 核心优化参数 ---
+      tolerance: 0.25                    # 目标点容差(m)，根据你的定位精度调整
+      allow_unknown: true                # ✅ 允许未知区域，避免规划失败
+      max_iterations: 1000000            # 最大迭代次数，保证能搜到路径
+      max_planning_time: 5.0             # 最大规划时间(秒)，大场景可适当增加
+      
+      # --- 代价权重（关键！影响路径质量）---
+      cost_penalty: 1.0                  # 代价地图权重，越大越远离障碍物
+      neutral_cost: 50                   # 中性代价值，值越大越倾向于走开阔区域
+      
+      # --- 路径平滑和搜索策略 ---
+      downsample_costmap: true           # 降采样加速
+      downsampling_factor: 2             # 分辨率0.05 -> 0.10m，平衡速度和精度
+      
+      # --- 搜索启发式 ---
+      heuristic_epsilon: 1.0             # 启发式权重，1.0=精确A*，>1.0加速搜索但路径可能次优
+      
+      # --- 调试（可选）---
+      debug_allow_unknown: false         # 调试用，保持false
+      use_final_approach_orientation: false  # 三舵轮通常不需要最终靠拢方向
 
 planner_server_rclcpp_node:
   ros__parameters:
@@ -120,7 +125,7 @@ controller_server:
       
       prune_distance: 1.5
       regenerate_noises: false
-      transform_tolerance: 1.0
+      transform_tolerance: 0.3
       reset_period: 1.0
       temperature: 0.4             # 降低温度，减少随机探索
       gamma: 0.1
@@ -215,14 +220,14 @@ controller_server_rclcpp_node:
 local_costmap:
   local_costmap:
     ros__parameters:
-      update_frequency: 15.0
-      publish_frequency: 5.0
+      update_frequency: 10.0
+      publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_link
       use_sim_time: True
       rolling_window: True
-      width: 8
-      height: 8
+      width: 6
+      height: 6
       resolution: 0.05
       footprint: "[[-0.3, -0.2], [-0.3, 0.2], [0.3, 0.2], [0.3, -0.2]]"
       inflation_radius: 0.50
@@ -241,12 +246,12 @@ local_costmap:
         z_resolution: 0.05
         z_voxels: 10                    # 0.0 ~ 0.5m 分成 10 层
         mark_threshold: 2               # 一个体素内需要 2 个点才标记为障碍
-        observation_sources: lidar
-        lidar:
+        observation_sources: pointcloud
+        pointcloud:
           topic: /points2
           data_type: "PointCloud2"
-          min_obstacle_height: 0.05     # 过滤地面
-          max_obstacle_height: 2.0
+          min_obstacle_height: -0.3     # 过滤地面
+          max_obstacle_height: 0.5
           clearing: True
           marking: True
 
@@ -279,24 +284,23 @@ global_costmap:
       track_unknown_space: True
       
       # ✅ 三舵轮：只用3D雷达点云
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "voxel_layer", "inflation_layer"]
       
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
-        observation_sources: lidar
-        lidar:
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 10 # 根据 max_obstacle_height 调整，例如 1.5 / 0.05 = 30
+        mark_threshold: 1
+        observation_sources: pointcloud
+        pointcloud:
           topic: /points2
-          max_obstacle_height: 2.0
+          data_type: "PointCloud2"
+          min_obstacle_height: -0.3
+          max_obstacle_height: 1.5
           clearing: True
           marking: True
-          data_type: "PointCloud2"
-          raytrace_max_range: 10.0
-          raytrace_min_range: 0.3
-          obstacle_max_range: 7.5
-          obstacle_min_range: 0.3
-          min_obstacle_height: 0.05
-          max_obstacle_height: 0.5
       
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
@@ -389,7 +393,7 @@ collision_monitor:
     odom_frame_id: "odom"
     cmd_vel_in_topic: "cmd_vel_smoothed"
     cmd_vel_out_topic: "cmd_vel"
-    transform_tolerance: 0.5
+    transform_tolerance: 0.3
     source_timeout: 5.0
     stop_pub_timeout: 2.0
     enable_stamped_cmd_vel: False
@@ -417,7 +421,7 @@ collision_monitor:
       topic: "/points2"
       # 添加点云处理参数
       min_height: -0.3  # 只检测地面附近
-      max_height: 0.3
+      max_height: 0.5
       obstacle_max_range: 3.0  # 减小检测范围，避免远处的障碍物触发
       obstacle_min_range: 0.1
       raytrace_max_range: 3.0

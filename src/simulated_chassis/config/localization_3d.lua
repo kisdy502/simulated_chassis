@@ -44,6 +44,7 @@ TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.05
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
 
+
 -- ✅ 定位模式下关闭实时相关扫描匹配（依赖已有地图，节省CPU）
 TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
 

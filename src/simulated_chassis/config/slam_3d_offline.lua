@@ -47,7 +47,7 @@ TRAJECTORY_BUILDER_3D.ceres_scan_matcher.ceres_solver_options.max_num_iterations
 
 -- 全局优化
 POSE_GRAPH.optimize_every_n_nodes = 40
-POSE_GRAPH.constraint_builder.sampling_ratio = 0.5
+POSE_GRAPH.constraint_builder.sampling_ratio = 0.65
 POSE_GRAPH.constraint_builder.min_score = 0.65
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
 POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_xy_search_window = 7.0
