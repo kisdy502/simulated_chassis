@@ -38,4 +38,4 @@ three_wheel_base_controller:
     enable_reverse_optimization: true
     publish_tf: false
     odom_frame_id: "odom"
-    base_frame_id: "base_link"
+    base_frame_id: "base_footprint"

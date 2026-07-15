@@ -96,8 +96,9 @@ def generate_launch_description():
         LogInfo(msg=['Cartographer 3D建图模式启动']),
 
         *declared_arguments,
-        cartographer_node,
-        cartographer_occupancy_grid_node,
-        rviz_node
+
+        TimerAction(period=0.5, actions=[cartographer_node]),
+        TimerAction(period=1.0, actions=[cartographer_occupancy_grid_node]),
+        TimerAction(period=6.0, actions=[rviz_node]),
 
     ])
