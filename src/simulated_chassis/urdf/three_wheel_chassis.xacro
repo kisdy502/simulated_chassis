@@ -348,19 +348,19 @@
           <x>
             <noise type="gaussian">
               <mean>0</mean>
-              <stddev>0.1</stddev>
+              <stddev>0.01</stddev>
             </noise>
           </x>
           <y>
             <noise type="gaussian">
               <mean>0</mean>
-              <stddev>0.1</stddev>
+              <stddev>0.01</stddev>
             </noise>
           </y>
           <z>
             <noise type="gaussian">
               <mean>0</mean>
-              <stddev>0.1</stddev>
+              <stddev>0.005</stddev>
             </noise>
           </z>
         </linear_acceleration>
