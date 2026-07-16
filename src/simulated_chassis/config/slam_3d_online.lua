@@ -46,20 +46,38 @@ TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
 
 -- 子图帧数稍微增加，提升局部一致性（160→130，优化频率略降但子图更稳定）
-TRAJECTORY_BUILDER_3D.submaps.num_range_data = 110
+TRAJECTORY_BUILDER_3D.submaps.num_range_data = 100
 
-TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 12.0 -- 平移权重
-TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 2    -- 默认 1
+TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 5.   -- 源码3D默认5
+TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2     -- 源码3D默认400，之前误设为2
 
 POSE_GRAPH.optimize_every_n_nodes = 75
-POSE_GRAPH.constraint_builder.sampling_ratio = 0.5
-POSE_GRAPH.constraint_builder.min_score = 0.65
+POSE_GRAPH.constraint_builder.sampling_ratio = 1.0
+POSE_GRAPH.constraint_builder.min_score = 0.60
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
-POSE_GRAPH.optimization_problem.acceleration_weight = 1.8e2  -- 默认 110
-POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000
+
+-- 回环搜索窗口：地面机器人 z 不该漂，把 z 搜索窗口从默认1.0m压到0.1m
+POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_z_search_window = 0.1
+-- ✅ 关键修复：大幅调高 IMU 权重，强制后端优化尊重重力方向
+-- acceleration_weight: 默认 110，原 1.8e2 太小，scan matching 把姿态拉歪导致 z 漂移
+POSE_GRAPH.optimization_problem.acceleration_weight = 3.3e2
+-- rotation_weight: 默认 16000，调高让陀螺仪积分约束更强
+POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4
 POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
 
-POSE_GRAPH.optimization_problem.local_slam_pose_translation_weight = 2e5  -- 新增
+POSE_GRAPH.optimization_problem.local_slam_pose_translation_weight = 1e4
+POSE_GRAPH.optimization_problem.local_slam_pose_rotation_weight = 1e4
+POSE_GRAPH.optimization_problem.fix_z_in_3d = true                  -- 地面机器人锁死z，回环不再拉飞
 
+TRAJECTORY_BUILDER_3D.high_resolution_adaptive_voxel_filter = {
+  max_length = 0.5,         -- 1.0→0.5，细化体素保留更多细节
+  min_num_points = 400,     -- 200→400，强制保留更多点
+  max_range = 20.,          -- 35→20，砍掉远处稀疏噪声点
+}
+TRAJECTORY_BUILDER_3D.low_resolution_adaptive_voxel_filter = {
+  max_length = 5.0,
+  min_num_points = 200,
+  max_range = 35.,
+}
 return options
