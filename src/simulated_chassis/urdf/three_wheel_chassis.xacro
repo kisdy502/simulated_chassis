@@ -89,8 +89,8 @@
   <link name="wheel_front_steering_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />
-      <mass value="0.5" />
-      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
+      <mass value="1.5" />
+      <inertia ixx="0.0045" ixy="0.0" ixz="0.0" iyy="0.0045" iyz="0.0" izz="0.0075" />
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
@@ -125,7 +125,7 @@
         <cylinder radius="0.1" length="0.08" />
       </geometry>
       <material name="orange_wheel">
-        <color rgba="1.0 0.5 0.0 1.0" />
+        <color rgba="1.0 0.35 0.0 1.0" />
       </material>
     </visual>
     <collision>
@@ -148,10 +148,10 @@
   <link name="wheel_left_steering_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />
-        <mass value="3.0" />
-        <inertia ixx="0.0091" ixy="0.0" ixz="0.0" 
-                iyy="0.0091" iyz="0.0" 
-                izz="0.015" />  
+        <mass value="1.5" />
+        <inertia ixx="0.0045" ixy="0.0" ixz="0.0" 
+                iyy="0.0045" iyz="0.0" 
+                izz="0.0075" />  
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
@@ -184,7 +184,7 @@
         <cylinder radius="0.1" length="0.08" />
       </geometry>
       <material name="orange_wheel">
-        <color rgba="1.0 0.5 0.0 1.0" />
+        <color rgba="1.0 0.35 0.0 1.0" />
       </material>
     </visual>
     <collision>
@@ -207,10 +207,10 @@
   <link name="wheel_right_steering_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />
-        <mass value="3.0" />
-        <inertia ixx="0.0091" ixy="0.0" ixz="0.0" 
-                iyy="0.0091" iyz="0.0" 
-                izz="0.015" />  
+        <mass value="1.5" />
+        <inertia ixx="0.0045" ixy="0.0" ixz="0.0" 
+                iyy="0.0045" iyz="0.0" 
+                izz="0.0075" />  
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
@@ -243,7 +243,7 @@
         <cylinder radius="0.1" length="0.08" />
       </geometry>
       <material name="orange_wheel">
-        <color rgba="1.0 0.5 0.0 1.0" />
+        <color rgba="1.0 0.35 0.0 1.0" />
       </material>
     </visual>
     <collision>
@@ -360,7 +360,7 @@
           <z>
             <noise type="gaussian">
               <mean>0</mean>
-              <stddev>0.005</stddev>
+              <stddev>0.001</stddev>
             </noise>
           </z>
         </linear_acceleration>
@@ -369,9 +369,10 @@
   </gazebo>
 
   <!-- ==================== 3D Lidar ==================== -->
+  <!-- 模拟真实32线雷达：底部密集（地面约束）上部稀疏 -->
+  <!-- 角度分布：±5°内12条线(37.5%)，±5°~±15°16条线(50%)，±15°~±20°4条线(12.5%) -->
   <gazebo reference="lidar_link">
     <sensor name="mid360_sensor" type="gpu_lidar">
-      <!-- <enable>true</enable> -->
       <always_on>true</always_on>
       <update_rate>20</update_rate>
       <visualize>true</visualize>
@@ -389,13 +390,13 @@
           </horizontal>
           <vertical>
             <samples>32</samples>
-            <min_angle>-0.349</min_angle>   <!-- ±20° 视野更大 -->
-            <max_angle>0.349</max_angle>
+            <min_angle>-0.1745</min_angle>   <!-- ±10° 点云集中 -->
+            <max_angle>0.1745</max_angle>
           </vertical>
         </scan>
         <range>
           <min>0.2</min>
-          <max>45.0</max>
+          <max>30.0</max>
           <resolution>0.01</resolution>
         </range>
       </lidar>

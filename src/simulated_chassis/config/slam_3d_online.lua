@@ -34,50 +34,38 @@ MAP_BUILDER.use_trajectory_builder_3d = true
 MAP_BUILDER.num_background_threads = 4
 
 -- ✅ 3D 轨迹构建器配置
-TRAJECTORY_BUILDER_3D.min_range = 0.2
-TRAJECTORY_BUILDER_3D.max_range = 35.0
+TRAJECTORY_BUILDER_3D.min_range = 0.5
+TRAJECTORY_BUILDER_3D.max_range = 24.0
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
-TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.05       -- 5cm 精度，比 10cm 更精细
+TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.05
 
--- 实时匹配：窗口稍加大，减少位姿跳变（不增加 CPU 负担）
 TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.2
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
 
--- 子图帧数稍微增加，提升局部一致性（160→130，优化频率略降但子图更稳定）
 TRAJECTORY_BUILDER_3D.submaps.num_range_data = 100
 
-TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 5.   -- 源码3D默认5
-TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2     -- 源码3D默认400，之前误设为2
+-- TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 5.
+-- TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2
 
 POSE_GRAPH.optimize_every_n_nodes = 75
 POSE_GRAPH.constraint_builder.sampling_ratio = 1.0
 POSE_GRAPH.constraint_builder.min_score = 0.60
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
 
--- 回环搜索窗口：地面机器人 z 不该漂，把 z 搜索窗口从默认1.0m压到0.1m
-POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_z_search_window = 0.1
--- ✅ 关键修复：大幅调高 IMU 权重，强制后端优化尊重重力方向
--- acceleration_weight: 默认 110，原 1.8e2 太小，scan matching 把姿态拉歪导致 z 漂移
-POSE_GRAPH.optimization_problem.acceleration_weight = 3.3e2
--- rotation_weight: 默认 16000，调高让陀螺仪积分约束更强
-POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4
-POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
-POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
-
-POSE_GRAPH.optimization_problem.local_slam_pose_translation_weight = 1e4
-POSE_GRAPH.optimization_problem.local_slam_pose_rotation_weight = 1e4
-POSE_GRAPH.optimization_problem.fix_z_in_3d = true                  -- 地面机器人锁死z，回环不再拉飞
+-- 地面机器人：收紧Z搜索窗口 + 锁死Z
+-- POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_z_search_window = 0.1
+-- POSE_GRAPH.optimization_problem.fix_z_in_3d = true
 
 TRAJECTORY_BUILDER_3D.high_resolution_adaptive_voxel_filter = {
-  max_length = 0.5,         -- 1.0→0.5，细化体素保留更多细节
-  min_num_points = 400,     -- 200→400，强制保留更多点
-  max_range = 20.,          -- 35→20，砍掉远处稀疏噪声点
+  max_length = 0.5,
+  min_num_points = 400,
+  max_range = 20.,
 }
 TRAJECTORY_BUILDER_3D.low_resolution_adaptive_voxel_filter = {
   max_length = 5.0,
   min_num_points = 200,
-  max_range = 35.,
+  max_range = 25.,
 }
 return options
