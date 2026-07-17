@@ -93,11 +93,11 @@
     <!-- 围墙高度 1.8m，Z = 0.9（中心在地面上方 0.9m，底部刚好在地面） -->
     <model name='wall'>
       <link name='length_bottom'>
-        <pose>0 -15 0.9 0 0 0</pose>
+        <pose>0 -15 0.85 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>36 0.7 1.8</size>
+              <size>36 0.7 1.7</size>
             </box>
           </geometry>
           <surface>
@@ -111,7 +111,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>36 0.7 1.8</size>
+              <size>36 0.7 1.7</size>
             </box>
           </geometry>
           <material>
@@ -122,11 +122,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='length_top'>
-        <pose>0 15 0.9 0 0 0</pose>
+        <pose>0 15 0.75 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>36 0.7 1.8</size>
+              <size>36 0.7 1.5</size>
             </box>
           </geometry>
           <surface>
@@ -140,7 +140,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>36 0.7 1.8</size>
+              <size>36 0.7 1.5</size>
             </box>
           </geometry>
           <material>
@@ -151,11 +151,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='width_left'>
-        <pose>-18 0 0.9 0 0 0</pose>
+        <pose>-18 0 0.8 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>0.7 30 1.8</size>
+              <size>0.7 30 1.6</size>
             </box>
           </geometry>
           <surface>
@@ -169,7 +169,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>0.7 30 1.8</size>
+              <size>0.7 30 1.6</size>
             </box>
           </geometry>
           <material>
@@ -180,11 +180,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='width_right'>
-        <pose>18 0 0.9 0 0 0</pose>
+        <pose>18 0 0.7 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>0.7 30 1.8</size>
+              <size>0.7 30 1.4</size>
             </box>
           </geometry>
           <surface>
@@ -198,7 +198,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>0.7 30 1.8</size>
+              <size>0.7 30 1.4</size>
             </box>
           </geometry>
           <material>
@@ -240,11 +240,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_v2'>
-        <pose>13.5 3.75 0.9 0 0 0</pose>
+        <pose>13.5 3.75 0.75 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>0.7 7.5 1.8</size>
+              <size>0.7 7.5 1.5</size>
             </box>
           </geometry>
           <surface>
@@ -258,7 +258,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>0.7 7.5 1.8</size>
+              <size>0.7 7.5 1.5</size>
             </box>
           </geometry>
           <material>
@@ -269,11 +269,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h1'>
-        <pose>9 11.2 0.9 0 0 0</pose>
+        <pose>9 11.2 0.85 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>9 0.7 1.8</size>
+              <size>9 0.7 1.7</size>
             </box>
           </geometry>
           <surface>
@@ -287,7 +287,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>9 0.7 1.8</size>
+              <size>9 0.7 1.7</size>
             </box>
           </geometry>
           <material>
@@ -298,11 +298,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h2'>
-        <pose>9.9 0 0.9 0 0 0</pose>
+        <pose>9.9 0 0.7 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>7.2 0.7 1.8</size>
+              <size>7.2 0.7 1.4</size>
             </box>
           </geometry>
           <surface>
@@ -316,7 +316,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>7.2 0.7 1.8</size>
+              <size>7.2 0.7 1.4</size>
             </box>
           </geometry>
           <material>
@@ -327,11 +327,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_v3'>
-        <pose>-6.7 -3.75 0.9 0 0 0</pose>
+        <pose>-6.7 -3.75 0.8 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>0.7 14.5 1.8</size>
+              <size>0.7 14.5 1.6</size>
             </box>
           </geometry>
           <surface>
@@ -345,7 +345,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>0.7 14.5 1.8</size>
+              <size>0.7 14.5 1.6</size>
             </box>
           </geometry>
           <material>
@@ -385,11 +385,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h4'>
-        <pose>-9 3.7 0.9 0 0 0</pose>
+        <pose>-9 3.7 0.75 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>9 0.7 1.8</size>
+              <size>9 0.7 1.5</size>
             </box>
           </geometry>
           <surface>
@@ -403,7 +403,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>9 0.7 1.8</size>
+              <size>9 0.7 1.5</size>
             </box>
           </geometry>
           <material>
@@ -414,11 +414,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h5'>
-        <pose>-3.6 7.5 0.9 0 0 0</pose>
+        <pose>-3.6 7.5 0.85 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>7.2 0.7 1.8</size>
+              <size>7.2 0.7 1.7</size>
             </box>
           </geometry>
           <surface>
@@ -432,7 +432,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>7.2 0.7 1.8</size>
+              <size>7.2 0.7 1.7</size>
             </box>
           </geometry>
           <material>
@@ -443,11 +443,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_v4'>
-        <pose>-6.7 9.35 0.9 0 0 0</pose>
+        <pose>-6.7 9.35 0.7 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>0.7 3.7 1.8</size>
+              <size>0.7 3.7 1.4</size>
             </box>
           </geometry>
           <surface>
@@ -461,7 +461,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>0.7 3.7 1.8</size>
+              <size>0.7 3.7 1.4</size>
             </box>
           </geometry>
           <material>
@@ -472,11 +472,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h6'>
-        <pose>0 -7.5 0.9 0 0 0</pose>
+        <pose>0 -7.5 0.8 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>13.4 0.7 1.8</size>
+              <size>13.4 0.7 1.6</size>
             </box>
           </geometry>
           <surface>
@@ -490,7 +490,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>13.4 0.7 1.8</size>
+              <size>13.4 0.7 1.6</size>
             </box>
           </geometry>
           <material>
@@ -510,13 +510,13 @@
     <!-- 圆柱: 长度1.4m → Z=0.7 -->
     <model name='fm_cyl_1'>
       <static>true</static>
-      <pose>16.5 13.0 0.7 0 0 0</pose>
+      <pose>16.5 13.0 1.1 0 0 0</pose>
       <link name='l'>
         <collision name='c'>
           <geometry>
             <cylinder>
               <radius>0.55</radius>
-              <length>1.4</length>
+              <length>2.2</length>
             </cylinder>
           </geometry>
         </collision>
@@ -524,7 +524,7 @@
           <geometry>
             <cylinder>
               <radius>0.55</radius>
-              <length>1.4</length>
+              <length>2.2</length>
             </cylinder>
           </geometry>
           <material>
@@ -693,19 +693,19 @@
     <!-- 立方体: 高度1.0m → Z=0.5 -->
     <model name='fm_box_6'>
       <static>true</static>
-      <pose>5.5 10.5 0.5 0 0 0</pose>
+      <pose>5.5 10.5 0.9 0 0 0</pose>
       <link name='l'>
         <collision name='c'>
           <geometry>
             <box>
-              <size>0.65 0.65 1.0</size>
+              <size>0.65 0.65 1.8</size>
             </box>
           </geometry>
         </collision>
         <visual name='v'>
           <geometry>
             <box>
-              <size>0.65 0.65 1.0</size>
+              <size>0.65 0.65 1.8</size>
             </box>
           </geometry>
           <material>
@@ -878,19 +878,19 @@
     <!-- 立方体: 高度1.1m → Z=0.55 -->
     <model name='fm_box_11'>
       <static>true</static>
-      <pose>3.0 -3.5 0.55 0 0 0</pose>
+      <pose>3.0 -3.5 1.0 0 0 0</pose>
       <link name='l'>
         <collision name='c'>
           <geometry>
             <box>
-              <size>0.7 0.7 1.1</size>
+              <size>0.7 0.7 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='v'>
           <geometry>
             <box>
-              <size>0.7 0.7 1.1</size>
+              <size>0.7 0.7 2.0</size>
             </box>
           </geometry>
           <material>
@@ -1008,13 +1008,13 @@
     <!-- 圆柱: 长度1.1m → Z=0.55 -->
     <model name='fm_cyl_15'>
       <static>true</static>
-      <pose>-8.0 -1.5 0.55 0 0 0</pose>
+      <pose>-8.0 -1.5 1.0 0 0 0</pose>
       <link name='l'>
         <collision name='c'>
           <geometry>
             <cylinder>
               <radius>0.45</radius>
-              <length>1.1</length>
+              <length>2.0</length>
             </cylinder>
           </geometry>
         </collision>
@@ -1022,7 +1022,7 @@
           <geometry>
             <cylinder>
               <radius>0.45</radius>
-              <length>1.1</length>
+              <length>2.0</length>
             </cylinder>
           </geometry>
           <material>
@@ -1115,13 +1115,13 @@
     <!-- 圆柱: 长度0.9m → Z=0.45 -->
     <model name='fm_cyl_18'>
       <static>true</static>
-      <pose>-3.5 -13.0 0.45 0 0 0</pose>
+      <pose>-3.5 -13.0 0.8 0 0 0</pose>
       <link name='l'>
         <collision name='c'>
           <geometry>
             <cylinder>
               <radius>0.4</radius>
-              <length>0.9</length>
+              <length>1.6</length>
             </cylinder>
           </geometry>
         </collision>
@@ -1129,7 +1129,7 @@
           <geometry>
             <cylinder>
               <radius>0.4</radius>
-              <length>0.9</length>
+              <length>1.6</length>
             </cylinder>
           </geometry>
           <material>
@@ -1169,13 +1169,13 @@
     <!-- 圆柱: 长度1.1m → Z=0.55 -->
     <model name='fm_cyl_20'>
       <static>true</static>
-      <pose>14.0 -13.0 0.55 0 0 0</pose>
+      <pose>14.0 -13.0 1.0 0 0 0</pose>
       <link name='l'>
         <collision name='c'>
           <geometry>
             <cylinder>
               <radius>0.45</radius>
-              <length>1.1</length>
+              <length>2.0</length>
             </cylinder>
           </geometry>
         </collision>
@@ -1183,7 +1183,7 @@
           <geometry>
             <cylinder>
               <radius>0.45</radius>
-              <length>1.1</length>
+              <length>2.0</length>
             </cylinder>
           </geometry>
           <material>
@@ -1232,7 +1232,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>0.75 0.55 0.8</size>
+              <size>0.55 1.75 0.8</size>
             </box>
           </geometry>
           <material>

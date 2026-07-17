@@ -13,10 +13,10 @@ options = {
   use_odometry = true,
   use_nav_sat = false,
   use_landmarks = false,
-  num_laser_scans = 0,                    -- ✅ 关闭2D激光
+  num_laser_scans = 0,
   num_multi_echo_laser_scans = 0,
   num_subdivisions_per_laser_scan = 1,
-  num_point_clouds = 1,                   -- ✅ 启用3D点云
+  num_point_clouds = 1,
   lookup_transform_timeout_sec = 0.2,
   submap_publish_period_sec = 0.3,
   pose_publish_period_sec = 5e-3,
@@ -28,44 +28,28 @@ options = {
   landmarks_sampling_ratio = 1.,
 }
 
--- ✅ 启用3D建图
 MAP_BUILDER.use_trajectory_builder_2d = false
 MAP_BUILDER.use_trajectory_builder_3d = true
 MAP_BUILDER.num_background_threads = 4
 
--- ✅ 3D 轨迹构建器配置
+-- ==================== 前端：仅改雷达范围，其余用源码默认 ====================
+-- 源码默认: min_range=1.0, max_range=60.0, voxel_filter_size=0.15
 TRAJECTORY_BUILDER_3D.min_range = 0.5
 TRAJECTORY_BUILDER_3D.max_range = 24.0
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
-TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
-TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.05
+TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.10            -- 恢复源码默认，不用0.05
 
-TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.2
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
+-- scan matcher 权重：全部用源码默认（translation=5, rotation=4e2），不覆盖
+-- 子图大小：用源码默认 160
+-- adaptive_voxel_filter：用源码默认
 
-TRAJECTORY_BUILDER_3D.submaps.num_range_data = 100
+-- ==================== 后端：仅加 fix_z_in_3d，其余用源码默认 ====================
+POSE_GRAPH.optimize_every_n_nodes = 90                    -- 源码默认
+POSE_GRAPH.constraint_builder.sampling_ratio = 0.3         -- 源码默认
+POSE_GRAPH.constraint_builder.min_score = 0.55             -- 源码默认
+POSE_GRAPH.constraint_builder.global_localization_min_score = 0.6  -- 源码默认
 
--- TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 5.
--- TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2
-
-POSE_GRAPH.optimize_every_n_nodes = 75
-POSE_GRAPH.constraint_builder.sampling_ratio = 1.0
-POSE_GRAPH.constraint_builder.min_score = 0.60
-POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
-
--- 地面机器人：收紧Z搜索窗口 + 锁死Z
--- POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_z_search_window = 0.1
+-- 地面机器人：锁死z，防止回环优化拉飞
 -- POSE_GRAPH.optimization_problem.fix_z_in_3d = true
 
-TRAJECTORY_BUILDER_3D.high_resolution_adaptive_voxel_filter = {
-  max_length = 0.5,
-  min_num_points = 400,
-  max_range = 20.,
-}
-TRAJECTORY_BUILDER_3D.low_resolution_adaptive_voxel_filter = {
-  max_length = 5.0,
-  min_num_points = 200,
-  max_range = 25.,
-}
 return options
