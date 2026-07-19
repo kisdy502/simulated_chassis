@@ -60,10 +60,10 @@ POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000
 POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
 
--- 注：fix_z_in_3d = true 在仿真下会暴露 local SLAM 的 pitch/roll 误差
--- 因为 IMU 太干净(0.004 m/s²),但 local_slam_pose_rotation_weight(1e5)
--- 是 acceleration_weight(110)的 900 倍,优化器更信 local SLAM。
--- 关掉 fix_z,让 Z 自由吸收角度误差,2D 导航不受影响(publish_frame_projected_to_2d=true)。
--- POSE_GRAPH.optimization_problem.fix_z_in_3d = true
+-- ✅ 锁定 Z 轴：地面机器人物理上 Z 恒为 0，开启后避免 3D SLAM 的 Z 漂移
+-- 3D 模式仍保留 pitch/roll/voxel 的 3D 信息，只是把轨迹锁在 Z=0 平面
+-- 之前关掉是因为仿真 IMU 太干净导致 local SLAM 旋转权重相对偏高；
+-- 加真实 IMU 噪声后，必须开启此选项，否则加减速时 IMU bias 漂移会持续累积到 Z 上
+POSE_GRAPH.optimization_problem.fix_z_in_3d = true
 
 return options

@@ -28,38 +28,47 @@ options = {
   landmarks_sampling_ratio = 1.,
 }
 
--- ==== 与在线建图一致的核心参数 ====
+-- ==== 3D建图核心（与在线建图对齐，保证地图数据特征一致） ====
 MAP_BUILDER.use_trajectory_builder_2d = false
 MAP_BUILDER.use_trajectory_builder_3d = true
 
--- 3D 轨迹构建器
-TRAJECTORY_BUILDER_3D.min_range = 0.2
-TRAJECTORY_BUILDER_3D.max_range = 35.0
+-- min/max_range 与在线一致：剔除机器人本体反射 + 避开远端雷达噪声放大区
+TRAJECTORY_BUILDER_3D.min_range = 0.5
+TRAJECTORY_BUILDER_3D.max_range = 30.0
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
-TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.03      -- 离线保留更多特征点
+-- 比在线(0.08)略细，但不能像原0.03那样把噪声点当特征用
+TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.06
+
 TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
+TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.2
+TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
+
 TRAJECTORY_BUILDER_3D.submaps.num_range_data = 140
 
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2
-TRAJECTORY_BUILDER_3D.ceres_scan_matcher.ceres_solver_options.max_num_iterations = 30  -- 帧间匹配更精细
+TRAJECTORY_BUILDER_3D.ceres_scan_matcher.ceres_solver_options.max_num_iterations = 30  -- 离线帧匹配更精细
 
--- 全局优化
+-- ==== 全局优化（沿用在线验证过的稳定权重） ====
 POSE_GRAPH.optimize_every_n_nodes = 40
-POSE_GRAPH.constraint_builder.sampling_ratio = 0.65
+POSE_GRAPH.constraint_builder.sampling_ratio = 0.5
 POSE_GRAPH.constraint_builder.min_score = 0.65
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
-POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.linear_xy_search_window = 7.0
-POSE_GRAPH.constraint_builder.fast_correlative_scan_matcher_3d.angular_search_window = math.rad(20.)
-POSE_GRAPH.constraint_builder.ceres_scan_matcher_3d.ceres_solver_options.max_num_iterations = 30
+POSE_GRAPH.constraint_builder.ceres_scan_matcher_3d.ceres_solver_options.max_num_iterations = 30  -- 约束匹配更精细
 POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2
 POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4
 POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
 
--- ==== 离线专属优化（不受实时限制） ====
-MAP_BUILDER.num_background_threads = 8         -- 离线可用更多线程
-POSE_GRAPH.max_num_final_iterations = 300       -- 默认 200，离线稍加（之前 1000 会崩）
+-- ==== 离线专属：用满算力打磨最终地图 ====
+MAP_BUILDER.num_background_threads = 8                   -- 离线可用更多线程
+POSE_GRAPH.max_num_final_iterations = 300                -- 默认200，离线加大（1000 会闪退，300 已足够）
+-- 不再扩大 fast_correlative_scan_matcher_3d 搜索窗口：
+-- 原本 7m/20° 是因为仿真数据太干净导致默认窗口配不上；
+-- 加真实噪声 + 与在线一致的参数后，默认窗口反而更稳。
+
+-- ✅ 锁定 Z 轴（与在线建图一致，地面机器人防止 Z 漂移）
+POSE_GRAPH.optimization_problem.fix_z_in_3d = true
 
 return options

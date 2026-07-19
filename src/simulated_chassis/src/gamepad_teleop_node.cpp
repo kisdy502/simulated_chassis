@@ -21,6 +21,9 @@ public:
     // Add: 看门狗参数
     this->declare_parameter<double>("watchdog_timeout", 0.2); // 超时秒数
     this->declare_parameter<double>("min_publish_cmd", 0.05); // 最小发布阈值
+    // Add: 加速度限制参数（避免阶跃式速度指令触发 IMU 扰动和轮子打滑）
+    this->declare_parameter<double>("max_linear_accel", 0.6);   // m/s^2
+    this->declare_parameter<double>("max_angular_accel", 1.5);  // rad/s^2
 
     this->get_parameter("axis_linear", axis_linear_);
     this->get_parameter("axis_angular", axis_angular_);
@@ -31,6 +34,8 @@ public:
     this->get_parameter("btn_speed_up", btn_speed_up_);
     this->get_parameter("btn_speed_down", btn_speed_down_);
     this->get_parameter("cmd_topic", cmd_topic_);
+    this->get_parameter("max_linear_accel", max_linear_accel_);
+    this->get_parameter("max_angular_accel", max_angular_accel_);
 
     RCLCPP_INFO(this->get_logger(),
                 "Gamepad Teleop: deadzone=%.2f, dominant_threshold=%.2f, "
@@ -52,6 +57,7 @@ public:
 
     // Add: 初始化时间戳（避免初期判断误差）
     last_nonzero_cmd_time_ = this->now();
+    prev_cmd_time_ = this->now();
   }
 
 private:
@@ -185,6 +191,21 @@ private:
     return value;
   }
 
+  // 限加速度：把 target 限制在 prev ± max_accel * dt 范围内
+  // 避免摇杆阶跃导致速度突变 → IMU 扰动 + 轮子打滑 + SLAM 配准失败
+  double limitAccel(double target, double prev, double max_accel, double dt)
+  {
+    if (dt <= 0 || dt > 0.5)
+      dt = 0.05; // 异常 dt 用默认值兜底
+    double max_change = max_accel * dt;
+    double delta = target - prev;
+    if (std::abs(delta) > max_change)
+    {
+      return prev + std::copysign(max_change, delta);
+    }
+    return target;
+  }
+
   double getLinearScale() const
   {
     switch (speed_level_)
@@ -280,9 +301,21 @@ private:
     if (std::abs(angular_cmd) < min_publish_cmd_)
       angular_cmd = 0.0;
 
+    // ✅ 限加速度：从上一帧实际下发的指令限幅过渡到当前指令
+    // 注意 dt 要用本帧相对上一帧的时间差，否则停止后第一帧会瞬变
+    rclcpp::Time now = this->now();
+    double dt = (now - prev_cmd_time_).seconds();
+    prev_cmd_time_ = now;
+    linear_cmd = limitAccel(linear_cmd, prev_cmd_linear_, max_linear_accel_, dt);
+    angular_cmd = limitAccel(angular_cmd, prev_cmd_angular_, max_angular_accel_, dt);
+
     geometry_msgs::msg::Twist twist;
     twist.linear.x = linear_cmd;
     twist.angular.z = angular_cmd;
+
+    // 记录本帧实际下发的指令，供下一帧限加速度使用
+    prev_cmd_linear_ = linear_cmd;
+    prev_cmd_angular_ = angular_cmd;
 
     bool has_cmd =
         (std::abs(linear_cmd) > 1e-6 || std::abs(angular_cmd) > 1e-6);
@@ -355,6 +388,10 @@ private:
     geometry_msgs::msg::Twist stop;
     vel_pub_->publish(stop);
     last_nonzero_cmd_time_ = this->now(); // 更新，防止看门狗立即重复触发
+    // 停止后下一帧必须从 0 开始过渡，否则限加速度会卡在旧值
+    prev_cmd_linear_ = 0.0;
+    prev_cmd_angular_ = 0.0;
+    prev_cmd_time_ = this->now();
     stopped_ = true;
     RCLCPP_INFO(this->get_logger(), "看门狗/强制停止已发送");
   }
@@ -399,6 +436,13 @@ private:
   double watchdog_timeout_ = 0.2;
   double min_publish_cmd_ = 0.05;
   bool stopped_ = true;
+
+  // ✅ 加速度限制相关变量
+  double max_linear_accel_ = 0.6;   // m/s^2
+  double max_angular_accel_ = 1.5;  // rad/s^2
+  double prev_cmd_linear_ = 0.0;    // 上一帧实际下发的线速度
+  double prev_cmd_angular_ = 0.0;   // 上一帧实际下发的角速度
+  rclcpp::Time prev_cmd_time_;      // 上一帧下发时间
 };
 
 int main(int argc, char *argv[])

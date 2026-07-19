@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <up_axis>Z_UP</up_axis>
+  </asset>
+  <library_geometries>
+    <geometry id="wedge" name="wedge">
+      <mesh>
+        <source id="wedge-positions">
+          <float_array id="wedge-positions-array" count="18">-0.5 -0.5 -0.5 0.5 -0.5 -0.5 -0.5 0.5 -0.5 -0.5 -0.5 0.5 0.5 -0.5 0.5 -0.5 0.5 0.5</float_array>
+          <technique_common>
+            <accessor source="#wedge-positions-array" count="6" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <source id="wedge-normals">
+          <float_array id="wedge-normals-array" count="18">0 0 -1 0 0 -1 0 0 -1 0 0 1 0 0 1 0 0 1</float_array>
+          <technique_common>
+            <accessor source="#wedge-normals-array" count="6" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="wedge-vertices">
+          <input semantic="POSITION" source="#wedge-positions"/>
+          <input semantic="NORMAL" source="#wedge-normals"/>
+        </vertices>
+        <triangles count="8">
+          <input semantic="VERTEX" source="#wedge-vertices" offset="0"/>
+          <p>0 2 1 3 4 5 0 1 4 0 4 3 0 3 5 0 5 2 1 2 5 1 5 4</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="Scene" name="Scene">
+      <node id="wedge-node" name="wedge" type="NODE">
+        <instance_geometry url="#wedge">
+          <bind_material>
+            <technique_common/>
+          </bind_material>
+        </instance_geometry>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#Scene"/>
+  </scene>
+</COLLADA>

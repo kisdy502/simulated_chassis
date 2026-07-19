@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <model name="triangular_prism">
+    <static>true</static>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+          <mesh>
+            <uri>meshes/triangular_prism.dae</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>meshes/triangular_prism.dae</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <ambient>0.4 0.6 0.3 1</ambient>
+          <diffuse>0.4 0.6 0.3 1</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

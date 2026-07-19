@@ -313,54 +313,75 @@
   </gazebo>
 
   <!-- ==================== IMU Sensor ==================== -->
+  <!-- 工业级 MEMS IMU 噪声模型（参考 Xsens MTi-300 / BMI088 量级） -->
+  <!-- 关键：除了白噪声，加入了 dynamic_bias（零偏随机游走），这是真机 SLAM 漂移的主因 -->
   <gazebo reference="imu_link">
     <sensor name="imu_sensor" type="imu">
       <always_on>true</always_on>
-      <!-- <enable>true</enable> -->
       <update_rate>100</update_rate>
-      <visualize>false</visualize>
+      <visualize>false</visualize> 
       <topic>/imu</topic>
       <gz_frame_id>imu_link</gz_frame_id>
 
       <imu>
         <frame_id>imu_link</frame_id>
+        <!-- 角速度：σ≈0.005 rad/s（≈0.3°/s），零偏不稳定性≈4e-4 rad/s，相关时间1000s -->
         <angular_velocity>
           <x>
             <noise type="gaussian">
-              <mean>0</mean>
-              <stddev>0.02</stddev>
+              <mean>0.0</mean>
+              <stddev>0.005</stddev>
+              <dynamic_bias_mean>0.0</dynamic_bias_mean>
+              <dynamic_bias_stddev>4.0e-4</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </x>
           <y>
             <noise type="gaussian">
-              <mean>0</mean>
-              <stddev>0.02</stddev>
+              <mean>0.0</mean>
+              <stddev>0.005</stddev>
+              <dynamic_bias_mean>0.0</dynamic_bias_mean>
+              <dynamic_bias_stddev>4.0e-4</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </y>
           <z>
             <noise type="gaussian">
-              <mean>0</mean>
-              <stddev>0.02</stddev>
+              <mean>0.0</mean>
+              <stddev>0.005</stddev>
+              <dynamic_bias_mean>0.0</dynamic_bias_mean>
+              <dynamic_bias_stddev>4.0e-4</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </z>
         </angular_velocity>
+        <!-- 线加速度：σ≈0.05 m/s²（≈5mg），零偏不稳定性≈0.005 m/s² -->
         <linear_acceleration>
           <x>
             <noise type="gaussian">
-              <mean>0</mean>
-              <stddev>0.01</stddev>
+              <mean>0.0</mean>
+              <stddev>0.05</stddev>
+              <dynamic_bias_mean>0.0</dynamic_bias_mean>
+              <dynamic_bias_stddev>5.0e-3</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </x>
           <y>
             <noise type="gaussian">
-              <mean>0</mean>
-              <stddev>0.02</stddev>
+              <mean>0.0</mean>
+              <stddev>0.05</stddev>
+              <dynamic_bias_mean>0.0</dynamic_bias_mean>
+              <dynamic_bias_stddev>5.0e-3</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </y>
           <z>
             <noise type="gaussian">
-              <mean>0</mean>
-              <stddev>0.02</stddev>
+              <mean>0.0</mean>
+              <stddev>0.05</stddev>
+              <dynamic_bias_mean>0.0</dynamic_bias_mean>
+              <dynamic_bias_stddev>5.0e-3</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </z>
         </linear_acceleration>
@@ -400,13 +421,18 @@
           <max>40.0</max>
           <resolution>0.02</resolution>
         </range>
+        <!-- Livox Mid360 / 32线机械雷达风格噪声模型 -->
+        <!-- stddev 测距白噪声 σ≈2cm（&lt;25m 内典型值），bias 逐台标定偏置 σ≈5mm -->
+        <!-- precision 量化误差 1cm，模拟 ADC 离散化 -->
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.02</stddev>
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.005</bias_stddev>
+          <precision>0.01</precision>
+        </noise>
       </lidar>
-
-      <!-- <noise>
-        <type>gaussian</type>
-        <mean>0.0</mean>
-        <stddev>0.02</stddev>
-      </noise> -->
     </sensor>
   </gazebo>
 

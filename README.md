@@ -4,6 +4,10 @@ colcon build --packages-select simulated_chassis --symlink-install
 source install/setup.bash
 ros2 launch simulated_chassis three_wheel_sim.launch.py
 
+# 新八边形世界
+ros2 launch simulated_chassis three_wheel_sim.launch.py world:=world_octagon.sdf
+
+
 ## 在线建图
 source install/setup.bash
 ros2 launch simulated_chassis slam3d_online.launch.py

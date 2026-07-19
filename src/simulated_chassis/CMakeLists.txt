@@ -147,6 +147,10 @@ install(DIRECTORY
   world/
   DESTINATION share/${PROJECT_NAME}/world
 )
+install(DIRECTORY
+  models/
+  DESTINATION share/${PROJECT_NAME}/models
+)
 
 
 pluginlib_export_plugin_description_file(controller_interface plugin.xml)
