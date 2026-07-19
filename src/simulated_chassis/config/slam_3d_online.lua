@@ -46,7 +46,7 @@ TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
 
 -- 子图帧数稍微增加，提升局部一致性（160→130，优化频率略降但子图更稳定）
-TRAJECTORY_BUILDER_3D.submaps.num_range_data = 140
+TRAJECTORY_BUILDER_3D.submaps.num_range_data = 110
 
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0 -- 平移权重
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2    -- 默认 400
@@ -55,15 +55,12 @@ POSE_GRAPH.optimize_every_n_nodes = 40
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.5
 POSE_GRAPH.constraint_builder.min_score = 0.65
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
-POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2  -- 默认 110
-POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000
+POSE_GRAPH.optimization_problem.acceleration_weight = 1.15e2  -- 默认 110
+POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000（恢复官方默认）
 POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
 
--- ✅ 锁定 Z 轴：地面机器人物理上 Z 恒为 0，开启后避免 3D SLAM 的 Z 漂移
--- 3D 模式仍保留 pitch/roll/voxel 的 3D 信息，只是把轨迹锁在 Z=0 平面
--- 之前关掉是因为仿真 IMU 太干净导致 local SLAM 旋转权重相对偏高；
--- 加真实 IMU 噪声后，必须开启此选项，否则加减速时 IMU bias 漂移会持续累积到 Z 上
-POSE_GRAPH.optimization_problem.fix_z_in_3d = true
+-- fix_z_in_3d 保持关闭（默认 false），用其他方式控制 Z 漂移
+-- POSE_GRAPH.optimization_problem.fix_z_in_3d = false
 
 return options

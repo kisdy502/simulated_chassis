@@ -28,37 +28,39 @@ planner_server:
   ros__parameters:
     use_sim_time: True
     expected_planner_frequency: 1.0
-    # planner_plugins: ["GridBased"]
-    # GridBased:
-    #   plugin: "nav2_navfn_planner::NavfnPlanner"
-    #   tolerance: 0.35
-    #   use_astar: false
-    #   allow_unknown: true   # ✅ 改为 true，允许未知区域
-    # 使用 SmacPlanner2D（支持全向/差速/三舵轮）
     planner_plugins: ["GridBased"]
+    # SmacPlanner2D：纯栅格 A* 规划器，适合全向车（三舵轮）
+    # 之前误用了一些 SmacPlannerHybrid / 不存在的参数，已按官方推荐对齐
     GridBased:
       plugin: "nav2_smac_planner::SmacPlanner2D"
-      
-      # --- 核心优化参数 ---
-      tolerance: 0.25                    # 目标点容差(m)，根据你的定位精度调整
-      allow_unknown: true                # ✅ 允许未知区域，避免规划失败
-      max_iterations: 1000000            # 最大迭代次数，保证能搜到路径
-      max_planning_time: 5.0             # 最大规划时间(秒)，大场景可适当增加
-      
-      # --- 代价权重（关键！影响路径质量）---
-      cost_penalty: 1.0                  # 代价地图权重，越大越远离障碍物
-      neutral_cost: 50                   # 中性代价值，值越大越倾向于走开阔区域
-      
-      # --- 路径平滑和搜索策略 ---
-      downsample_costmap: true           # 降采样加速
-      downsampling_factor: 2             # 分辨率0.05 -> 0.10m，平衡速度和精度
-      
-      # --- 搜索启发式 ---
-      heuristic_epsilon: 1.0             # 启发式权重，1.0=精确A*，>1.0加速搜索但路径可能次优
-      
-      # --- 调试（可选）---
-      debug_allow_unknown: false         # 调试用，保持false
-      use_final_approach_orientation: false  # 三舵轮通常不需要最终靠拢方向
+
+      # === 目标容差与搜索限制 ===
+      tolerance: 0.125                   # 到达目标的距离容差(m)，官方推荐 0.125
+      allow_unknown: true                # 允许在未知区域规划
+      max_iterations: 1000000            # 最大搜索迭代（不可达时兜底），-1 表示无限
+      max_on_approach_iterations: 1000   # 进入容差后继续尝试的最大迭代
+      max_planning_time: 2.0             # 最大规划时间(s)，正常应 <1s
+
+      # === 路径离障碍物多远（关键参数！原 cost_penalty 不存在被忽略了）===
+      # 这个值越大，路径越走在通道中央；0.0 = 退化成朴素 A*（贴着障碍走）
+      # 官方推荐 2.0（速度与中央化的平衡），1.0 偏快但路径贴边
+      cost_travel_multiplier: 2.0
+
+      # === 是否降采样 ===
+      # 官方推荐 false / 1（不降采样，用 costmap 原分辨率 5cm）
+      # 之前 true + factor=2 把 5cm 降到 10cm，规划快了但精度差
+      downsample_costmap: false
+      downsampling_factor: 1
+
+      # === 最终朝向 ===
+      use_final_approach_orientation: false  # false = 强制对齐目标朝向；true = 沿接近方向
+
+      # === 路径平滑（Ceres-based smoother，之前完全缺失）===
+      smoother:
+        max_iterations: 1000
+        w_smooth: 0.3                    # 平滑权重（路径曲率）
+        w_data: 0.2                      # 数据权重（贴合原始路径）
+        tolerance: 1.0e-10
 
 planner_server_rclcpp_node:
   ros__parameters:
@@ -105,34 +107,36 @@ controller_server:
 
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
+      # === 采样参数（按算力调整） ===
       time_steps: 48
       model_dt: 0.05
       batch_size: 1200
       iteration_count: 1
       vx_std: 0.4
-      vy_std: 0.2                   # 降低侧向噪声，避免目标点附近漂移
+      vy_std: 0.2                   # Omni 侧向噪声
       wz_std: 0.3
-      
-      # ✅ 三舵轮速度限制（按物理实际能力设置）
-      vx_max: 1.5                    # 最大前进速度
-      vx_min: -1.0                   # 最大倒退速度
-      vy_max: 1.0                    # 最大侧向速度
-      wz_max: 1.5                    # 最大角速度
-      
-      ax_max: 3.0                    # 最大加速度
-      ax_min: -3.0                   # 最大减速度
 
-      
-      prune_distance: 1.5
+      # === 三舵轮速度/加速度限制（机器人物理能力 + ay/az 补全） ===
+      # vx_max 1.5→1.2：让 time_steps(48) × model_dt(0.05) × vx_max(1.2) = 2.88m < costmap 半径(3m)
+      vx_max: 1.2                    # 最大前进速度
+      vx_min: -1.0                   # 最大倒退速度
+      vy_max: 1.0                    # 最大侧向速度（Omni 专属）
+      wz_max: 1.5                    # 最大角速度
+      ax_max: 3.0                    # 最大线加速度
+      ax_min: -3.0                   # 最大线减速度
+      ay_max: 3.0                    # ⭐ Omni 必须补全：侧向加速度上限
+      az_max: 3.5                    # ⭐ 角加速度上限
+
+      prune_distance: 1.7            # 对齐官方（原 1.5）
       regenerate_noises: false
       transform_tolerance: 0.1
       reset_period: 1.0
-      temperature: 0.4             # 降低温度，减少随机探索
+      temperature: 0.3               # 对齐官方（原 0.4，更低=更少随机探索）
       gamma: 0.015
-      
-      # ✅ 三舵轮：使用 OmniDrive
-      motion_model: "Omni"      # 从 DiffDrive 改为 OmniDrive
-      
+
+      # === 运动模型（三舵轮=Omni） ===
+      motion_model: "Omni"           # 不要改成 DiffDrive；Omni 无需 Constraints 子块
+
       visualize: false
       publish_optimal_trajectory: false
       TrajectoryVisualizer:
@@ -141,79 +145,111 @@ controller_server:
       enforce_path_inversion: false
       inversion_xy_tolerance: 0.2
       inversion_yaw_tolerance: 0.4
-      
+
+      # === Critics 列表 ===
+      # 移除 PreferForwardCritic：Omni 全向车不需要鼓励前进，反而会压制侧向运动
+      # 移除 ObstaclesCritic：CostCritic 已经基于 costmap 处理障碍，两个并存容易打架
+      # 如需抑制不必要的自旋，可以取消注释 TwirlingCritic
       critics:
         [
           "ConstraintCritic",
           "CostCritic",
           "GoalCritic",
+          "GoalAngleCritic",
           "PathAlignCritic",
           "PathFollowCritic",
-          "ObstaclesCritic",
-          "PreferForwardCritic",  # 新增，鼓励前进
           "PathAngleCritic",
-          "GoalAngleCritic",
         ]
-      
+
+      # === ConstraintCritic（运动学约束，对齐官方） ===
       ConstraintCritic:
         enabled: True
         cost_power: 1
         cost_weight: 4.0
-      
+
+      # === GoalCritic（空间趋近目标，对齐官方） ===
+      # cost_weight 从 10→5（过激进容易冲目标）
+      # threshold 从 2.0→1.4（对齐官方，约等于预测距离）
       GoalCritic:
         enabled: True
         cost_power: 1
-        cost_weight: 10.0
-        threshold_to_consider: 2.0
-      
-      ObstaclesCritic:
-        enabled: True
-        cost_power: 1
-        repulsion_weight: 5.0
-        critical_weight: 4.0
-        consider_footprint: false
-        collision_cost: 10000.0
-        collision_margin_distance: 0.2
-        near_goal_distance: 0.5
-      
-      CostCritic:
-        enabled: True
-        cost_power: 1
-        cost_weight: 5.5
-        critical_cost: 400.0
-        consider_footprint: True
-        collision_cost: 1000000.0
-        near_goal_distance: 1.0
-        inflation_radius: 0.50
-        cost_scaling_factor: 5.0
-      
-      PathAlignCritic:
+        cost_weight: 5.0
+        threshold_to_consider: 1.4
+
+      # === GoalAngleCritic（终点角度对齐，对齐官方） ===
+      GoalAngleCritic:
         enabled: True
         cost_power: 1
         cost_weight: 3.0
-        max_path_occupancy_ratio: 0.05
-        trajectory_point_step: 3
         threshold_to_consider: 0.5
-        offset_from_furthest: 10
+
+      # === CostCritic（基于 costmap 的代价评估，对齐官方） ===
+      # ⚠️ 删除 inflation_radius / cost_scaling_factor：这是 Humble 专属参数
+      #    Jazzy 里 ObstacleCritic 直接从 costmap 的 inflation_layer 读
+      # cost_weight 5.5→3.81（过高会让机器人过度避障）
+      # trajectory_point_step 是官方补全参数
+      CostCritic:
+        enabled: True
+        cost_power: 1
+        cost_weight: 3.81
+        critical_cost: 300.0
+        consider_footprint: True
+        collision_cost: 1000000.0
+        near_goal_distance: 1.0
+        trajectory_point_step: 2
+
+      # === PathAlignCritic（路径对齐，⭐ 最关键修复） ===
+      # cost_weight 3.0→14.0（4.7倍差距，这是路径跟踪差的最大原因）
+      # offset_from_furthest 10→20（公式：pred_horizon×vmax/resolution/3 ≈ 24）
+      # trajectory_point_step 3→4（对齐官方）
+      PathAlignCritic:
+        enabled: True
+        cost_power: 1
+        cost_weight: 14.0
+        max_path_occupancy_ratio: 0.05
+        trajectory_point_step: 4
+        threshold_to_consider: 0.5
+        offset_from_furthest: 20
         use_path_orientations: false
-      
+
+      # === PathFollowCritic（沿路径推进，对齐官方） ===
+      # cost_weight 4.0→5.0（路径推进力增强）
       PathFollowCritic:
         enabled: True
         cost_power: 1
-        cost_weight: 4.0
-        offset_from_furthest: 6  # ✅ 从 5 减小到 1
+        cost_weight: 5.0
+        offset_from_furthest: 5
         threshold_to_consider: 1.4
 
-      PreferForwardCritic:
-        enabled: true
-        cost_weight: 3.0          # 鼓励前向速度，减少侧向依赖
+      # === PathAngleCritic（路径角度惩罚，⭐ 补全缺失参数） ===
+      # 之前只有 cost_weight，缺了 4 个关键参数
+      # mode=0：前进偏好（虽然 Omni 全向，但仍鼓励大致朝向路径方向）
       PathAngleCritic:
-        enabled: true
+        enabled: True
+        cost_power: 1
         cost_weight: 2.0
-      GoalAngleCritic:
-        enabled: true
-        cost_weight: 5.0          # 提高权重，让角度误差惩罚加大
-        threshold_to_consider: 1.0 # 在距离目标1米内开始考虑角度
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 1.0
+        mode: 0
+
+      # === 以下 critic 默认不启用，需要时取消注释 ===
+      # TwirlingCritic：抑制不必要的旋转（Omni 全向车如果转向过于频繁可以启用）
+      # TwirlingCritic:
+      #   enabled: True
+      #   cost_power: 1
+      #   cost_weight: 10.0
+
+      # ObstaclesCritic：障碍物排斥（CostCritic 已处理，需要更激进避障时再启用）
+      # ObstaclesCritic:
+      #   enabled: True
+      #   cost_power: 1
+      #   repulsion_weight: 1.5
+      #   critical_weight: 20.0
+      #   consider_footprint: false
+      #   collision_cost: 10000.0
+      #   collision_margin_distance: 0.1
+      #   near_goal_distance: 0.5
 
 
 
@@ -262,8 +298,8 @@ local_costmap:
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 5.0
-        inflation_radius: 0.50
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
 
       
       always_send_full_costmap: True
@@ -313,8 +349,8 @@ global_costmap:
       
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 5.0
-        inflation_radius: 0.50
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
       
       always_send_full_costmap: True
 
@@ -403,21 +439,24 @@ collision_monitor:
     stop_pub_timeout: 2.0
     enable_stamped_cmd_vel: False
     polygons: ["PolygonStop", "PolygonSlow"]
-    # ✅ 缩小多边形，与足迹匹配
-    polygons: ["PolygonStop", "PolygonSlow"]
+    # 多边形尺寸说明（三舵轮全向车，必须前后左右对称）：
+    #   机器人 footprint: x∈[-0.3, +0.3], y∈[-0.2, +0.2]（0.6×0.4m）
+    #   PolygonStop = footprint 外扩 10cm → x∈[-0.4, +0.4], y∈[-0.3, +0.3]
+    #   PolygonSlow = footprint 外扩 20cm → x∈[-0.5, +0.5], y∈[-0.4, +0.4]
+    # 注意：必须先触发 Slow 把速度降下来，Stop 区 10cm 才够制动距离
     PolygonStop:
       type: "polygon"
-      points: "[[0.2, 0.15], [0.2, -0.15], [-0.1, -0.15], [-0.1, 0.15]]"  # 缩小
+      points: "[[0.4, 0.3], [0.4, -0.3], [-0.4, -0.3], [-0.4, 0.3]]"
       action_type: "stop"
       min_points: 3
       visualize: True
       polygon_pub_topic: "polygon_stop"
     PolygonSlow:
       type: "polygon"
-      points: "[[0.35, 0.25], [0.35, -0.25], [-0.1, -0.25], [-0.1, 0.25]]"
+      points: "[[0.5, 0.4], [0.5, -0.4], [-0.5, -0.4], [-0.5, 0.4]]"
       action_type: "slowdown"
       min_points: 3
-      slowdown_ratio: 1.0  # 改为0.5，太慢会导致无法前进
+      slowdown_ratio: 0.5   # ⭐ 修复：原值 1.0 等于不减速；0.5 = 速度减半
       visualize: True
       polygon_pub_topic: "polygon_slowdown"
     observation_sources: ["lidar"]

@@ -56,8 +56,8 @@ POSE_GRAPH.constraint_builder.sampling_ratio = 0.5
 POSE_GRAPH.constraint_builder.min_score = 0.65
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
 POSE_GRAPH.constraint_builder.ceres_scan_matcher_3d.ceres_solver_options.max_num_iterations = 30  -- 约束匹配更精细
-POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2
-POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4
+POSE_GRAPH.optimization_problem.acceleration_weight = 1.15e2
+POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000（恢复官方默认）
 POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
 
@@ -68,7 +68,7 @@ POSE_GRAPH.max_num_final_iterations = 300                -- 默认200，离线�
 -- 原本 7m/20° 是因为仿真数据太干净导致默认窗口配不上；
 -- 加真实噪声 + 与在线一致的参数后，默认窗口反而更稳。
 
--- ✅ 锁定 Z 轴（与在线建图一致，地面机器人防止 Z 漂移）
-POSE_GRAPH.optimization_problem.fix_z_in_3d = true
+-- fix_z_in_3d 保持关闭（默认 false）
+-- POSE_GRAPH.optimization_problem.fix_z_in_3d = false
 
 return options

@@ -60,11 +60,11 @@ POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
 POSE_GRAPH.global_constraint_search_after_n_seconds = 15.0  -- 定位下不需要频繁全局搜索
 
 POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2
-POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4
+POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000（恢复官方默认）
 POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
 
--- ✅ 锁定 Z 轴（与建图一致，地面机器人防止 Z 漂移）
-POSE_GRAPH.optimization_problem.fix_z_in_3d = true
+-- fix_z_in_3d 保持关闭（默认 false）
+-- POSE_GRAPH.optimization_problem.fix_z_in_3d = false
 
 return options
