@@ -89,15 +89,15 @@
       </spot>
     </light>
 
-    <!-- ==================== 围墙 (36x30m, 厚0.7m, 高1.8m) ==================== -->
+    <!-- ==================== 围墙 (37.6x31.6m, 四面各外扩0.8m, 厚0.7m, 高1.8m) ==================== -->
     <!-- 围墙高度 1.8m，Z = 0.9（中心在地面上方 0.9m，底部刚好在地面） -->
     <model name='wall'>
       <link name='length_bottom'>
-        <pose>0 -15 0.85 0 0 0</pose>
+        <pose>0 -15.8 0.85 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>36 0.7 1.7</size>
+              <size>37.6 0.7 1.7</size>
             </box>
           </geometry>
           <surface>
@@ -111,7 +111,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>36 0.7 1.7</size>
+              <size>37.6 0.7 1.7</size>
             </box>
           </geometry>
           <material>
@@ -122,11 +122,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='length_top'>
-        <pose>0 15 0.75 0 0 0</pose>
+        <pose>0 15.8 0.75 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>36 0.7 1.5</size>
+              <size>37.6 0.7 1.5</size>
             </box>
           </geometry>
           <surface>
@@ -140,7 +140,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>36 0.7 1.5</size>
+              <size>37.6 0.7 1.5</size>
             </box>
           </geometry>
           <material>
@@ -151,11 +151,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='width_left'>
-        <pose>-18 0 0.8 0 0 0</pose>
+        <pose>-18.8 0 0.8 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>0.7 30 1.6</size>
+              <size>0.7 31.6 1.6</size>
             </box>
           </geometry>
           <surface>
@@ -169,7 +169,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>0.7 30 1.6</size>
+              <size>0.7 31.6 1.6</size>
             </box>
           </geometry>
           <material>
@@ -180,11 +180,11 @@
         <enable_wind>false</enable_wind>
       </link>
       <link name='width_right'>
-        <pose>18 0 0.7 0 0 0</pose>
+        <pose>18.8 0 0.7 0 0 0</pose>
         <collision name='c'>
           <geometry>
             <box>
-              <size>0.7 30 1.4</size>
+              <size>0.7 31.6 1.4</size>
             </box>
           </geometry>
           <surface>
@@ -198,7 +198,7 @@
         <visual name='v'>
           <geometry>
             <box>
-              <size>0.7 30 1.4</size>
+              <size>0.7 31.6 1.4</size>
             </box>
           </geometry>
           <material>

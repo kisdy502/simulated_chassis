@@ -328,19 +328,19 @@
           <x>
             <noise type="gaussian">
               <mean>0</mean>
-              <stddev>0.01</stddev>
+              <stddev>0.02</stddev>
             </noise>
           </x>
           <y>
             <noise type="gaussian">
               <mean>0</mean>
-              <stddev>0.01</stddev>
+              <stddev>0.02</stddev>
             </noise>
           </y>
           <z>
             <noise type="gaussian">
               <mean>0</mean>
-              <stddev>0.01</stddev>
+              <stddev>0.02</stddev>
             </noise>
           </z>
         </angular_velocity>
@@ -354,13 +354,13 @@
           <y>
             <noise type="gaussian">
               <mean>0</mean>
-              <stddev>0.01</stddev>
+              <stddev>0.02</stddev>
             </noise>
           </y>
           <z>
             <noise type="gaussian">
               <mean>0</mean>
-              <stddev>0.001</stddev>
+              <stddev>0.02</stddev>
             </noise>
           </z>
         </linear_acceleration>
@@ -373,9 +373,10 @@
   <!-- 角度分布：±5°内12条线(37.5%)，±5°~±15°16条线(50%)，±15°~±20°4条线(12.5%) -->
   <gazebo reference="lidar_link">
     <sensor name="mid360_sensor" type="gpu_lidar">
+      <!-- <enable>true</enable> -->
       <always_on>true</always_on>
-      <update_rate>10</update_rate>
-      <visualize>false</visualize>
+      <update_rate>20</update_rate>
+      <visualize>true</visualize>
       <topic>/lidar/point_cloud</topic>
       <gz_frame_id>lidar_link</gz_frame_id>
 
@@ -383,31 +384,32 @@
         <frame_id>lidar_link</frame_id>
         <scan>
           <horizontal>
-            <samples>720</samples>
+            <samples>360</samples>
             <resolution>1</resolution>
             <min_angle>-3.1415926</min_angle>
             <max_angle>3.1415926</max_angle>
           </horizontal>
           <vertical>
             <samples>32</samples>
-            <min_angle>-0.349</min_angle>   <!-- -20° -->
-            <max_angle>0.349</max_angle>    <!-- +20° -->
+            <min_angle>-0.0175</min_angle>
+            <max_angle>0.1769</max_angle>
           </vertical>
         </scan>
         <range>
-          <min>0.2</min>
-          <max>30.0</max>
+          <min>0.5</min>
+          <max>40.0</max>
           <resolution>0.02</resolution>
         </range>
       </lidar>
 
-      <noise>
+      <!-- <noise>
         <type>gaussian</type>
         <mean>0.0</mean>
-        <stddev>0.01</stddev>
-      </noise>
+        <stddev>0.02</stddev>
+      </noise> -->
     </sensor>
   </gazebo>
+
 
 
   <!-- 在 robot 标签的末尾，为每个车轮的 link 指定摩擦参数 -->

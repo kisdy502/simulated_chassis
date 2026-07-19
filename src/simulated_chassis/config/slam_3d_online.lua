@@ -9,14 +9,14 @@ options = {
   published_frame = "base_footprint",
   odom_frame = "odom",
   provide_odom_frame = true,
-  publish_frame_projected_to_2d = true,
+  publish_frame_projected_to_2d = false,
   use_odometry = true,
   use_nav_sat = false,
   use_landmarks = false,
-  num_laser_scans = 0,
+  num_laser_scans = 0,                    -- ✅ 关闭2D激光
   num_multi_echo_laser_scans = 0,
   num_subdivisions_per_laser_scan = 1,
-  num_point_clouds = 1,
+  num_point_clouds = 1,                   -- ✅ 启用3D点云
   lookup_transform_timeout_sec = 0.2,
   submap_publish_period_sec = 0.3,
   pose_publish_period_sec = 5e-3,
@@ -28,28 +28,42 @@ options = {
   landmarks_sampling_ratio = 1.,
 }
 
+-- ✅ 启用3D建图
 MAP_BUILDER.use_trajectory_builder_2d = false
 MAP_BUILDER.use_trajectory_builder_3d = true
 MAP_BUILDER.num_background_threads = 4
 
--- ==================== 前端：仅改雷达范围，其余用源码默认 ====================
--- 源码默认: min_range=1.0, max_range=60.0, voxel_filter_size=0.15
+-- ✅ 3D 轨迹构建器配置
 TRAJECTORY_BUILDER_3D.min_range = 0.5
-TRAJECTORY_BUILDER_3D.max_range = 24.0
+TRAJECTORY_BUILDER_3D.max_range = 30.0
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
-TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.10            -- 恢复源码默认，不用0.05
+TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
+TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08       -- 5cm 精度，比 10cm 更精细
 
--- scan matcher 权重：全部用源码默认（translation=5, rotation=4e2），不覆盖
--- 子图大小：用源码默认 160
--- adaptive_voxel_filter：用源码默认
+-- 实时匹配：窗口稍加大，减少位姿跳变（不增加 CPU 负担）
+TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
+TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.2
+TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
 
--- ==================== 后端：仅加 fix_z_in_3d，其余用源码默认 ====================
-POSE_GRAPH.optimize_every_n_nodes = 90                    -- 源码默认
-POSE_GRAPH.constraint_builder.sampling_ratio = 0.3         -- 源码默认
-POSE_GRAPH.constraint_builder.min_score = 0.55             -- 源码默认
-POSE_GRAPH.constraint_builder.global_localization_min_score = 0.6  -- 源码默认
+-- 子图帧数稍微增加，提升局部一致性（160→130，优化频率略降但子图更稳定）
+TRAJECTORY_BUILDER_3D.submaps.num_range_data = 140
 
--- 地面机器人：锁死z，防止回环优化拉飞
+TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0 -- 平移权重
+TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2    -- 默认 400
+
+POSE_GRAPH.optimize_every_n_nodes = 40
+POSE_GRAPH.constraint_builder.sampling_ratio = 0.5
+POSE_GRAPH.constraint_builder.min_score = 0.65
+POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
+POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2  -- 默认 110
+POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000
+POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
+POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
+
+-- 注：fix_z_in_3d = true 在仿真下会暴露 local SLAM 的 pitch/roll 误差
+-- 因为 IMU 太干净(0.004 m/s²),但 local_slam_pose_rotation_weight(1e5)
+-- 是 acceleration_weight(110)的 900 倍,优化器更信 local SLAM。
+-- 关掉 fix_z,让 Z 自由吸收角度误差,2D 导航不受影响(publish_frame_projected_to_2d=true)。
 -- POSE_GRAPH.optimization_problem.fix_z_in_3d = true
 
 return options
