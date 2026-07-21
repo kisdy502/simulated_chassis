@@ -47,7 +47,7 @@ TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.2
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
 
-TRAJECTORY_BUILDER_3D.submaps.num_range_data = 100       -- 定位用更小子图，及时滑动窗口抛弃旧数据
+TRAJECTORY_BUILDER_3D.submaps.num_range_data = 160       -- ⭐ 极大值：定位模式下几乎不创建新子图，防止重影
 
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0   -- 对齐建图
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2       -- 对齐建图
@@ -57,14 +57,15 @@ POSE_GRAPH.optimize_every_n_nodes = 60                   -- 定位下不需要�
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.4       -- 定位降低采样率，省CPU
 POSE_GRAPH.constraint_builder.min_score = 0.65           -- 对齐建图（地图好，反而要更高门槛防误匹配）
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
-POSE_GRAPH.global_constraint_search_after_n_seconds = 15.0  -- 定位下不需要频繁全局搜索
+POSE_GRAPH.global_constraint_search_after_n_seconds = 10.0  -- 定位下不需要频繁全局搜索
 
 POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2
 POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000（恢复官方默认）
 POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
 
--- fix_z_in_3d 保持关闭（默认 false）
--- POSE_GRAPH.optimization_problem.fix_z_in_3d = false
+TRAJECTORY_BUILDER.pure_localization_trimmer = {
+  max_submaps_to_keep = 3,  -- 只保留最近3个子图，其余丢弃
+}
 
 return options

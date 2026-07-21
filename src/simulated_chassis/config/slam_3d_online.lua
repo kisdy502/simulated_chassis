@@ -55,12 +55,9 @@ POSE_GRAPH.optimize_every_n_nodes = 40
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.5
 POSE_GRAPH.constraint_builder.min_score = 0.65
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
-POSE_GRAPH.optimization_problem.acceleration_weight = 1.15e2  -- 默认 110
+POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2  -- 默认 110
 POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000（恢复官方默认）
 POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
-
--- fix_z_in_3d 保持关闭（默认 false），用其他方式控制 Z 漂移
--- POSE_GRAPH.optimization_problem.fix_z_in_3d = false
 
 return options
