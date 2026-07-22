@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """
-Cartographer 建图 + RViz 可视化启动文件
+Cartographer 在线建图启动文件 (带RViz显示)
 
 使用方法:
-    # 终端1: 先启动gazebo
-    ros2 launch jzt_robot gazebo.launch.py
-
-    # 终端2: 再启动建图
-    ros2 launch jzt_robot slam.launch.py
+    ros2 launch jzt_robot slam_online_2lidar.launch.py
 """
 
 import os
@@ -19,19 +15,16 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    # 使用 jzt_robot 配置目录
     config_dir = os.path.join(
         get_package_share_directory('jzt_robot'),
         'config'
     )
-    
-    
+
     rviz_config = os.path.join(
         get_package_share_directory('jzt_robot'),
-        'rviz', 'nav2_double_lidar.rviz'
+        'rviz', 'slam_double_lidar.rviz'
     )
 
-    # 启动参数
     declared_arguments = [
         DeclareLaunchArgument(
             'use_sim_time',
@@ -62,7 +55,7 @@ def generate_launch_description():
             ('imu', '/imu'),
         ],
     )
-    
+
     # 占据栅格地图发布节点
     cartographer_occupancy_grid_node = Node(
         package='cartographer_ros',
@@ -75,8 +68,8 @@ def generate_launch_description():
             '-publish_period_sec', '1.0',
         ],
     )
-    
-    # RViz 可视化
+
+    # RViz 可视化 (显示在Windows上)
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -85,11 +78,10 @@ def generate_launch_description():
         parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
         output='screen',
     )
-    
 
     return LaunchDescription([
         LogInfo(msg=['==========================================']),
-        LogInfo(msg=['Cartographer 建图模式启动']),
+        LogInfo(msg=['Cartographer SLAM + RViz']),
         LogInfo(msg=['==========================================']),
 
         *declared_arguments,
@@ -98,5 +90,5 @@ def generate_launch_description():
         TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
         TimerAction(period=3.0, actions=[rviz_node]),
 
-        LogInfo(msg=['建图节点  + RViz 已启动']),
+        LogInfo(msg=['SLAM + RViz started']),
     ])

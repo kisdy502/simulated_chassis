@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Jazzy + Gazebo Garden/Ionic 差速机器人仿真启动文件
-参考 simulated_chassis/launch/three_wheel_sim.launch.py
+Jazzy + Gazebo Garden 差速机器人仿真启动文件 (Docker无头Gazebo + X11转发GUI)
 
 传感器：前270°激光 + 后270°激光 + IMU
 驱动方式：ros2_control + diff_drive_controller
@@ -20,7 +19,6 @@ from launch_ros.actions import Node
 
 
 def get_world_name(sdf_path: str) -> str:
-    """从 SDF 文件中自动提取 world name"""
     tree = ET.parse(sdf_path)
     world_elem = tree.getroot().find("world")
     if world_elem is not None:
@@ -39,18 +37,16 @@ def generate_launch_description():
         "robot_name", default_value="diff_agv01", description="机器人名称"
     )
 
-    # 机器人名称（Python 字符串，用于 f-string；也传给 xacro）
     robot_name = "diff_agv01"
     robot_name_launch = LaunchConfiguration("robot_name")
     world_path = os.path.join(pkg_share, "world", "world_m.sdf")
-    world_name = get_world_name(world_path)  # 从 SDF 自动读取，不用硬编码
+    world_name = get_world_name(world_path)
 
     xacro_path = os.path.join(pkg_share, "urdf", "diff", "robot.xacro")
     robot_description = {
         "robot_description": Command(["xacro ", xacro_path, " robot_name:=", robot_name_launch])
     }
 
-    # 环境变量
     set_plugin_path = SetEnvironmentVariable(
         "GZ_SIM_SYSTEM_PLUGIN_PATH", "/opt/ros/jazzy/lib"
     )
@@ -67,9 +63,9 @@ def generate_launch_description():
         ],
     )
 
-    # 2. Gazebo
+    # 2. Gazebo (无头/Server模式)
     gazebo = ExecuteProcess(
-        cmd=["gz", "sim", "-r", world_path],
+        cmd=["gz", "sim", "-r", "-s", world_path],
         output="screen",
     )
 
@@ -116,9 +112,7 @@ def generate_launch_description():
         package="ros_gz_bridge",
         executable="parameter_bridge",
         arguments=[
-            # 前向激光
             f"/model/{robot_name}/laser_front_link/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
-            # 后向激光
             f"/model/{robot_name}/laser_rear_link/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
             "/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",
             f"{clock_gz_topic}@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
@@ -134,14 +128,13 @@ def generate_launch_description():
         output="screen",
     )
 
-    # 6. 键盘遥控
+    # 6. 键盘遥控 (xterm窗口，显示在Windows上)
     teleop = Node(
         package="teleop_twist_keyboard",
         executable="teleop_twist_keyboard",
         name="teleop_twistkeyboard",
         prefix="xterm -e",
-        parameters=[{"stamped": False}],  # 发 Twist，不是 TwistStamped
-        # 不 remapping，默认就是 /cmd_vel
+        parameters=[{"stamped": False}],
         output="screen",
     )
 

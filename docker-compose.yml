@@ -1,0 +1,121 @@
+services:
+  # ==================== ROS2 机器人仿真 ====================
+  
+  robot-simulation:
+    image: simulated-robot:latest
+    build:
+      context: .
+      dockerfile: docker/simulated-robot/Dockerfile
+    container_name: robot_simulation
+    restart: unless-stopped
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - ROBOT_TYPE=${ROBOT_TYPE:-diff_drive}
+      - MODE=${MODE:-simulation}
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - GAZEBO_GUI=${GAZEBO_GUI:-false}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - simulation_data:/root/.gazebo
+      - ./maps:/ros2_ws/maps
+    ports:
+      - "11345:11345"  # Gazebo仿真端口
+    networks:
+      - agv_network
+    ipc: host
+    pid: host
+
+  # ==================== AGV Bridge节点 ====================
+  
+  agv-bridge:
+    image: agv-bridge:latest
+    build:
+      context: .
+      dockerfile: docker/agv-bridge/Dockerfile
+    container_name: agv_bridge
+    restart: unless-stopped
+    environment:
+      - AGV_ID=${AGV_ID:-AGV001}
+      - SPRINGBOOT_HOST=${SPRINGBOOT_HOST:-host.docker.internal}
+      - SPRINGBOOT_PORT=${SPRINGBOOT_PORT:-22777}
+      - WEBSOCKET_PORT=${WEBSOCKET_PORT:-9090}
+      - REDIS_HOST=${REDIS_HOST:-host.docker.internal}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - MQTT_HOST=${MQTT_HOST:-host.docker.internal}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    ports:
+      - "${WEBSOCKET_PORT:-9090}:${WEBSOCKET_PORT:-9090}"
+    depends_on:
+      robot-simulation:
+        condition: service_started
+    networks:
+      - agv_network
+    ipc: host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ==================== 导航/建图（二选一）====================
+  
+  nav2-server:
+    image: simulated-robot:latest
+    container_name: nav2_server
+    restart: unless-stopped
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - ROBOT_TYPE=${ROBOT_TYPE:-diff_drive}
+      - MODE=navigation
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - PBSTREAM_FILE=/ros2_ws/maps/my_map.pbstream
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./maps:/ros2_ws/maps
+      - simulation_data:/root/.gazebo
+    command: ["/launch_robot.sh"]
+    depends_on:
+      robot-simulation:
+        condition: service_started
+    networks:
+      - agv_network
+    ipc: host
+    profiles:
+      - navigation
+
+  cartographer:
+    image: simulated-robot:latest
+    container_name: cartographer_slam
+    restart: unless-stopped
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - ROBOT_TYPE=${ROBOT_TYPE:-diff_drive}
+      - MODE=slam
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./maps:/ros2_ws/maps
+      - simulation_data:/root/.gazebo
+    depends_on:
+      robot-simulation:
+        condition: service_started
+    networks:
+      - agv_network
+    ipc: host
+    profiles:
+      - slam
+
+# ==================== 网络配置 ====================
+networks:
+  agv_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ==================== 数据卷 ====================
+volumes:
+  simulation_data:
+    driver: local

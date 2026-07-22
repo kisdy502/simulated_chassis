@@ -74,10 +74,10 @@ def generate_launch_description():
         arguments=[
             '-resolution', '0.05',
             '-publish_period_sec', '1.0',
-            '-trajectory_id', '0',        # ✅ 指定轨迹
-            # '-min_z', '-0.5',             # ✅ 投影高度范围（地面到50cm）
-            # '-max_z', '0.5',
-            # '-z_voxel_size', '0.1',
+            '-trajectory_id', '0',
+            '-min_z', '-0.10',          # ⭐ 过滤地面以下噪声
+            '-max_z', '1.0',           # ⭐ 只投影 1.5m 内的障碍（过滤天花板/高处噪声）
+            '-z_voxel_size', '0.05',    # ⭐ z轴体素分辨率，精细过滤
         ],
     )
 
