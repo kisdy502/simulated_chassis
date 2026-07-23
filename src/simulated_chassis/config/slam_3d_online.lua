@@ -35,7 +35,7 @@ MAP_BUILDER.num_background_threads = 4
 
 -- ✅ 3D 轨迹构建器配置
 TRAJECTORY_BUILDER_3D.min_range = 0.5
-TRAJECTORY_BUILDER_3D.max_range = 30.0
+TRAJECTORY_BUILDER_3D.max_range = 24.0
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08       -- 5cm 精度，比 10cm 更精细

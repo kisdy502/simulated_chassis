@@ -331,27 +331,18 @@
             <noise type="gaussian">
               <mean>0.0</mean>
               <stddev>0.005</stddev>
-              <dynamic_bias_mean>0.0</dynamic_bias_mean>
-              <dynamic_bias_stddev>4.0e-4</dynamic_bias_stddev>
-              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </x>
           <y>
             <noise type="gaussian">
               <mean>0.0</mean>
               <stddev>0.005</stddev>
-              <dynamic_bias_mean>0.0</dynamic_bias_mean>
-              <dynamic_bias_stddev>4.0e-4</dynamic_bias_stddev>
-              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </y>
           <z>
             <noise type="gaussian">
               <mean>0.0</mean>
               <stddev>0.005</stddev>
-              <dynamic_bias_mean>0.0</dynamic_bias_mean>
-              <dynamic_bias_stddev>4.0e-4</dynamic_bias_stddev>
-              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </z>
         </angular_velocity>
@@ -361,27 +352,18 @@
             <noise type="gaussian">
               <mean>0.0</mean>
               <stddev>0.05</stddev>
-              <dynamic_bias_mean>0.0</dynamic_bias_mean>
-              <dynamic_bias_stddev>5.0e-3</dynamic_bias_stddev>
-              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </x>
           <y>
             <noise type="gaussian">
               <mean>0.0</mean>
               <stddev>0.05</stddev>
-              <dynamic_bias_mean>0.0</dynamic_bias_mean>
-              <dynamic_bias_stddev>5.0e-3</dynamic_bias_stddev>
-              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </y>
           <z>
             <noise type="gaussian">
               <mean>0.0</mean>
               <stddev>0.05</stddev>
-              <dynamic_bias_mean>0.0</dynamic_bias_mean>
-              <dynamic_bias_stddev>5.0e-3</dynamic_bias_stddev>
-              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
             </noise>
           </z>
         </linear_acceleration>
@@ -396,7 +378,7 @@
     <sensor name="mid360_sensor" type="gpu_lidar">
       <!-- <enable>true</enable> -->
       <always_on>true</always_on>
-      <update_rate>20</update_rate>
+      <update_rate>15</update_rate>
       <visualize>true</visualize>
       <topic>/lidar/point_cloud</topic>
       <gz_frame_id>lidar_link</gz_frame_id>
@@ -410,20 +392,37 @@
             <min_angle>-3.1415926</min_angle>
             <max_angle>3.1415926</max_angle>
           </horizontal>
+          <!-- ===== 稳定版(v1.0.0-nav-stable)雷达配置，整段覆盖用于对比 ===== -->
           <vertical>
-            <samples>32</samples>
-            <min_angle>-0.1745</min_angle>
-            <max_angle>0.5236</max_angle>
+            <samples>16</samples>
+            <min_angle>-0.2618</min_angle>
+            <max_angle>0.2618</max_angle>
           </vertical>
         </scan>
+        <range>
+          <min>0.2</min>
+          <max>45.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <!-- <stddev>0.182</stddev> -->
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.005</bias_stddev>
+          <precision>0.01</precision>
+        </noise>
+        <!-- ===== jazzy 旧配置(Mid360 风格 32线)，注释保留以便对比 =====
+        <vertical>
+          <samples>32</samples>
+          <min_angle>-0.1745</min_angle>
+          <max_angle>0.5236</max_angle>
+        </vertical>
         <range>
           <min>0.5</min>
           <max>40.0</max>
           <resolution>0.02</resolution>
         </range>
-        <!-- Livox Mid360 / 32线机械雷达风格噪声模型 -->
-        <!-- stddev 测距白噪声 σ≈2cm（&lt;25m 内典型值），bias 逐台标定偏置 σ≈5mm -->
-        <!-- precision 量化误差 1cm，模拟 ADC 离散化 -->
         <noise>
           <type>gaussian</type>
           <mean>0.0</mean>
@@ -432,6 +431,7 @@
           <bias_stddev>0.005</bias_stddev>
           <precision>0.01</precision>
         </noise>
+        ===== jazzy 旧配置结束 ===== -->
       </lidar>
     </sensor>
   </gazebo>
