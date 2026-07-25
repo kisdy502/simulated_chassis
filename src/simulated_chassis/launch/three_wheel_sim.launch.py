@@ -81,9 +81,9 @@ def generate_launch_description():
 
         gazebo = ExecuteProcess(
             # cmd=["gz", "sim", "-r", world_path],
-            # cmd=["gz", "sim", "-r", "-s", "--render-engine", "ogre",
-            #      "--render-engine-api-backend", "opengl", world_path],
-            cmd=["gz", "sim", "-r","--render-engine", "ogre",world_path],
+            cmd=["gz", "sim", "-r", "-s", "--render-engine", "ogre",
+                 "--render-engine-api-backend", "opengl", world_path],
+            # cmd=["gz", "sim", "-r","--render-engine", "ogre",world_path],
              
             output="screen",
         )

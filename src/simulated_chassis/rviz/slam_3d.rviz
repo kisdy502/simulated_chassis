@@ -5,6 +5,8 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Map1/Topic1
+        - /TF1
+        - /TF1/Frames1
         - /PointCloud21
       Splitter Ratio: 0.5
     Tree Height: 914
@@ -76,36 +78,36 @@ Visualization Manager:
       Filter (whitelist): ""
       Frame Timeout: 15
       Frames:
-        All Enabled: true
+        All Enabled: false
         base_footprint:
           Value: true
         base_link:
-          Value: true
+          Value: false
         imu_link:
-          Value: true
+          Value: false
         lidar_link:
-          Value: true
+          Value: false
         map:
           Value: true
         odom:
           Value: true
         wheel_front_steering_link:
-          Value: true
+          Value: false
         wheel_front_wheel_link:
-          Value: true
+          Value: false
         wheel_left_steering_link:
-          Value: true
+          Value: false
         wheel_left_wheel_link:
-          Value: true
+          Value: false
         wheel_right_steering_link:
-          Value: true
+          Value: false
         wheel_right_wheel_link:
-          Value: true
-      Marker Scale: 1
+          Value: false
+      Marker Scale: 4
       Name: TF
       Show Arrows: true
       Show Axes: true
-      Show Names: false
+      Show Names: true
       Tree:
         map:
           odom:
@@ -204,8 +206,8 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 1.379544973373413
-        Min Value: -2.431004285812378
+        Max Value: 2.4802794456481934
+        Min Value: -1.0484508275985718
         Value: true
       Axis: Z
       Channel Name: intensity
@@ -280,25 +282,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 51.48511505126953
+      Distance: 53.59886932373047
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 3.485602855682373
-        Y: -5.1246209144592285
-        Z: 0.4214720129966736
+        X: -5.407711029052734
+        Y: -11.670900344848633
+        Z: -7.571505069732666
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9947967529296875
+      Pitch: 0.76979660987854
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.773581504821777
+      Yaw: 2.463550329208374
     Saved: ~
 Window Geometry:
   Displays:

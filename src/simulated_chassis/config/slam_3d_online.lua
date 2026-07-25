@@ -38,22 +38,20 @@ TRAJECTORY_BUILDER_3D.min_range = 0.5
 TRAJECTORY_BUILDER_3D.max_range = 24.0
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
-TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08       -- 5cm 精度，比 10cm 更精细
+TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08       -- 8cm 体素滤波
 
--- 实时匹配：窗口稍加大，减少位姿跳变（不增加 CPU 负担）
+-- 3D 前端关闭在线相关扫描匹配(OCSM 过重,依赖 IMU+odom 初始位姿即可)
 TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.2
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
 
--- 子图帧数稍微增加，提升局部一致性（160→130，优化频率略降但子图更稳定）
+-- 子图帧数 110(比默认 160 小),子图偏小 → 更多回环候选,局部一致性仍足够
 TRAJECTORY_BUILDER_3D.submaps.num_range_data = 110
 
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0 -- 平移权重
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2    -- 默认 400
 
 POSE_GRAPH.optimize_every_n_nodes = 40
-POSE_GRAPH.constraint_builder.sampling_ratio = 0.5
-POSE_GRAPH.constraint_builder.min_score = 0.65
+POSE_GRAPH.constraint_builder.sampling_ratio = 0.65   -- 0.5→0.65,多评估候选回环对
+POSE_GRAPH.constraint_builder.min_score = 0.60        -- 0.65→0.60,回收边界回环(3D 默认 0.55)
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
 POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2  -- 默认 110
 POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000（恢复官方默认）

@@ -112,84 +112,84 @@
         <enable_wind>false</enable_wind>
       </link>
 
-      <!-- 内部隔墙 (厚0.15m, 高3m) -->
+      <!-- 内部隔墙 (厚0.24m, 高3m) -->
       <link name='inner_v1'>
         <pose>13.5 -7 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>0.15 8 3</size></box></geometry>
+        <collision name='c'><geometry><box><size>0.24 8 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>0.15 8 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>0.24 8 3</size></box></geometry>
           <material><ambient>0.6 0.5 0.4 1</ambient><diffuse>0.6 0.5 0.4 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_v2'>
         <pose>13.5 3.75 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>0.15 7.5 3</size></box></geometry>
+        <collision name='c'><geometry><box><size>0.24 7.5 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>0.15 7.5 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>0.24 7.5 3</size></box></geometry>
           <material><ambient>0.5 0.55 0.45 1</ambient><diffuse>0.5 0.55 0.45 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h1'>
         <pose>9 11.2 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>9 0.15 3</size></box></geometry>
+        <collision name='c'><geometry><box><size>9 0.24 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>9 0.15 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>9 0.24 3</size></box></geometry>
           <material><ambient>0.55 0.4 0.5 1</ambient><diffuse>0.55 0.4 0.5 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h2'>
         <pose>9.9 0 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>7.2 0.15 3</size></box></geometry>
+        <collision name='c'><geometry><box><size>7.2 0.24 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>7.2 0.15 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>7.2 0.24 3</size></box></geometry>
           <material><ambient>0.45 0.5 0.55 1</ambient><diffuse>0.45 0.5 0.55 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_v3'>
         <pose>-6.7 -3.75 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>0.15 14.5 3</size></box></geometry>
+        <collision name='c'><geometry><box><size>0.24 14.5 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>0.15 14.5 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>0.24 14.5 3</size></box></geometry>
           <material><ambient>0.5 0.45 0.4 1</ambient><diffuse>0.5 0.45 0.4 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h3'>
         <pose>4.5 3.7 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>9 0.15 3</size></box></geometry>
+        <collision name='c'><geometry><box><size>9 0.24 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>9 0.15 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>9 0.24 3</size></box></geometry>
           <material><ambient>0.55 0.55 0.45 1</ambient><diffuse>0.55 0.55 0.45 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h4'>
         <pose>-9 3.7 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>9 0.15 3</size></box></geometry>
+        <collision name='c'><geometry><box><size>9 0.24 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>9 0.15 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>9 0.24 3</size></box></geometry>
           <material><ambient>0.4 0.5 0.5 1</ambient><diffuse>0.4 0.5 0.5 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h5'>
         <pose>-3.6 7.5 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>7.2 0.15 3</size></box></geometry>
+        <collision name='c'><geometry><box><size>7.2 0.24 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>7.2 0.15 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>7.2 0.24 3</size></box></geometry>
           <material><ambient>0.5 0.4 0.45 1</ambient><diffuse>0.5 0.4 0.45 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_v4'>
         <pose>-6.7 9.35 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>0.15 3.7 3</size></box></geometry>
+        <collision name='c'><geometry><box><size>0.24 3.7 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>0.15 3.7 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>0.24 3.7 3</size></box></geometry>
           <material><ambient>0.45 0.5 0.4 1</ambient><diffuse>0.45 0.5 0.4 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>
       <link name='inner_h6'>
         <pose>0 -7.5 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>13.4 0.15 3</size></box></geometry>
+        <collision name='c'><geometry><box><size>13.4 0.24 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>13.4 0.15 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>13.4 0.24 3</size></box></geometry>
           <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>

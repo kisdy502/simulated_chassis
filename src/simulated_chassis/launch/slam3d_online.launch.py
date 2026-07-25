@@ -75,7 +75,7 @@ def generate_launch_description():
             '-resolution', '0.05',
             '-publish_period_sec', '1.0',
             '-trajectory_id', '0',
-            '-min_z', '-0.10',          # ⭐ 过滤地面以下噪声
+            '-min_z', '0.0',          # ⭐ 过滤地面以下噪声
             '-max_z', '1.0',           # ⭐ 只投影 1.5m 内的障碍（过滤天花板/高处噪声）
             '-z_voxel_size', '0.05',    # ⭐ z轴体素分辨率，精细过滤
         ],
