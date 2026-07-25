@@ -263,10 +263,9 @@
   </joint>
 
   <!-- ==================== ros2_control ==================== -->
-  <ros2_control name="GzSystem" type="system">
+  <ros2_control name="IgnitionSystem" type="system">
     <hardware>
-      <!-- <plugin>gz_ros2_control/GzSystem</plugin> -->
-      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      <plugin>ign_ros2_control/IgnitionSystem</plugin>
     </hardware>
     <joint name="wheel_front_steering_joint">
       <command_interface name="position" />
@@ -302,14 +301,14 @@
 
   <!-- ==================== Gazebo Plugins ==================== -->
   <gazebo>
-    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+    <plugin filename="ign_ros2_control-system" name="ign_ros2_control::IgnitionROS2ControlPlugin">
       <parameters>$(find simulated_chassis)/param/three_wheel_controllers.yaml</parameters>
       <robot_param>robot_description</robot_param>
       <robot_param_node>robot_state_publisher</robot_param_node>
     </plugin>
-    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
     </plugin>
-    <plugin name="gz::sim::systems::Imu" filename="gz-sim-imu-system"></plugin>
+    <plugin name="ignition::gazebo::systems::Imu" filename="ignition-gazebo-imu-system"></plugin>
   </gazebo>
 
   <!-- ==================== IMU Sensor ==================== -->
@@ -321,7 +320,7 @@
       <update_rate>100</update_rate>
       <visualize>false</visualize> 
       <topic>/imu</topic>
-      <gz_frame_id>imu_link</gz_frame_id>
+      <ignition_frame_id>imu_link</ignition_frame_id>
 
       <imu>
         <frame_id>imu_link</frame_id>
@@ -381,7 +380,7 @@
       <update_rate>15</update_rate>
       <visualize>true</visualize>
       <topic>/lidar/point_cloud</topic>
-      <gz_frame_id>lidar_link</gz_frame_id>
+      <ignition_frame_id>lidar_link</ignition_frame_id>
 
       <lidar>
         <frame_id>lidar_link</frame_id>

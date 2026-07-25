@@ -21,16 +21,11 @@ def generate_launch_description():
 
     rviz_config = os.path.join(
         get_package_share_directory('simulated_chassis'),
-        'rviz', 'slam_3d.rviz'  # 新建3D专用RViz配置
+        'rviz', 'cartographer_3d.rviz'  # 新建3D专用RViz配置
     )
 
     # 启动参数
     declared_arguments = [
-        DeclareLaunchArgument(
-            'use_sim_time',
-            default_value='true',
-            description='使用仿真时间'
-        ),
         DeclareLaunchArgument(
             'configuration_basename',
             default_value='slam_3d_online.lua',  # 3D配置文件
@@ -38,15 +33,13 @@ def generate_launch_description():
         ),
     ]
 
-    use_sim_time = LaunchConfiguration('use_sim_time')
-
     # ===== Cartographer 3D建图节点 =====
     cartographer_node = Node(
         package='cartographer_ros',
         executable='cartographer_node',
         name='cartographer_node',
         output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[{'use_sim_time': True}],
         arguments=[
             '-configuration_directory', config_dir,
             '-configuration_basename', LaunchConfiguration('configuration_basename'),
@@ -70,14 +63,14 @@ def generate_launch_description():
         executable='cartographer_occupancy_grid_node',
         name='cartographer_occupancy_grid_node',
         output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[{'use_sim_time': True}],
         arguments=[
             '-resolution', '0.05',
             '-publish_period_sec', '1.0',
-            '-trajectory_id', '0',
-            '-min_z', '0.0',          # ⭐ 过滤地面以下噪声
-            '-max_z', '1.0',           # ⭐ 只投影 1.5m 内的障碍（过滤天花板/高处噪声）
-            '-z_voxel_size', '0.05',    # ⭐ z轴体素分辨率，精细过滤
+            '-trajectory_id', '0',        # ✅ 指定轨迹
+            # '-min_z', '-0.5',             # ✅ 投影高度范围（地面到50cm）
+            # '-max_z', '0.5',
+            # '-z_voxel_size', '0.1',
         ],
     )
 
@@ -87,18 +80,22 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         arguments=['-d', rviz_config],
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[{'use_sim_time': True}],
         output='screen',
     )
 
     return LaunchDescription([
         LogInfo(msg=['==========================================']),
         LogInfo(msg=['Cartographer 3D建图模式启动']),
+        LogInfo(msg=['==========================================']),
 
         *declared_arguments,
 
-        TimerAction(period=0.5, actions=[cartographer_node]),
-        TimerAction(period=1.0, actions=[cartographer_occupancy_grid_node]),
-        TimerAction(period=6.0, actions=[rviz_node]),
+        TimerAction(period=1.0, actions=[cartographer_node]),
+        TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
+        TimerAction(period=3.0, actions=[rviz_node]),
 
+        LogInfo(msg=['3D建图节点 + 键盘控制 + RViz 已启动']),
+        LogInfo(msg=['使用键盘控制机器人移动完成建图']),
+        LogInfo(msg=['控制按键: i=前进, ,=后退, j=左转, l=右转']),
     ])

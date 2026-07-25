@@ -31,7 +31,7 @@ def generate_launch_description():
     # ===== 文件路径 =====
     cartographer_config_dir = os.path.join(pkg_share, 'config')
     nav2_params_file = os.path.join(pkg_share, 'param', 'nav2_params_3d.yaml')
-    rviz_config = os.path.join(pkg_share, 'rviz', 'nav_3d.rviz')
+    rviz_config = os.path.join(pkg_share, 'rviz', 'cartographer_3d.rviz')
     default_pbstream = os.path.join(pkg_share, 'maps', 'my_map_optimized.pbstream')
 
     # ===== 启动参数 =====
@@ -66,14 +66,11 @@ def generate_launch_description():
         executable='cartographer_node',
         name='cartographer_node',
         output='screen',
-        parameters=[
-            {'use_sim_time': use_sim_time},
-        ],
+        parameters=[{'use_sim_time': use_sim_time}],
         arguments=[
             '-configuration_directory', cartographer_config_dir,
             '-configuration_basename', LaunchConfiguration('configuration_basename'),
             '-load_state_filename', LaunchConfiguration('pbstream_file'),
-            '-load_frozen_state', 'true'
             '--ros-args',
             '--log-level', 'WARN',
         ],
@@ -141,20 +138,19 @@ def generate_launch_description():
     return LaunchDescription([
         LogInfo(msg=['==========================================']),
         LogInfo(msg=['Nav2 导航模式启动（3D定位）']),
-        # LogInfo(msg=['地图: $(var pbstream_file)']),
-        # LogInfo(msg=['==========================================']),
+        LogInfo(msg=['地图: $(var pbstream_file)']),
+        LogInfo(msg=['==========================================']),
 
         *declared_arguments,
 
         # 按顺序启动（给各节点留出启动时间）
         TimerAction(period=0.5, actions=[cartographer_node]),
-        TimerAction(period=1.0, actions=[occupancy_grid_node]),
-        TimerAction(period=1.5, actions=[cmd_vel_relay]),
-        TimerAction(period=3.0, actions=[rviz_node]),
-        TimerAction(period=8.0, actions=[nav2_launch]),
-  
+        TimerAction(period=2.0, actions=[occupancy_grid_node]),
+        TimerAction(period=3.0, actions=[cmd_vel_relay]),
+        TimerAction(period=4.0, actions=[nav2_launch]),
+        TimerAction(period=6.0, actions=[rviz_node]),
 
-        # LogInfo(msg=['导航节点已启动']),
-        # LogInfo(msg=['在 RViz 中设置 2D Goal 启动自主导航']),
-        # LogInfo(msg=['手柄可随时接管控制']),
+        LogInfo(msg=['导航节点已启动']),
+        LogInfo(msg=['在 RViz 中设置 2D Goal 启动自主导航']),
+        LogInfo(msg=['手柄可随时接管控制']),
     ])

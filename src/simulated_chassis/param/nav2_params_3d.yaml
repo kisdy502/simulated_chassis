@@ -8,16 +8,16 @@ behavior_server:
     cycle_frequency: 10.0
     behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
     spin:
-      plugin: "nav2_behaviors::Spin"
+      plugin: "nav2_behaviors/Spin"
     backup:
-      plugin: "nav2_behaviors::BackUp"
+      plugin: "nav2_behaviors/BackUp"
     drive_on_heading:
-      plugin: "nav2_behaviors::DriveOnHeading"
+      plugin: "nav2_behaviors/DriveOnHeading"
     wait:
-      plugin: "nav2_behaviors::Wait"
+      plugin: "nav2_behaviors/Wait"
     global_frame: map
     robot_base_frame: base_link
-    transform_tolerance: 0.3
+    transform_tolerance: 1.5
     use_sim_time: True
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0          # 三舵轮角速度限制
@@ -27,40 +27,13 @@ behavior_server:
 planner_server:
   ros__parameters:
     use_sim_time: True
-    expected_planner_frequency: 1.0
+    expected_planner_frequency: 2.0
     planner_plugins: ["GridBased"]
-    # SmacPlanner2D：纯栅格 A* 规划器，适合全向车（三舵轮）
-    # 之前误用了一些 SmacPlannerHybrid / 不存在的参数，已按官方推荐对齐
     GridBased:
-      plugin: "nav2_smac_planner::SmacPlanner2D"
-
-      # === 目标容差与搜索限制 ===
-      tolerance: 0.125                   # 到达目标的距离容差(m)，官方推荐 0.125
-      allow_unknown: true                # 允许在未知区域规划
-      max_iterations: 1000000            # 最大搜索迭代（不可达时兜底），-1 表示无限
-      max_on_approach_iterations: 1000   # 进入容差后继续尝试的最大迭代
-      max_planning_time: 2.0             # 最大规划时间(s)，正常应 <1s
-
-      # === 路径离障碍物多远（关键参数！原 cost_penalty 不存在被忽略了）===
-      # 这个值越大，路径越走在通道中央；0.0 = 退化成朴素 A*（贴着障碍走）
-      # 官方推荐 2.0（速度与中央化的平衡），1.0 偏快但路径贴边
-      cost_travel_multiplier: 2.0
-
-      # === 是否降采样 ===
-      # 官方推荐 false / 1（不降采样，用 costmap 原分辨率 5cm）
-      # 之前 true + factor=2 把 5cm 降到 10cm，规划快了但精度差
-      downsample_costmap: false
-      downsampling_factor: 1
-
-      # === 最终朝向 ===
-      use_final_approach_orientation: false  # false = 强制对齐目标朝向；true = 沿接近方向
-
-      # === 路径平滑（Ceres-based smoother，之前完全缺失）===
-      smoother:
-        max_iterations: 1000
-        w_smooth: 0.3                    # 平滑权重（路径曲率）
-        w_data: 0.2                      # 数据权重（贴合原始路径）
-        tolerance: 1.0e-10
+      plugin: "nav2_navfn_planner/NavfnPlanner"
+      tolerance: 0.5
+      use_astar: false
+      allow_unknown: false   # ✅ 改为 true，允许未知区域
 
 planner_server_rclcpp_node:
   ros__parameters:
@@ -78,17 +51,14 @@ smoother_server:
       do_refinement: True
       w_data: 0.2
       w_smooth: 0.3
-      bond_heartbeat_period: 0.0
 
 # 控制器服务器 - MPPI（三舵轮 = OmniDrive）
 controller_server:
   ros__parameters:
     controller_frequency: 20.0
-    min_x_velocity_threshold: 0.02
-    min_y_velocity_threshold: 0.02
-    min_theta_velocity_threshold: 0.005
-    # min_x_velocity_threshold: 0.001
-    # min_y_velocity_threshold: 0.001      # 三舵轮支持侧向，阈值调小
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001      # 三舵轮支持侧向，阈值调小
+    min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["general_goal_checker"]
@@ -97,60 +67,47 @@ controller_server:
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.001
-      movement_time_allowance: 25.0
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
 
     general_goal_checker:
-      stateful: False
+      stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.35
+      yaw_goal_tolerance: 0.25
 
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
-      # === 采样参数（按算力调整） ===
-      time_steps: 48
+      time_steps: 36
       model_dt: 0.05
-      batch_size: 1200
-      iteration_count: 1
-      vx_std: 0.4
-      vy_std: 0.2                   # Omni 侧向噪声
-      wz_std: 0.3
-
-      # === 三舵轮速度/加速度限制（机器人物理能力 + ay/az 补全） ===
-      # vx_max 1.5→1.2：让 time_steps(48) × model_dt(0.05) × vx_max(1.2) = 2.88m < costmap 半径(3m)
+      batch_size: 2000
+      vx_std: 0.3
+      vy_std: 0.3                    # 三舵轮：支持侧向
+      wz_std: 0.4
+      
+      # ✅ 三舵轮速度限制
       vx_max: 1.2                    # 最大前进速度
-      vx_min: -1.0                   # 最大倒退速度
-      vy_max: 1.0                    # 最大侧向速度（Omni 专属）
-      wz_max: 1.5                    # 最大角速度
-      ax_max: 3.0                    # 最大线加速度
-      ax_min: -3.0                   # 最大线减速度
-      ay_max: 3.0                    # ⭐ Omni 必须补全：侧向加速度上限
-      az_max: 3.5                    # ⭐ 角加速度上限
-
-      prune_distance: 1.7            # 对齐官方（原 1.5）
-      regenerate_noises: false
-      transform_tolerance: 0.1
-      reset_period: 1.0
-      temperature: 0.4               # 官方默认，0.3 过低导致开阔地带也极低速蠕动
-      gamma: 0.015
-
-      # === 运动模型（三舵轮=Omni） ===
-      motion_model: "Omni"           # 不要改成 DiffDrive；Omni 无需 Constraints 子块
-
+      vx_min: -0.35                  # 最大后退速度
+      vy_max: 0.8                    # ✅ 侧向速度（三舵轮支持）
+      wz_max: 1.0                    # 最大角速度
+      
+      ax_max: 2.0                    # 最大加速度
+      ax_min: -2.0                   # 最大减速度
+      
+      iteration_count: 1
+      prune_distance: 3.0
+      transform_tolerance: 0.3
+      temperature: 0.5
+      gamma: 0.02
+      
+      # ✅ 三舵轮：使用 OmniDrive
+      motion_model: "Omni"      # 从 DiffDrive 改为 OmniDrive
+      
       visualize: false
-      publish_optimal_trajectory: false
       TrajectoryVisualizer:
         trajectory_step: 5
         time_step: 3
-      enforce_path_inversion: false
-      inversion_xy_tolerance: 0.2
-      inversion_yaw_tolerance: 0.35
-
-      # === Critics 列表 ===
-      # 移除 PreferForwardCritic：Omni 全向车不需要鼓励前进，反而会压制侧向运动
-      # 移除 ObstaclesCritic：CostCritic 已经基于 costmap 处理障碍，两个并存容易打架
-      # 如需抑制不必要的自旋，可以取消注释 TwirlingCritic
+      
       critics:
         [
           "ConstraintCritic",
@@ -160,74 +117,69 @@ controller_server:
           "PathAlignCritic",
           "PathFollowCritic",
           "PathAngleCritic",
+          "PreferForwardCritic",
           "ObstaclesCritic",
         ]
-
-      # === ConstraintCritic（运动学约束，对齐官方） ===
+      
       ConstraintCritic:
         enabled: True
         cost_power: 1
         cost_weight: 4.0
-
-      # === GoalCritic（空间趋近目标，对齐官方） ===
-      # cost_weight 从 10→5（过激进容易冲目标）
-      # threshold 从 2.0→1.4（对齐官方，约等于预测距离）
+      
       GoalCritic:
         enabled: True
         cost_power: 1
         cost_weight: 5.0
         threshold_to_consider: 1.4
-
-      # === GoalAngleCritic（终点角度对齐） ===
-      # threshold 从 0.5→0.25：原值 0.5m 就开始强力纠角度，与 GoalCritic 打架导致绕圈
-      # cost_weight 从 3.0→2.0：降低角度纠偏力度，优先保证位置到达
+      
       GoalAngleCritic:
         enabled: True
         cost_power: 1
-        cost_weight: 2.0
-        threshold_to_consider: 0.25
-
-      # === CostCritic（基于 costmap 的代价评估，对齐官方） ===
-      # ⚠️ 删除 inflation_radius / cost_scaling_factor：这是 Humble 专属参数
-      #    Jazzy 里 ObstacleCritic 直接从 costmap 的 inflation_layer 读
-      # cost_weight 5.5→3.81（过高会让机器人过度避障）
-      # trajectory_point_step 是官方补全参数
+        cost_weight: 3.0
+        threshold_to_consider: 0.5
+      
+      PreferForwardCritic:
+        enabled: True
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.5
+      
+      ObstaclesCritic:
+        enabled: True
+        cost_power: 1
+        repulsion_weight: 7.5
+        critical_weight: 15.0
+        consider_footprint: false
+        collision_cost: 10000.0
+        collision_margin_distance: 0.1
+        near_goal_distance: 0.5
+      
       CostCritic:
         enabled: True
         cost_power: 1
-        cost_weight: 3.81
-        critical_cost: 300.0
+        cost_weight: 14.5
+        critical_cost: 400.0
         consider_footprint: True
         collision_cost: 1000000.0
         near_goal_distance: 1.0
-        trajectory_point_step: 2
-
-      # === PathAlignCritic（路径对齐，⭐ 最关键修复） ===
-      # cost_weight 3.0→14.0（4.7倍差距，这是路径跟踪差的最大原因）
-      # offset_from_furthest 10→20（公式：pred_horizon×vmax/resolution/3 ≈ 24）
-      # trajectory_point_step 3→4（对齐官方）
+      
       PathAlignCritic:
         enabled: True
         cost_power: 1
-        cost_weight: 14.0
+        cost_weight: 10.0
         max_path_occupancy_ratio: 0.05
-        trajectory_point_step: 4
+        trajectory_point_step: 3
         threshold_to_consider: 0.5
         offset_from_furthest: 20
         use_path_orientations: false
-
-      # === PathFollowCritic（沿路径推进，对齐官方） ===
-      # cost_weight 4.0→5.0（路径推进力增强）
+      
       PathFollowCritic:
         enabled: True
         cost_power: 1
         cost_weight: 5.0
         offset_from_furthest: 5
         threshold_to_consider: 1.4
-
-      # === PathAngleCritic（路径角度惩罚，⭐ 补全缺失参数） ===
-      # 之前只有 cost_weight，缺了 4 个关键参数
-      # mode=0：前进偏好（虽然 Omni 全向，但仍鼓励大致朝向路径方向）
+      
       PathAngleCritic:
         enabled: True
         cost_power: 1
@@ -235,33 +187,66 @@ controller_server:
         offset_from_furthest: 4
         threshold_to_consider: 0.5
         max_angle_to_furthest: 1.0
-        mode: 0
-
-      # === 以下 critic 默认不启用，需要时取消注释 ===
-      # TwirlingCritic：抑制不必要的旋转（Omni 全向车如果转向过于频繁可以启用）
-      # TwirlingCritic:
-      #   enabled: True
-      #   cost_power: 1
-      #   cost_weight: 10.0
-
-      # ObstaclesCritic：障碍物排斥（CostCritic 已处理，需要更激进避障时再启用）
-      ObstaclesCritic:
-        enabled: True
-        cost_power: 1
-        repulsion_weight: 1.5
-        critical_weight: 20.0
-        consider_footprint: false
-        collision_cost: 10000.0
-        collision_margin_distance: 0.1
-        near_goal_distance: 0.8
-
-
+        forward_preference: true
 
 controller_server_rclcpp_node:
   ros__parameters:
     use_sim_time: True
 
-
+## 本地代价地图
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 15.0
+      publish_frequency: 5.0
+      global_frame: odom
+      robot_base_frame: base_link
+      use_sim_time: True
+      rolling_window: True
+      width: 8
+      height: 8
+      resolution: 0.05
+      footprint: "[[-0.3, -0.2], [-0.3, 0.2], [0.3, 0.2], [0.3, -0.2]]"
+      inflation_radius: 0.6
+      
+      # ✅ 三舵轮：只用3D雷达点云
+      plugins: ["obstacle_layer", "inflation_layer"]
+      
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.6
+      
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        # ✅ 单雷达点云
+        observation_sources: lidar
+        lidar:
+          topic: /lidar/point_cloud/points
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "PointCloud2"           # ✅ 3D点云类型
+          raytrace_max_range: 10.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 7.5
+          obstacle_min_range: 0.0
+          min_obstacle_height: -0.5          # ✅ 地面以下忽略
+          max_obstacle_height: 0.5           # ✅ 只检测地面附近
+      
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      
+      always_send_full_costmap: True
+  
+  local_costmap_client:
+    ros__parameters:
+      use_sim_time: True
+  local_costmap_rclcpp_node:
+    ros__parameters:
+      use_sim_time: True
 
 ## 全局代价地图
 global_costmap:
@@ -277,23 +262,24 @@ global_costmap:
       track_unknown_space: True
       
       # ✅ 三舵轮：只用3D雷达点云
-      plugins: ["static_layer", "voxel_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        origin_z: -0.10                 # 向下扩展，覆盖地面微小起伏
-        z_resolution: 0.05
-        z_voxels: 16                    # 上限 16，覆盖 -0.10 ~ 0.70m
-        mark_threshold: 2
-        observation_sources: pointcloud
-        pointcloud:
-          topic: /points2
-          data_type: "PointCloud2"
-          min_obstacle_height: 0.1
-          max_obstacle_height: 1.5
+        observation_sources: lidar
+        lidar:
+          topic: /lidar/point_cloud/points
+          max_obstacle_height: 2.0
           clearing: True
           marking: True
+          data_type: "PointCloud2"
+          raytrace_max_range: 10.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 7.5
+          obstacle_min_range: 0.0
+          min_obstacle_height: -0.5
+          max_obstacle_height: 0.5
       
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
@@ -301,8 +287,8 @@ global_costmap:
       
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 6.0           # 对齐官方：快速衰减，只标记致命区
-        inflation_radius: 0.60
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.6
       
       always_send_full_costmap: True
 
@@ -310,60 +296,6 @@ global_costmap:
     ros__parameters:
       use_sim_time: True
   global_costmap_rclcpp_node:
-    ros__parameters:
-      use_sim_time: True
-
-## 本地代价地图
-local_costmap:
-  local_costmap:
-    ros__parameters:
-      update_frequency: 10.0
-      publish_frequency: 2.0
-      global_frame: odom
-      robot_base_frame: base_link
-      use_sim_time: True
-      rolling_window: True
-      width: 6
-      height: 6
-      resolution: 0.05
-      footprint: "[[-0.3, -0.2], [-0.3, 0.2], [0.3, 0.2], [0.3, -0.2]]"
-      inflation_radius: 0.60
-      
-      # ✅ 三舵轮：只用3D雷达点云
-      plugins: ["static_layer", "voxel_layer", "inflation_layer"]
-
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: True
-      
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
-        enabled: True
-        origin_z: -0.10                 # 向下扩展，覆盖地面微小起伏
-        z_resolution: 0.05
-        z_voxels: 16                    # 上限 16，覆盖 -0.10 ~ 0.70m
-        mark_threshold: 2               # 一个体素内需要 2 个点才标记为障碍
-        observation_sources: pointcloud
-        pointcloud:
-          topic: /points2
-          data_type: "PointCloud2"
-          min_obstacle_height: 0.1     # 过滤地面
-          max_obstacle_height: 1.5
-          clearing: True
-          marking: True
-
-      inflation_layer:
-        plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 6.0           # 对齐官方：快速衰减，只标记致命区
-        inflation_radius: 0.60
-
-      
-      always_send_full_costmap: True
-  
-  local_costmap_client:
-    ros__parameters:
-      use_sim_time: True
-  local_costmap_rclcpp_node:
     ros__parameters:
       use_sim_time: True
 
@@ -391,89 +323,66 @@ bt_navigator:
     odom_topic: odom
     bt_loop_duration: 100
     default_server_timeout: 5000
-    error_code_names: ["follow_path_error_code", "compute_path_error_code"]
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_smooth_path_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_drive_on_heading_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_truncate_path_local_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_is_battery_low_condition_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+      - nav2_controller_cancel_bt_node
+      - nav2_path_longer_on_approach_bt_node
+      - nav2_wait_cancel_bt_node
+      - nav2_spin_cancel_bt_node
+      - nav2_back_up_cancel_bt_node
+      - nav2_drive_on_heading_cancel_bt_node
 
 bt_navigator_rclcpp_node:
   ros__parameters:
     use_sim_time: True
 
-## 充电对接服务器（Jazzy 必须，Humble 可选）
-docking_server:
-  ros__parameters:
-    use_sim_time: True
-    controller_frequency: 50.0
-    initial_perception_timeout: 5.0
-    wait_charge_timeout: 5.0
-    dock_approach_timeout: 30.0
-    undock_linear_tolerance: 0.05
-    undock_angular_tolerance: 0.1
-    max_retries: 3
-    base_frame: "base_link"
-    fixed_frame: "odom"
-    dock_backwards: false
-    dock_prestaging_tolerance: 0.5
-    dock_plugins: ['simple_charging_dock']
-    simple_charging_dock:
-      plugin: 'opennav_docking::SimpleChargingDock'
-      docking_threshold: 0.05
-      staging_x_offset: -0.7
-      use_external_detection_pose: true
-
 velocity_smoother:
   ros__parameters:
-    smoothing_frequency: 200.0          # 高频 = 几乎不平滑，直通
+    smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [1.2, 1.0, 1.5]      # vx, vy, wz 匹配 MPPI 上限
-    min_velocity: [-1.0, -1.0, -1.5]   # vx, vy, wz 匹配 MPPI 下限
-    max_accel: [100.0, 100.0, 100.0]   # 关掉加速度限制，直通
-    min_accel: [-100.0, -100.0, -100.0]
+    # ✅ 三舵轮速度限制（匹配运动模型）
+    max_velocity: [1.2, 0.8, 1.0]        # [前进, 侧向, 旋转]
+    min_velocity: [-0.35, -0.8, -1.0]    # [后退, 侧向, 旋转]
+    max_accel: [2.0, 2.0, 2.0]           # 三轴加速度
+    min_accel: [-2.0, -2.0, -2.0]        # 三轴减速度
     odom_topic: "/odom"
     odom_duration: 0.1
-    deadband_velocity: [0.0, 0.0, 0.0]  # 不截断低速（默认会把小速度砍成0）
+    deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
-
-collision_monitor:
-  ros__parameters:
-    use_sim_time: True
-    base_frame_id: "base_footprint"
-    odom_frame_id: "odom"
-    cmd_vel_in_topic: "cmd_vel_smoothed"   # 标准链路：MPPI→smoother→collision_monitor→cmd_vel
-                                            # smoother 已是 passthrough(deadband=0),不丢 vy,无需绕过
-    cmd_vel_out_topic: "cmd_vel"
-    transform_tolerance: 0.3
-    source_timeout: 5.0
-    stop_pub_timeout: 2.0
-    enable_stamped_cmd_vel: False
-    polygons: ["PolygonStop", "PolygonSlow"]
-    # 多边形尺寸说明（三舵轮全向车，必须前后左右对称）：
-    #   机器人 footprint: x∈[-0.3, +0.3], y∈[-0.2, +0.2]（0.6×0.4m）
-    #   PolygonStop = footprint 外扩 10cm → x∈[-0.4, +0.4], y∈[-0.3, +0.3]
-    #   PolygonSlow = footprint 外扩 20cm → x∈[-0.5, +0.5], y∈[-0.4, +0.4]
-    # 注意：必须先触发 Slow 把速度降下来，Stop 区 10cm 才够制动距离
-    PolygonStop:
-      type: "polygon"
-      points: "[[0.4, 0.3], [0.4, -0.3], [-0.4, -0.3], [-0.4, 0.3]]"
-      action_type: "stop"
-      min_points: 3
-      visualize: True
-      polygon_pub_topic: "polygon_stop"
-    PolygonSlow:
-      type: "polygon"
-      points: "[[0.5, 0.4], [0.5, -0.4], [-0.5, -0.4], [-0.5, 0.4]]"
-      action_type: "slowdown"
-      min_points: 3
-      slowdown_ratio: 0.5   # ⭐ 修复：原值 1.0 等于不减速；0.5 = 速度减半
-      visualize: True
-      polygon_pub_topic: "polygon_slowdown"
-    observation_sources: ["lidar"]
-    lidar:
-      type: "pointcloud"
-      topic: "/points2"
-      # 添加点云处理参数
-      min_height: 0.1  # 只检测地面附近
-      max_height: 1.5
-      obstacle_max_range: 3.0  # 减小检测范围，避免远处的障碍物触发
-      obstacle_min_range: 0.1
-      raytrace_max_range: 3.0
-      raytrace_min_range: 0.1
