@@ -81,15 +81,15 @@ ros2 topic pub /three_wheel_base_controller/cmd_vel geometry_msgs/msg/Twist '{li
 ## gazebo
 
 # 查看当前 Gazebo 版本
-gz sim --version
+ign gazebo --version
 
-gz topic -e -t /clock
+ign topic -e -t /clock
 
 # 控制器状态查看
 
 ## slam 建图遇到几个坑
 ```
-1，tf完整，但是rviz没有地图，仿真时候，需要指定imu和雷达的frame_id <gz_frame_id>lidar_link</gz_frame_id> ,<gz_frame_id>imu_link</gz_frame_id>
+1，tf完整，但是rviz没有地图，仿真时候，需要指定imu和雷达的frame_id <ignition_frame_id>lidar_link</ignition_frame_id> ,<ignition_frame_id>imu_link</ignition_frame_id>
 2，步骤1做了，但是还是没地图，建图时候，gazebo修改世界，将机器人模型保存到了世界中，导致slam建图，提示雷达坐标系不存在，urdf目录加载的机器人被世界的机器人覆盖了，frame id异常了
 3、slam建图和离线建图，配置目前都用保守参数，
 4、nav2导航，配置参数雷达话题要和实际话题一致，不然无法显示地图

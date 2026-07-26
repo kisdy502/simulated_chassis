@@ -21,7 +21,7 @@ def generate_launch_description():
 
     rviz_config = os.path.join(
         get_package_share_directory('simulated_chassis'),
-        'rviz', 'cartographer_3d.rviz'  # 新建3D专用RViz配置
+        'rviz', 'slam_3d.rviz'
     )
 
     # 启动参数
@@ -68,9 +68,9 @@ def generate_launch_description():
             '-resolution', '0.05',
             '-publish_period_sec', '1.0',
             '-trajectory_id', '0',        # ✅ 指定轨迹
-            # '-min_z', '-0.5',             # ✅ 投影高度范围（地面到50cm）
-            # '-max_z', '0.5',
-            # '-z_voxel_size', '0.1',
+            '-min_z', '-0.05',             # ✅ 投影高度范围（地面到50cm）
+            '-max_z', '1.5',
+            '-z_voxel_size', '0.1',
         ],
     )
 

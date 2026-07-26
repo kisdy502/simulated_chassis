@@ -114,10 +114,6 @@ install(DIRECTORY include/
   DESTINATION include
 )
 
-install(DIRECTORY behavior_trees/
-  DESTINATION share/${PROJECT_NAME}/behavior_trees
-)
-
 # Install directories
 install(DIRECTORY
   launch/

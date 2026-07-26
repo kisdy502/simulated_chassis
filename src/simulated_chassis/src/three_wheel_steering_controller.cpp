@@ -352,15 +352,8 @@ namespace three_wheel_controller
             // 8. 写入硬件
             for (size_t i = 0; i < 3; ++i)
             {
-                bool steer_ok = steering_cmds_[i].get().set_value(steering_angles[i]);
-                bool drive_ok = drive_cmds_[i].get().set_value(wheel_speeds[i]);
-
-                if (!steer_ok)
-                    RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
-                                         "Failed to set steering command for wheel[%zu]", i);
-                if (!drive_ok)
-                    RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
-                                         "Failed to set drive command for wheel[%zu]", i);
+                steering_cmds_[i].get().set_value(steering_angles[i]);
+                drive_cmds_[i].get().set_value(wheel_speeds[i]);
             }
 
             // 9. 记录当前舵角供下一周期使用
@@ -371,16 +364,8 @@ namespace three_wheel_controller
             std::array<double, 3> actual_wheel_vel{0, 0, 0};
             for (size_t i = 0; i < 3; ++i)
             {
-                auto steer_opt = steering_state_ifaces_[i].get().get_optional();
-                auto wheel_opt = drive_state_ifaces_[i].get().get_optional();
-                if (!steer_opt.has_value() || !wheel_opt.has_value())
-                {
-                    RCLCPP_ERROR(get_node()->get_logger(),
-                                 "State interface unavailable for wheel[%zu]", i);
-                    return controller_interface::return_type::ERROR;
-                }
-                actual_steering[i] = steer_opt.value();
-                actual_wheel_vel[i] = wheel_opt.value();
+                actual_steering[i] = steering_state_ifaces_[i].get().get_value();
+                actual_wheel_vel[i] = drive_state_ifaces_[i].get().get_value();
             }
             double est_vx, est_vy, est_omega;
             computeForwardKinematics(actual_steering, actual_wheel_vel, est_vx, est_vy, est_omega);
@@ -645,14 +630,7 @@ namespace three_wheel_controller
 
         for (size_t i = 0; i < 3; ++i)
         {
-            auto opt = steering_state_ifaces_[i].get().get_optional();
-            if (!opt.has_value())
-            {
-                RCLCPP_ERROR(get_node()->get_logger(),
-                             "Cannot read steering state for wheel[%zu]", i);
-                return false;
-            }
-            prev_steering_angles_[i] = opt.value();
+            prev_steering_angles_[i] = steering_state_ifaces_[i].get().get_value();
         }
         return true;
     }

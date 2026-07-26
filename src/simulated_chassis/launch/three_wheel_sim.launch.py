@@ -7,7 +7,7 @@ from launch.actions import (
     RegisterEventHandler, SetEnvironmentVariable,
 )
 from launch.event_handlers import OnProcessStart
-from launch.substitutions import LaunchConfiguration, Command
+from launch.substitutions import LaunchConfiguration, Command, EnvironmentVariable
 from launch_ros.actions import Node
 
 
@@ -43,10 +43,20 @@ def generate_launch_description():
         "/opt/ros/humble/lib"
     )
 
+    # 让 Gazebo Fortress 能找到本包的本地模型（如 triangular_prism）
+    set_resource_path = SetEnvironmentVariable(
+        "IGN_GAZEBO_RESOURCE_PATH",
+        [
+            EnvironmentVariable("IGN_GAZEBO_RESOURCE_PATH", default_value=""),
+            ":",
+            os.path.join(pkg_share, "models"),
+        ],
+    )
+
     set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
 
     ign_gazebo = ExecuteProcess(
-        cmd=["ign", "gazebo", "-r", world_path],
+        cmd=["ign", "gazebo", "-r","-s", world_path],
         output="screen",
     )
 
@@ -168,6 +178,7 @@ def generate_launch_description():
     return LaunchDescription([
         use_sim_time_arg,
         set_plugin_path,
+        set_resource_path,
         set_software_render,
         robot_state_pub,
         ign_gazebo,

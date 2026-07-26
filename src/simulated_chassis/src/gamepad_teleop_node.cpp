@@ -10,6 +10,8 @@ public:
   {
     this->declare_parameter<int>("axis_linear", 1);
     this->declare_parameter<int>("axis_angular", 0);
+    this->declare_parameter<int>("axis_lateral", 6);
+    this->declare_parameter<int>("axis_dpad_linear", 7);
     this->declare_parameter<double>("deadzone", 0.1);
     this->declare_parameter<double>("dominant_threshold", 0.5); // 主导方向阈值
     this->declare_parameter<double>("cross_suppress_ratio",
@@ -27,6 +29,8 @@ public:
 
     this->get_parameter("axis_linear", axis_linear_);
     this->get_parameter("axis_angular", axis_angular_);
+    this->get_parameter("axis_lateral", axis_lateral_);
+    this->get_parameter("axis_dpad_linear", axis_dpad_linear_);
     this->get_parameter("deadzone", deadzone_);
     this->get_parameter("dominant_threshold", dominant_threshold_);
     this->get_parameter("cross_suppress_ratio", cross_suppress_ratio_);
@@ -221,20 +225,25 @@ private:
     }
   }
 
-  double getAngularScale() const
-  {
-    switch (speed_level_)
+    double getAngularScale() const
     {
-    case 0:
-      return 0.6;
-    case 1:
-      return 1.0;
-    case 2:
-      return 1.5;
-    default:
-      return 1.0;
+        switch (speed_level_)
+        {
+        case 0:
+            return 0.6;
+        case 1:
+            return 1.0;
+        case 2:
+            return 1.5;
+        default:
+            return 1.0;
+        }
     }
-  }
+
+    double getLateralScale() const
+    {
+        return getLinearScale();
+    }
   /**
    * 如果是阿克曼就机器人，只有角速度，没有线速度，是无法移动的，这是由其运动模型决定的
    */
@@ -267,18 +276,27 @@ private:
     handleSpeedButtons(msg);
 
     if (axis_linear_ >= static_cast<int>(msg->axes.size()) ||
-        axis_angular_ >= static_cast<int>(msg->axes.size()))
+        axis_angular_ >= static_cast<int>(msg->axes.size()) ||
+        axis_lateral_ >= static_cast<int>(msg->axes.size()) ||
+        axis_dpad_linear_ >= static_cast<int>(msg->axes.size()))
     {
       return;
     }
 
-    // 获取原始输入
+    // 获取原始输入：左摇杆前后 + D-pad 前后叠加
     double raw_linear = applyDeadzone(msg->axes[axis_linear_]);
+    if (axis_dpad_linear_ >= 0)
+    {
+      double dpad_linear = applyDeadzone(msg->axes[axis_dpad_linear_]);
+      raw_linear = std::clamp(raw_linear + dpad_linear, -1.0, 1.0);
+    }
     double raw_angular = applyDeadzone(msg->axes[axis_angular_]);
+    double raw_lateral = applyDeadzone(msg->axes[axis_lateral_]);
 
     // 低通滤波（抑制高频抖动）
     double filtered_linear = lowPassFilter(raw_linear, prev_linear_);
     double filtered_angular = lowPassFilter(raw_angular, prev_angular_);
+    double filtered_lateral = lowPassFilter(raw_lateral, prev_lateral_);
     // RCLCPP_INFO(this->get_logger(), "raw_linear=%.2f, raw_angular=%.2f,
     // filtered_linear=%.2f, filtered_angular=%.2f",
     //             raw_linear, raw_angular, filtered_linear, filtered_angular);
@@ -290,14 +308,18 @@ private:
     // 再次应用死区（抑制后可能产生新的微小值）
     filtered_linear = applyDeadzone(filtered_linear);
     filtered_angular = applyDeadzone(filtered_angular);
+    filtered_lateral = applyDeadzone(filtered_lateral);
 
     // 速度缩放
     double linear_cmd = filtered_linear * getLinearScale();
     double angular_cmd = filtered_angular * getAngularScale();
+    double lateral_cmd = filtered_lateral * getLateralScale();
 
     // ✅ 最小发布阈值：低于阈值的指令直接置零
     if (std::abs(linear_cmd) < min_publish_cmd_)
       linear_cmd = 0.0;
+    if (std::abs(lateral_cmd) < min_publish_cmd_)
+      lateral_cmd = 0.0;
     if (std::abs(angular_cmd) < min_publish_cmd_)
       angular_cmd = 0.0;
 
@@ -307,18 +329,22 @@ private:
     double dt = (now - prev_cmd_time_).seconds();
     prev_cmd_time_ = now;
     linear_cmd = limitAccel(linear_cmd, prev_cmd_linear_, max_linear_accel_, dt);
+    lateral_cmd = limitAccel(lateral_cmd, prev_cmd_lateral_, max_linear_accel_, dt);
     angular_cmd = limitAccel(angular_cmd, prev_cmd_angular_, max_angular_accel_, dt);
 
     geometry_msgs::msg::Twist twist;
     twist.linear.x = linear_cmd;
+    twist.linear.y = lateral_cmd;
     twist.angular.z = angular_cmd;
 
     // 记录本帧实际下发的指令，供下一帧限加速度使用
     prev_cmd_linear_ = linear_cmd;
+    prev_cmd_lateral_ = lateral_cmd;
     prev_cmd_angular_ = angular_cmd;
 
     bool has_cmd =
-        (std::abs(linear_cmd) > 1e-6 || std::abs(angular_cmd) > 1e-6);
+        (std::abs(linear_cmd) > 1e-6 || std::abs(lateral_cmd) > 1e-6 ||
+         std::abs(angular_cmd) > 1e-6);
 
     if (has_cmd)
     {
@@ -326,7 +352,7 @@ private:
       last_nonzero_cmd_time_ = this->now(); // 更新最后有效指令时间
       stopped_ = false;
       RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                           "Moving: v=%.2f, ω=%.2f", linear_cmd, angular_cmd);
+                           "Moving: vx=%.2f, vy=%.2f, ω=%.2f", linear_cmd, lateral_cmd, angular_cmd);
     }
     else
     {
@@ -391,6 +417,7 @@ private:
     // 停止后下一帧必须从 0 开始过渡，否则限加速度会卡在旧值
     prev_cmd_linear_ = 0.0;
     prev_cmd_angular_ = 0.0;
+    prev_cmd_lateral_ = 0.0;
     prev_cmd_time_ = this->now();
     stopped_ = true;
     RCLCPP_INFO(this->get_logger(), "看门狗/强制停止已发送");
@@ -413,6 +440,8 @@ private:
 
   int axis_linear_;
   int axis_angular_;
+  int axis_lateral_;
+  int axis_dpad_linear_ = 7;
   double deadzone_ = 0.1;
   double dominant_threshold_ = 0.5;   // 主导方向阈值
   double cross_suppress_ratio_ = 0.3; // 交叉抑制比例
@@ -430,6 +459,7 @@ private:
   // 低通滤波状态
   double prev_linear_ = 0.0;
   double prev_angular_ = 0.0;
+  double prev_lateral_ = 0.0;
   // ✅ 看门狗相关新增变量
   rclcpp::TimerBase::SharedPtr watchdog_timer_;
   rclcpp::Time last_nonzero_cmd_time_;
@@ -442,6 +472,7 @@ private:
   double max_angular_accel_ = 1.5;  // rad/s^2
   double prev_cmd_linear_ = 0.0;    // 上一帧实际下发的线速度
   double prev_cmd_angular_ = 0.0;   // 上一帧实际下发的角速度
+  double prev_cmd_lateral_ = 0.0;   // 上一帧实际下发的侧向速度
   rclcpp::Time prev_cmd_time_;      // 上一帧下发时间
 };
 

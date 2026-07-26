@@ -2,9 +2,9 @@
 <robot xmlns:xacro="http://ros.org/wiki/xacro">
 
     <!-- ==================== ros2_control 硬件接口 ==================== -->
-    <ros2_control name="GazeboSimSystem" type="system">
+    <ros2_control name="IgnitionSystem" type="system">
         <hardware>
-            <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+            <plugin>ign_ros2_control/IgnitionSystem</plugin>
         </hardware>
         <joint name="left_wheel_joint">
             <command_interface name="velocity"/>
@@ -21,15 +21,15 @@
     <!-- ==================== Gazebo 系统插件 ==================== -->
     <gazebo>
         <!-- ros2_control 桥接插件 -->
-        <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+        <plugin filename="ign_ros2_control-system" name="ign_ros2_control::IgnitionROS2ControlPlugin">
             <parameters>$(find jzt_robot)/config/diff_controllers.yaml</parameters>
             <robot_param>robot_description</robot_param>
             <robot_param_node>robot_state_publisher</robot_param_node>
         </plugin>
         <!-- 传感器系统 -->
-        <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors"/>
+        <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors"/>
         <!-- IMU 系统 -->
-        <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+        <plugin filename="ignition-gazebo-imu-system" name="ignition::gazebo::systems::Imu"/>
     </gazebo>
 
 </robot>

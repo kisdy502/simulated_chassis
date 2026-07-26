@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Jazzy + Gazebo Garden 差速机器人仿真启动文件 (Docker无头Gazebo + X11转发GUI)
+Humble + Gazebo Fortress 差速机器人仿真启动文件 (Docker无头Gazebo + X11转发GUI)
 
 传感器：前270°激光 + 后270°激光 + IMU
 驱动方式：ros2_control + diff_drive_controller
@@ -48,7 +48,7 @@ def generate_launch_description():
     }
 
     set_plugin_path = SetEnvironmentVariable(
-        "GZ_SIM_SYSTEM_PLUGIN_PATH", "/opt/ros/jazzy/lib"
+        "IGN_GAZEBO_SYSTEM_PLUGIN_PATH", "/opt/ros/humble/lib"
     )
     set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
 
@@ -65,13 +65,13 @@ def generate_launch_description():
 
     # 2. Gazebo (无头/Server模式)
     gazebo = ExecuteProcess(
-        cmd=["gz", "sim", "-r", "-s", world_path],
+        cmd=["ign", "gazebo", "-r", "-s", world_path],
         output="screen",
     )
 
     # 3. 生成机器人 (Gazebo 启动 3 秒后)
     spawn_robot = Node(
-        package="ros_gz_sim",
+        package="ros_ign_gazebo",
         executable="create",
         arguments=[
             "-name", robot_name,
@@ -112,12 +112,12 @@ def generate_launch_description():
         package="ros_gz_bridge",
         executable="parameter_bridge",
         arguments=[
-            f"/model/{robot_name}/laser_front_link/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
-            f"/model/{robot_name}/laser_rear_link/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
-            "/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",
-            f"{clock_gz_topic}@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
-            f"/model/{robot_name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
-            f"/model/{robot_name}/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
+            f"/model/{robot_name}/laser_front_link/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan",
+            f"/model/{robot_name}/laser_rear_link/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan",
+            "/imu@sensor_msgs/msg/Imu[ignition.msgs.IMU",
+            f"{clock_gz_topic}@rosgraph_msgs/msg/Clock[ignition.msgs.Clock",
+            f"/model/{robot_name}/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
+            f"/model/{robot_name}/tf@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V",
         ],
         parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
         remappings=[
@@ -146,15 +146,12 @@ def generate_launch_description():
         output="screen",
     )
 
-    # 速度转发: /cmd_vel (Twist) → /diff_drive_controller/cmd_vel (TwistStamped)
+    # 速度转发: /cmd_vel → /diff_drive_controller/cmd_vel
+    # Humble 的 diff_drive_controller 接收 Twist（非 TwistStamped），用普通 relay 即可
     cmd_vel_relay = Node(
-        package="jzt_robot",
-        executable="twist_to_stamped_relay",
-        parameters=[{
-            "use_sim_time": LaunchConfiguration("use_sim_time"),
-            "input_topic": "/cmd_vel",
-            "output_topic": "/diff_drive_controller/cmd_vel",
-        }],
+        package="topic_tools",
+        executable="relay",
+        arguments=["/cmd_vel", "/diff_drive_controller/cmd_vel"],
         output="screen",
     )
 

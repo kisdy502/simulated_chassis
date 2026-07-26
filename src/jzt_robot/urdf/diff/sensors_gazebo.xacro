@@ -8,7 +8,7 @@
             <update_rate>20</update_rate>
             <visualize>true</visualize>
             <topic>/model/${robot_name}/laser_front_link/scan</topic>
-            <gz_frame_id>laser_front_link</gz_frame_id>
+            <ignition_frame_id>laser_front_link</ignition_frame_id>
             <pose>0 0 0 0 0 0</pose>
             <ray>
                 <scan>
@@ -40,7 +40,7 @@
             <update_rate>20</update_rate>
             <visualize>true</visualize>
             <topic>/model/${robot_name}/laser_rear_link/scan</topic>
-            <gz_frame_id>laser_rear_link</gz_frame_id>
+            <ignition_frame_id>laser_rear_link</ignition_frame_id>
             <pose>0 0 0 0 0 0</pose>
             <ray>
                 <scan>
@@ -72,7 +72,7 @@
             <update_rate>100</update_rate>
             <visualize>false</visualize>
             <topic>/imu</topic>
-            <gz_frame_id>imu_link</gz_frame_id>
+            <ignition_frame_id>imu_link</ignition_frame_id>
             <imu>
                 <frame_id>imu_link</frame_id>
                 <angular_velocity>

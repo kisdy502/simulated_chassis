@@ -394,7 +394,7 @@
           <!-- ===== 稳定版(v1.0.0-nav-stable)雷达配置，整段覆盖用于对比 ===== -->
           <vertical>
             <samples>32</samples>
-            <min_angle>-0.1745</min_angle>
+            <min_angle>-0.3490</min_angle>
             <max_angle>0.3490</max_angle>
           </vertical>
         </scan>
