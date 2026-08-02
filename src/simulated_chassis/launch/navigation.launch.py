@@ -75,13 +75,17 @@ def generate_launch_description():
             '--log-level', 'WARN',
         ],
         remappings=[
-            ('points2', '/points2'),
+            ('points2_1', '/points2_1'),
+            ('points2_2', '/points2_2'),
             ('odom', '/odom'),
             ('imu', '/imu'),
         ],
     )
 
     # ===== 占据栅格地图发布 =====
+    # 注意：源码核实 cartographer_occupancy_grid_node 只接受 5 个 flag
+    # (resolution/publish_period_sec/include_frozen_submaps/include_unfrozen_submaps/
+    #  occupancy_grid_topic)，min_z/max_z/z_voxel_size/trajectory_id 均无效，已移除。
     occupancy_grid_node = Node(
         package='cartographer_ros',
         executable='cartographer_occupancy_grid_node',
@@ -92,12 +96,6 @@ def generate_launch_description():
             'resolution': 0.05,
             'publish_period_sec': 1.0,
         }],
-        arguments=[
-            '-trajectory_id', '0',
-            '-min_z', '-0.5',
-            '-max_z', '0.5',
-            '-z_voxel_size', '0.1',
-        ],
     )
     # ===== Nav2 /cmd_vel -> 三舵轮控制器话题转发 =====
     cmd_vel_relay = Node(

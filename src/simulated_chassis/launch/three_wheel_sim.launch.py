@@ -56,7 +56,7 @@ def generate_launch_description():
     set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
 
     ign_gazebo = ExecuteProcess(
-        cmd=["ign", "gazebo", "-r","-s", world_path],
+        cmd=["ign", "gazebo", "-r","", world_path],
         output="screen",
     )
 
@@ -109,8 +109,9 @@ def generate_launch_description():
         package='ros_gz_bridge',  # 改包名
         executable='parameter_bridge',
         arguments=[
-            '/lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
-            '/lidar/point_cloud@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan',
+            # 双3D雷达点云（前+后），Ignition 在 <topic>/points 子话题发 PointCloudPacked
+            '/front_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
+            '/rear_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
             '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
             '/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
         ],
@@ -119,7 +120,9 @@ def generate_launch_description():
             (f'/model/{robot_name}/odometry', '/odom'),
             (f'/model/{robot_name}/tf', '/tf'),
             ('/world/test_world/clock', '/clock'),  # ✅ 重映射到 /clock
-            ('/lidar/point_cloud/points','points2')
+            # Ignition 的 /xxx/points 桥接到 ROS 后，重命名为 Cartographer 期望的话题
+            ('/front_lidar/point_cloud/points', '/points2_1'),
+            ('/rear_lidar/point_cloud/points', '/points2_2'),
         ],
         output='screen'
     )

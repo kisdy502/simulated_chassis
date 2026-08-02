@@ -66,7 +66,8 @@ def generate_launch_description():
             '--log-level', 'info',
         ],
         remappings=[
-            ('points2', '/points2'),
+            ('points2_1', '/points2_1'),
+            ('points2_2', '/points2_2'),
             ('odom', '/odom'),
             ('imu', '/imu'),
         ],

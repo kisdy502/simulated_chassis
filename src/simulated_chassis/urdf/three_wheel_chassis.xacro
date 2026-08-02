@@ -61,28 +61,74 @@
     <origin xyz="0 0 0" rpy="0 0 0" />
   </joint>
 
-  <!-- ==================== 3D Lidar ==================== -->
-  <link name="lidar_link">
+  <!-- ==================== 3D Lidar 双雷达（前+后，Mid-360 仿真） ==================== -->
+  <!-- 前雷达：底盘前部中央，前倾10°(rpy.pitch=+0.1745，顶部向前) -->
+  <!--   → 下沿射线斜向前下方(-7°+10°倾斜 ≈ 等效-17°)，覆盖机器人正前方地面 -->
+  <link name="front_lidar_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <mass value="0.2" />
       <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
     </inertial>
+    <!-- 半球穹顶雷达外形：底座圆柱 + 球体(下半埋入底座，只露上半球)，仿 Mid-360 -->
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+      <origin xyz="0 0 0.02" rpy="0 0 0" />
       <geometry>
-        <cylinder radius="0.04" length="0.03" />
+        <cylinder radius="0.04" length="0.04" />
       </geometry>
-      <material name="cinnabar">
-        <color rgba="0.906 0.337 0.196 1.0" />
+      <material name="lidar_base">
+        <color rgba="0.12 0.12 0.12 1.0" />
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.04" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.04" />
+      </geometry>
+      <material name="lidar_dome">
+        <color rgba="0.22 0.22 0.22 1.0" />
       </material>
     </visual>
   </link>
 
-  <joint name="lidar_joint" type="fixed">
+  <joint name="front_lidar_joint" type="fixed">
     <parent link="base_link" />
-    <child link="lidar_link" />
-    <origin xyz="0 0 0.24" rpy="0 0 0" />
+    <child link="front_lidar_link" />
+    <origin xyz="0.25 0 0.10" rpy="0 0.0873 0" />
+  </joint>
+
+  <!-- 后雷达：底盘后部中央，朝后(yaw=π)+后倾10° → 覆盖机器人正后方地面 -->
+  <link name="rear_lidar_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.2" />
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
+    </inertial>
+    <!-- 半球穹顶雷达外形：底座圆柱 + 球体(下半埋入底座，只露上半球)，仿 Mid-360 -->
+    <visual>
+      <origin xyz="0 0 0.02" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.04" length="0.04" />
+      </geometry>
+      <material name="lidar_base">
+        <color rgba="0.12 0.12 0.12 1.0" />
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.04" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.04" />
+      </geometry>
+      <material name="lidar_dome">
+        <color rgba="0.22 0.22 0.22 1.0" />
+      </material>
+    </visual>
+  </link>
+
+  <joint name="rear_lidar_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="rear_lidar_link" />
+    <origin xyz="-0.25 0 0.10" rpy="0 0.0873 3.1416" />
   </joint>
 
   <!-- ==================== Front Steering Module ==================== -->
@@ -370,46 +416,86 @@
     </sensor>
   </gazebo>
 
-  <!-- ==================== 3D Lidar ==================== -->
-  <!-- 模拟真实32线雷达：底部密集（地面约束）上部稀疏 -->
-  <!-- 角度分布：±5°内12条线(37.5%)，±5°~±15°16条线(50%)，±15°~±20°4条线(12.5%) -->
-  <gazebo reference="lidar_link">
-    <sensor name="mid360_sensor" type="gpu_lidar">
-      <!-- <enable>true</enable> -->
+  <!-- ==================== 双 3D Lidar Sensor (Mid-360 仿真) ==================== -->
+  <!-- 垂直视场非对称：下沿 -7°(真实Mid-360) / 上沿 +32°。前后两个传感器配置完全一致。 -->
+
+  <!-- 前雷达 -->
+  <gazebo reference="front_lidar_link">
+    <sensor name="front_lidar_sensor" type="gpu_lidar">
       <always_on>true</always_on>
       <update_rate>15</update_rate>
       <visualize>true</visualize>
-      <topic>/lidar/point_cloud</topic>
-      <ignition_frame_id>lidar_link</ignition_frame_id>
+      <topic>/front_lidar/point_cloud</topic>
+      <ignition_frame_id>front_lidar_link</ignition_frame_id>
 
       <lidar>
-        <frame_id>lidar_link</frame_id>
+        <frame_id>front_lidar_link</frame_id>
         <scan>
           <horizontal>
-            <samples>360</samples>
+            <samples>270</samples>
             <resolution>1</resolution>
-            <min_angle>-3.1415926</min_angle>
-            <max_angle>3.1415926</max_angle>
+            <min_angle>-2.3562</min_angle>
+            <max_angle>2.3562</max_angle>
           </horizontal>
-          <!-- ===== 稳定版(v1.0.0-nav-stable)雷达配置，整段覆盖用于对比 ===== -->
           <vertical>
             <samples>32</samples>
-            <min_angle>-0.3490</min_angle>
-            <max_angle>0.3490</max_angle>
+            <min_angle>-0.2618</min_angle>
+            <max_angle>0.349</max_angle>
           </vertical>
         </scan>
         <range>
           <min>0.2</min>
-          <max>45.0</max>
+          <max>30.0</max>
           <resolution>0.01</resolution>
         </range>
         <noise>
           <type>gaussian</type>
           <mean>0.0</mean>
-          <!-- <stddev>0.182</stddev> -->
           <bias_mean>0.0</bias_mean>
           <bias_stddev>0.005</bias_stddev>
           <precision>0.01</precision>
+          <stddev>0.010</stddev> 
+        </noise>
+      </lidar>
+    </sensor>
+  </gazebo>
+
+  <!-- 后雷达 -->
+  <gazebo reference="rear_lidar_link">
+    <sensor name="rear_lidar_sensor" type="gpu_lidar">
+      <always_on>true</always_on>
+      <update_rate>15</update_rate>
+      <visualize>true</visualize>
+      <topic>/rear_lidar/point_cloud</topic>
+      <ignition_frame_id>rear_lidar_link</ignition_frame_id>
+
+      <lidar>
+        <frame_id>rear_lidar_link</frame_id>
+        <scan>
+          <horizontal>
+            <samples>270</samples>
+            <resolution>1</resolution>
+            <min_angle>-2.3562</min_angle>
+            <max_angle>2.3562</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>32</samples>
+            <min_angle>-0.2618</min_angle>
+            <max_angle>0.349</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.2</min>
+          <max>30.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.005</bias_stddev>
+          <precision>0.01</precision>
+          <stddev>0.010</stddev> 
         </noise>
       </lidar>
     </sensor>

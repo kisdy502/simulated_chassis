@@ -16,7 +16,7 @@ options = {
   num_laser_scans = 0,                    -- ✅ 关闭2D激光
   num_multi_echo_laser_scans = 0,
   num_subdivisions_per_laser_scan = 1,
-  num_point_clouds = 1,                   -- ✅ 启用3D点云
+  num_point_clouds = 2,                   -- ✅ 双3D雷达(前+后)
   lookup_transform_timeout_sec = 0.2,
   submap_publish_period_sec = 0.3,
   pose_publish_period_sec = 5e-3,
@@ -35,8 +35,8 @@ MAP_BUILDER.num_background_threads = 4
 
 -- ✅ 3D 轨迹构建器配置
 TRAJECTORY_BUILDER_3D.min_range = 0.5
-TRAJECTORY_BUILDER_3D.max_range = 35.0
-TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
+TRAJECTORY_BUILDER_3D.max_range = 24.0
+TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- ✅ 双雷达：每个雷达1帧，累计2帧后做一次扫描匹配
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08       -- 8cm 体素滤波
 

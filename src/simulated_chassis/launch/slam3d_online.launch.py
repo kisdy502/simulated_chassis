@@ -48,10 +48,9 @@ def generate_launch_description():
             '--log-level', 'info',  # ✅ 添加调试日志
         ],
         remappings=[
-            # 3D雷达：点云输入（用 points 或 points_1）
-            # ('points', '/lidar/point_cloud/points'),  # 或 '/lidar/point_cloud'
-            # ('points_1', '/lidar/point_cloud/points'),
-            ('points2', '/points2'),
+            # 双3D雷达：前→points2_1，后→points2_2（由 ros_gz_bridge 桥接并提供）
+            ('points2_1', '/points2_1'),
+            ('points2_2', '/points2_2'),
             ('odom', '/odom'),  # 直接订阅控制器的 odom
             ('imu', '/imu'),
         ],
@@ -67,10 +66,14 @@ def generate_launch_description():
         arguments=[
             '-resolution', '0.05',
             '-publish_period_sec', '1.0',
-            '-trajectory_id', '0',        # ✅ 指定轨迹
-            '-min_z', '-0.05',             # ✅ 投影高度范围（地面到50cm）
-            '-max_z', '1.5',
-            '-z_voxel_size', '0.1',
+            # ⚠️ 源码核对：cartographer_ros/cartographer_ros/occupancy_grid_node_main.cc
+            #    中 DEFINE_ 的全部 flag 只有 5 个：resolution / publish_period_sec /
+            #    include_frozen_submaps / include_unfrozen_submaps / occupancy_grid_topic。
+            #    下面 4 个参数源码里根本不存在，节点启动会打 "Unknown flag" 警告并静默忽略：
+            # '-trajectory_id', '0',
+            # '-min_z', '-0.05',
+            # '-max_z', '1.5',
+            # '-z_voxel_size', '0.1',
         ],
     )
 

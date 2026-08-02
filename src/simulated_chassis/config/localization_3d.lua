@@ -20,7 +20,7 @@ options = {
   num_laser_scans = 0,
   num_multi_echo_laser_scans = 0,
   num_subdivisions_per_laser_scan = 1,
-  num_point_clouds = 1,
+  num_point_clouds = 2,
   lookup_transform_timeout_sec = 0.3,                    -- 定位稍宽容（仿真TF可能延迟）
   submap_publish_period_sec = 0.3,
   pose_publish_period_sec = 5e-3,
@@ -40,7 +40,7 @@ MAP_BUILDER.num_background_threads = 4
 TRAJECTORY_BUILDER_3D.min_range = 0.5
 TRAJECTORY_BUILDER_3D.max_range = 30.0
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08           -- 对齐建图（定位不需要更细）
-TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
+TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- ✅ 双雷达：累计2帧(前+后各1)
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
 
 TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
