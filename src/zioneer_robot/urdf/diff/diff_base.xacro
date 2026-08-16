@@ -1,0 +1,123 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <!-- base_footprint -->
+    <link name="base_footprint" />
+
+    <joint name="base_joint" type="fixed">
+        <parent link="base_footprint" />
+        <child link="base_link" />
+        <origin xyz="0 0 ${base_offset_z}" rpy="0 0 0" />
+    </joint>
+
+    <!-- base_link -->
+    <link name="base_link">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="${base_box_x} ${base_box_y} ${base_box_z}" />
+            </geometry>
+            <material name="purple" />
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="${base_box_x} ${base_box_y} ${base_box_z}" />
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="${base_mass}" />
+            <xacro:box_inertia m="${base_mass}" x="${base_box_x}" y="${base_box_y}" z="${base_box_z}" />
+        </inertial>
+    </link>
+
+    <gazebo reference="base_link">
+        <material>Gazebo/Orange</material>
+    </gazebo>
+
+    <!-- ==================== 前3D雷达 (Mid-360 仿真) ==================== -->
+    <link name="front_lidar_link">
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <mass value="0.2" />
+            <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
+        </inertial>
+        <!-- 半球穹顶雷达外形：底座圆柱 + 球体(下半埋入底座，只露上半球)，仿 Mid-360 -->
+        <visual>
+            <origin xyz="0 0 0.02" rpy="0 0 0" />
+            <geometry>
+                <cylinder radius="0.04" length="0.04" />
+            </geometry>
+            <material name="lidar_base" />
+        </visual>
+        <visual>
+            <origin xyz="0 0 0.04" rpy="0 0 0" />
+            <geometry>
+                <sphere radius="0.04" />
+            </geometry>
+            <material name="lidar_dome" />
+        </visual>
+    </link>
+
+    <joint name="front_lidar_joint" type="fixed">
+        <parent link="base_link" />
+        <child link="front_lidar_link" />
+        <origin xyz="0.28 0 0.20" rpy="0 0 0" />
+    </joint>
+
+    <!-- ==================== 后3D雷达 (Mid-360 仿真) ==================== -->
+    <link name="rear_lidar_link">
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <mass value="0.2" />
+            <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0.02" rpy="0 0 0" />
+            <geometry>
+                <cylinder radius="0.04" length="0.04" />
+            </geometry>
+            <material name="lidar_base" />
+        </visual>
+        <visual>
+            <origin xyz="0 0 0.04" rpy="0 0 0" />
+            <geometry>
+                <sphere radius="0.04" />
+            </geometry>
+            <material name="lidar_dome" />
+        </visual>
+    </link>
+
+    <joint name="rear_lidar_joint" type="fixed">
+        <parent link="base_link" />
+        <child link="rear_lidar_link" />
+        <origin xyz="-0.28 0 0.20" rpy="0 0 3.1416" />
+    </joint>
+
+    <!-- ==================== IMU ==================== -->
+    <link name="imu_link">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0.02 0.02 0.02" />
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0.02 0.02 0.02" />
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="0.1" />
+            <xacro:box_inertia m="0.1" x="0.02" y="0.02" z="0.02" />
+        </inertial>
+    </link>
+
+    <joint name="imu_joint" type="fixed">
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <parent link="base_link" />
+        <child link="imu_link" />
+    </joint>
+
+</robot>

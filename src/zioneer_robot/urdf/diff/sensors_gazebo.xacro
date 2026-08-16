@@ -1,0 +1,142 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <!-- ==================== 双 3D Lidar Sensor (Mid-360 仿真) ==================== -->
+    <!-- 水平 270°(±135°)：前后各一发，盲区朝向底盘内侧(罩住本体角向范围)，合计仍 360° 覆盖 -->
+    <!-- 垂直视场非对称：下沿 -10° / 上沿 +20° -->
+
+    <!-- 前雷达 -->
+    <gazebo reference="front_lidar_link">
+        <sensor name="front_lidar_sensor" type="gpu_lidar">
+            <always_on>true</always_on>
+            <update_rate>15</update_rate>
+            <visualize>true</visualize>
+            <topic>/front_lidar/point_cloud</topic>
+            <ignition_frame_id>front_lidar_link</ignition_frame_id>
+
+            <lidar>
+                <frame_id>front_lidar_link</frame_id>
+                <scan>
+                    <horizontal>
+                        <samples>360</samples>
+                        <resolution>1</resolution>
+                        <min_angle>-2.35619</min_angle>
+                        <max_angle>2.35619</max_angle>
+                    </horizontal>
+                    <vertical>
+                        <samples>16</samples>
+                        <min_angle>-0.1745</min_angle>
+                        <max_angle>0.349</max_angle>
+                    </vertical>
+                </scan>
+                <range>
+                    <min>0.3</min>
+                    <max>30.0</max>
+                    <resolution>0.01</resolution>
+                </range>
+                <noise>
+                    <type>gaussian</type>
+                    <mean>0.0</mean>
+                    <bias_mean>0.0</bias_mean>
+                    <bias_stddev>0.0005</bias_stddev>
+                    <stddev>0.002</stddev>
+                </noise>
+            </lidar>
+        </sensor>
+    </gazebo>
+
+    <!-- 后雷达 -->
+    <gazebo reference="rear_lidar_link">
+        <sensor name="rear_lidar_sensor" type="gpu_lidar">
+            <always_on>true</always_on>
+            <update_rate>15</update_rate>
+            <visualize>true</visualize>
+            <topic>/rear_lidar/point_cloud</topic>
+            <ignition_frame_id>rear_lidar_link</ignition_frame_id>
+
+            <lidar>
+                <frame_id>rear_lidar_link</frame_id>
+                <scan>
+                    <horizontal>
+                        <samples>360</samples>
+                        <resolution>1</resolution>
+                        <min_angle>-2.35619</min_angle>
+                        <max_angle>2.35619</max_angle>
+                    </horizontal>
+                    <vertical>
+                        <samples>16</samples>
+                        <min_angle>-0.1745</min_angle>
+                        <max_angle>0.349</max_angle>
+                    </vertical>
+                </scan>
+                <range>
+                    <min>0.3</min>
+                    <max>30.0</max>
+                    <resolution>0.01</resolution>
+                </range>
+                <noise>
+                    <type>gaussian</type>
+                    <mean>0.0</mean>
+                    <bias_mean>0.0</bias_mean>
+                    <bias_stddev>0.0005</bias_stddev>
+                    <stddev>0.002</stddev>
+                </noise>
+            </lidar>
+        </sensor>
+    </gazebo>
+
+    <!-- ==================== IMU ==================== -->
+    <gazebo reference="imu_link">
+        <sensor name="imu_sensor" type="imu">
+            <always_on>true</always_on>
+            <update_rate>100</update_rate>
+            <visualize>false</visualize>
+            <topic>/imu</topic>
+            <ignition_frame_id>imu_link</ignition_frame_id>
+            <imu>
+                <frame_id>imu_link</frame_id>
+                <angular_velocity>
+                    <x>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.0002</stddev>
+                        </noise>
+                    </x>
+                    <y>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.0002</stddev>
+                        </noise>
+                    </y>
+                    <z>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.0002</stddev>
+                        </noise>
+                    </z>
+                </angular_velocity>
+                <linear_acceleration>
+                    <x>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.01</stddev>
+                        </noise>
+                    </x>
+                    <y>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.01</stddev>
+                        </noise>
+                    </y>
+                    <z>
+                        <noise type="gaussian">
+                            <mean>0.0</mean>
+                            <stddev>0.01</stddev>
+                        </noise>
+                    </z>
+                </linear_acceleration>
+            </imu>
+        </sensor>
+    </gazebo>
+
+</robot>

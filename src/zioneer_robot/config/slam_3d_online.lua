@@ -35,13 +35,13 @@ MAP_BUILDER.num_background_threads = 4
 
 -- ✅ 3D 轨迹构建器配置
 TRAJECTORY_BUILDER_3D.min_range = 0.5
-TRAJECTORY_BUILDER_3D.max_range = 24.0
-TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- ✅ 双雷达：每个雷达1帧，累计2帧后做一次扫描匹配
+TRAJECTORY_BUILDER_3D.max_range = 20.0
+TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- 双雷达：前+后各1帧累计成完整360°观测后再做扫描匹配
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08       -- 8cm 体素滤波
 
--- 3D 前端关闭在线相关扫描匹配(OCSM 过重,依赖 IMU+odom 初始位姿即可)
-TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
+-- 3D 前端开启在线相关扫描匹配(OCSM)兜底：ceres 只做局部精修，初始位姿偏差大时无法恢复
+TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = true
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.15
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(5.0)
 
