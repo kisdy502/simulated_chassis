@@ -1,0 +1,12 @@
+# AGV 控制模式切换
+# 取代原本 WebSocket 的 {"type":"agv_control","action":"start"|"stop"|"reset"}
+#
+# 上位机通过 rosbridge 调用：
+#   {"op":"call_service","id":"c1","service":"/agv/set_control",
+#    "args":{"action":"start"}}
+
+string action   # start | stop | reset
+---
+bool success
+string message
+string state    # 执行后的 agv_state_

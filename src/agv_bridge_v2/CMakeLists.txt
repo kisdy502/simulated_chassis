@@ -1,122 +1,73 @@
 cmake_minimum_required(VERSION 3.8)
 project(agv_bridge_v2)
 
-# 默认使用 C++17
 if(NOT CMAKE_CXX_STANDARD)
-        set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 
-# 设置编译选项
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        add_compile_options(-Wall -Wextra -Wpedantic)
+  add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# 查找依赖
+# ==================== 依赖 ====================
+# 注意：本包已不再需要 libwebsockets / libcurl / nlohmann_json。
+#   对外通信由 rosbridge_server 承担，对外契约由 agv_bridge_v2_interfaces 的 IDL 定义。
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(nav_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(tf2_ros REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(nav2_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
-find_package(nav2_msgs REQUIRED) # 添加这一行
-find_package(rclcpp_action REQUIRED) # 添加rclcpp_action
-find_package(tf2 REQUIRED) # 添加tf2
-find_package(diagnostic_msgs REQUIRED) # 添加这一行
 find_package(angles REQUIRED)
 
-# 查找第三方库
-find_package(Threads REQUIRED)
-find_package(OpenSSL REQUIRED)
-find_package(CURL REQUIRED)
-# 查找 JSON 库
-find_package(nlohmann_json REQUIRED)
+# 标准接口包：/agv/follow_edge、/agv/set_control、/agv/status
+find_package(agv_bridge_v2_interfaces REQUIRED)
 
-# 使用 pkg-config 查找 libwebsockets
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBWEBSOCKETS REQUIRED libwebsockets)
-
-# 包含目录
-include_directories(
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${nlohmann_json_INCLUDE_DIRS}
-)
-# # 源文件列表
-# set(SOURCE_FILES
-#     src/bean/*.cpp
-#     # 主文件
-#     src/AgvBridgeNode.cpp
-#     # 原有WebSocket文件
-#     src/websocket_server.cpp
-#     # 新增模块化文件
-#     src/HttpApiClient.cpp
-
-#     #src/DataCollector.cpp
-#     #src/StateManager.cpp
-#     src/LocalizationMonitor.cpp
-#     src/NavigationManager.cpp
-
-#     # 主程序入口
-#     src/main.cpp
-# )
-
-file(GLOB SOURCE_FILES
-        "src/*.cpp"
-        "src/bean/*.cpp"
+set(AGV_ROS_DEPS
+  rclcpp
+  rclcpp_action
+  geometry_msgs
+  std_msgs
+  sensor_msgs
+  nav2_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  angles
+  agv_bridge_v2_interfaces
 )
 
-# 创建可执行文件
-add_executable(agv_bridge_node ${SOURCE_FILES})
-
-# 使用ament_target_dependencies处理所有ROS2依赖
-ament_target_dependencies(agv_bridge_node
-        rclcpp
-        geometry_msgs
-        nav_msgs
-        sensor_msgs
-        tf2_ros
-        std_msgs
-        tf2_geometry_msgs
-        nav2_msgs
-        diagnostic_msgs
-        tf2
-        angles
+# ==================== 可执行文件 ====================
+# 全部业务逻辑只有 5 个源文件：
+#   AgvNavServerNode  —— 瘦节点：action/srv/status/TF 接口
+#   NavigationManager —— 直线/贝塞尔/倒车路径生成 + nav2 FollowPath/Spin 调度
+#   LocalizationMonitor —— TF 定位收敛监控
+#   TransformUtils    —— 四元数/偏航角/贝塞尔数学
+add_executable(agv_nav_server
+  src/agv_nav_server_main.cpp
+  src/AgvNavServerNode.cpp
+  src/NavigationManager.cpp
+  src/LocalizationMonitor.cpp
+  src/TransformUtils.cpp
 )
 
-# 链接第三方库
-target_link_libraries(agv_bridge_node
-        ${LIBWEBSOCKETS_LIBRARIES}
-        OpenSSL::SSL
-        OpenSSL::Crypto
-        Threads::Threads
-        CURL::libcurl # 添加这一行
-        nlohmann_json::nlohmann_json
+target_include_directories(agv_nav_server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+ament_target_dependencies(agv_nav_server ${AGV_ROS_DEPS})
+
+# ==================== 安装 ====================
+install(TARGETS agv_nav_server
+  DESTINATION lib/${PROJECT_NAME}
 )
 
-# 包含头文件
-target_include_directories(agv_bridge_node
-        PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${LIBWEBSOCKETS_INCLUDE_DIRS}
-        ${nlohmann_json_INCLUDE_DIRS}
+install(DIRECTORY launch docs scripts
+  DESTINATION share/${PROJECT_NAME}
 )
 
-# 安装
-install(TARGETS agv_bridge_node
-        DESTINATION lib/${PROJECT_NAME}
-)
-
-install(DIRECTORY launch
-        DESTINATION share/${PROJECT_NAME}
-)
-
-install(DIRECTORY config
-        DESTINATION share/${PROJECT_NAME}
-)
-
-# 导出
-ament_export_dependencies(rclcpp geometry_msgs nav_msgs sensor_msgs tf2_ros std_msgs tf2_geometry_msgs nav2_msgs rclcpp_action tf2 diagnostic_msgs angles)
-ament_export_libraries(agv_bridge_node)
+# ==================== 导出 ====================
+ament_export_dependencies(${AGV_ROS_DEPS})
 
 ament_package()

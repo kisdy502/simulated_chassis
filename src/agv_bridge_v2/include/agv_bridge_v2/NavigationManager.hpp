@@ -15,7 +15,6 @@
 #include <mutex>
 #include <nav2_msgs/action/follow_path.hpp>
 #include <nav2_msgs/action/spin.hpp>
-#include "agv_bridge_v2/bean/PathPoint.hpp"
 #include "agv_bridge_v2/utils/TransformUtils.hpp"
 #include <nav2_msgs/msg/speed_limit.hpp>
 #include <angles/angles.h>
@@ -257,6 +256,10 @@ namespace agv_bridge
         rclcpp::Publisher<nav2_msgs::msg::SpeedLimit>::SharedPtr speed_limit_pub_;
 
         double current_speed_limit_ = 1.5; // 当前生效的限速
+
+        // 倒车朝向偏差阈值(度)。超过则不执行倒车指令 —— 倒车绝不自动旋转车体，
+        // 避免在充电桩 / 窄过道 / 贴边作业现场因原地转向造成剐蹭。
+        double back_up_max_heading_error_deg_ = 20.0;
 
         std::shared_ptr<agv_bridge::LocalizationMonitor> pose_provider_;
 

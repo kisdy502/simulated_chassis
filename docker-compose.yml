@@ -37,16 +37,14 @@ services:
     restart: unless-stopped
     environment:
       - AGV_ID=${AGV_ID:-AGV001}
-      - SPRINGBOOT_HOST=${SPRINGBOOT_HOST:-host.docker.internal}
-      - SPRINGBOOT_PORT=${SPRINGBOOT_PORT:-22777}
+      - USE_SIM_TIME=${USE_SIM_TIME:-true}
+      # 倒车朝向偏差阈值（度）：倒车绝不自动旋转，超阈值直接失败
+      - BACK_UP_MAX_HEADING_ERROR_DEG=${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-9090}
-      - REDIS_HOST=${REDIS_HOST:-host.docker.internal}
-      - REDIS_PORT=${REDIS_PORT:-6379}
-      - MQTT_HOST=${MQTT_HOST:-host.docker.internal}
-      - MQTT_PORT=${MQTT_PORT:-1883}
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
     ports:
+      # rosbridge 的 JSON over WebSocket 端口，上位机从这里接入
       - "${WEBSOCKET_PORT:-9090}:${WEBSOCKET_PORT:-9090}"
     depends_on:
       robot-simulation:

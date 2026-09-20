@@ -1,136 +1,62 @@
-// Edge.h
+// Edge.hpp —— 地图「边」的数据结构（导航侧使用，不含任何序列化逻辑）
+//
+// 上位机通过 FollowEdge action 把这些字段传进来，取代了原先的
+// edgeInfo JSON + to_json/from_json 手写映射。
 #ifndef EDGE_H
 #define EDGE_H
 
 #include <string>
 #include <vector>
-#include <nlohmann/json.hpp>
 
 namespace agv_bridge
 {
 
-    // 控制点结构体
+    // 贝塞尔曲线控制点
     struct ControlPoint
     {
-        double x;
-        double y;
+        double x = 0.0;
+        double y = 0.0;
 
-        ControlPoint() : x(0.0), y(0.0) {}
+        ControlPoint() = default;
         ControlPoint(double x_, double y_) : x(x_), y(y_) {}
     };
 
-    // 边方向枚举
-    enum class EdgeDirection
-    {
-        UNIDIRECTIONAL,
-        BIDIRECTIONAL
-    };
-
-    // 边类型枚举
+    // 边类型
     enum class EdgeType
     {
-        STRAIGHT,
-        CURVE,
-        ELEVATION
+        STRAIGHT,  // 直线
+        CURVE,     // 贝塞尔曲线
+        ELEVATION  // 坡道（当前按直线处理）
     };
 
-    // Edge结构体（对应Java的Edge类）
+    // 边：一次移动任务对应的地图拓扑信息
     struct Edge
     {
         std::string id;
-        std::string sourceId;
-        std::string targetId;
-        double weight;           // 距离/成本
-        EdgeDirection direction; // 方向
-        EdgeType type;           // 类型
-        double maxSpeed;         // 最大速度 (m/s)
-        int priority;            // 优先级
-        bool enabled;            // 是否启用
-        double step;             // 内部用的
-        bool reverse;            // 内部用的
-        bool backUp;            // 是否倒车移动（backUp移动）
+        std::string sourceId;  // 边起点节点，用于自动判定行驶方向
+        std::string targetId;  // 边终点节点，用于自动判定行驶方向
+        EdgeType type = EdgeType::STRAIGHT;
+        double maxSpeed = 1.0;  // m/s，会下发到 /speed_limit
+        double step = 0.1;      // 路径采样步长 m
+        bool reverse = false;   // true = 沿边反向行驶（控制点顺序反转）
+        bool backUp = false;    // true = 倒车（保持当前朝向平移后退，绝不旋转）
 
-        // 贝塞尔曲线控制点（用于CURVE类型的边）
-        std::vector<ControlPoint> controlPoints; // 不再使用optional包裹
+        // 贝塞尔曲线控制点（type == CURVE 时使用）
+        // ⚠️ 仅支持 1 个（二阶）或 2 个（三阶）；更多会退化成直线
+        std::vector<ControlPoint> controlPoints;
 
-        // 构造函数
-        Edge()
-            : weight(0.0),
-              direction(EdgeDirection::BIDIRECTIONAL),
-              type(EdgeType::STRAIGHT),
-              maxSpeed(1.0),
-              priority(1),
-              enabled(true),
-              step(0.1),
-              reverse(false),
-              backUp(false) {}
-
-        Edge(const std::string &id_,
-             const std::string &sourceId_,
-             const std::string &targetId_,
-             double weight_ = 0.0,
-             EdgeDirection direction_ = EdgeDirection::BIDIRECTIONAL,
-             EdgeType type_ = EdgeType::STRAIGHT,
-             double maxSpeed_ = 1.0,
-             int priority_ = 1,
-             bool enabled_ = true)
-            : id(id_),
-              sourceId(sourceId_),
-              targetId(targetId_),
-              weight(weight_),
-              direction(direction_),
-              type(type_),
-              maxSpeed(maxSpeed_),
-              priority(priority_),
-              enabled(enabled_),
-              step(0.1),
-              reverse(false) {}
-
-        // 转换为字符串
-        std::string toString() const
-        {
-            std::string dirStr = (direction == EdgeDirection::UNIDIRECTIONAL) ? "UNIDIRECTIONAL" : "BIDIRECTIONAL";
-            std::string typeStr;
-            switch (type)
-            {
-            case EdgeType::STRAIGHT:
-                typeStr = "STRAIGHT";
-                break;
-            case EdgeType::CURVE:
-                typeStr = "CURVE";
-                break;
-            case EdgeType::ELEVATION:
-                typeStr = "ELEVATION";
-                break;
-            }
-
-            return "Edge[id=" + id +
-                   ", sourceId=" + sourceId +
-                   ", targetId=" + targetId +
-                   ", weight=" + std::to_string(weight) +
-                   ", direction=" + dirStr +
-                   ", type=" + typeStr +
-                   ", maxSpeed=" + std::to_string(maxSpeed) +
-                   ", priority=" + std::to_string(priority) +
-                   ", enabled=" + (enabled ? "true" : "false") +
-                   ", step=" + std::to_string(step) +
-                   ", reverse=" + (reverse ? "true" : "false") +
-                   ", backUp=" + (backUp ? "true" : "false") +
-                   ", controlPoints=" + std::to_string(controlPoints.size()) + "]";
-        }
-
-        // 检查是否为贝塞尔曲线
+        /// @brief 是否为可用的贝塞尔曲线（有类型且有控制点）
         bool isBezierCurve() const
         {
             return type == EdgeType::CURVE && !controlPoints.empty();
         }
 
-        // 获取贝塞尔曲线阶数
+        /// @brief 贝塞尔阶数：0 = 非曲线，1 = 二阶，2 = 三阶
         int getBezierOrder() const
         {
             if (type != EdgeType::CURVE)
                 return 0;
-            return controlPoints.size(); // 1: 二阶, 2: 三阶
+            return static_cast<int>(controlPoints.size());
         }
     };
 

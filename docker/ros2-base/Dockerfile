@@ -42,11 +42,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-nav2-behavior-tree \
     && rm -rf /var/lib/apt/lists/*
 
+# rosbridge：对外提供 JSON over WebSocket，取代 agv_bridge_v2 自带的 libwebsockets 服务
+# 含 rosbridge_server + rosbridge_library + rosapi(+rosapi_msgs)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libcurl4-openssl-dev \
+    ros-jazzy-rosbridge-suite \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libjsoncpp-dev \
-    nlohmann-json3-dev \
-    libwebsockets-dev \
     libeigen3-dev \
     && rm -rf /var/lib/apt/lists/*
 

@@ -1,0 +1,65 @@
+# 沿一条地图「边」移动到目标节点：直线 / 贝塞尔曲线 / 倒车，全部由一个 action 承载。
+# 取代原本 WebSocket 的 {"type":"move_to", ...} + HTTP command_ack 上报。
+#
+# 这是唯一需要自定义的接口 —— 上位机直接把原来的 move_to JSON 包进 rosbridge 信封即可：
+#   {"op":"send_action_goal","id":"move_42","action":"/agv/follow_edge",
+#    "action_type":"agv_bridge_v2_interfaces/action/FollowEdge","feedback":true,
+#    "args":{ "command_id":"move_0ca1...", "node_id":"I006",
+#             "x":-8.299,"y":-1.349,"theta":0.1787,
+#             "edge_id":"E066","edge_type":"CURVE","max_speed":0.6,
+#             "back_up":false,"reverse":false,"step":0.1,
+#             "control_points":[{"x":-7.1,"y":-2.0},{"x":-5.3,"y":-0.4}] }}
+#
+# 取消移动：{"op":"cancel_action_goal","id":"move_42","action":"/agv/follow_edge"}
+
+# ==================== Goal ====================
+
+# 上位机指令 ID，原样回传，用于和调度系统对账（取代 command_id 字段）
+string command_id
+# 目标节点 ID，原样回传
+string node_id
+
+# 目标点在 map 坐标系下的位姿
+float64 x
+float64 y
+float64 theta
+
+# 边的元信息
+string edge_id
+string edge_type        # STRAIGHT | CURVE | ELEVATION
+string source_id        # 边的起点节点，用于自动判定行驶方向；可留空
+string target_id        # 边的终点节点，用于自动判定行驶方向；可留空
+float64 max_speed       # m/s，会通过 /speed_limit 下发给 nav2 控制器
+# true = 倒车。节点保持车体当前朝向不变、只做直线平移后退（负向限速），
+# 绝不会原地旋转 —— 适配充电桩对接 / 窄过道 / 贴边作业。
+# 若车尾对目标点的朝向偏差超过 back_up_max_heading_error_deg（默认 20°），
+# 节点会以 FAILED 拒绝执行，请先摆正车体再下发。
+bool back_up
+bool reverse            # true = 沿边反向行驶（控制点顺序会被反转）
+float64 step            # 路径采样步长，默认 0.1m
+# true = 这是最后一段：到达后还需按 theta 做一次最终旋转（END_ROTATING）。
+# 与 NavigationManager::followPathResultCallback 中的 endPoint 逻辑对应。
+bool end_point
+
+# 贝塞尔曲线控制点（edge_type == CURVE 时使用）
+# ⚠️ 采样逻辑仅支持 1 个控制点（二阶）或 2 个控制点（三阶）；
+#    给 3 个及以上会退化成直线插值，请在规划侧就归约到二阶/三阶。
+geometry_msgs/Point[] control_points
+
+---
+# ==================== Result ====================
+
+bool success
+string message
+string command_id
+string node_id
+
+---
+# ==================== Feedback ====================
+
+# 当前机器人位姿（周期上报，取代 HTTP /api/agv/handle_position_update）
+float64 x
+float64 y
+float64 theta
+# 当前阶段：PRE_ROTATING / EXECUTING / BACKING_UP / END_ROTATING
+string state

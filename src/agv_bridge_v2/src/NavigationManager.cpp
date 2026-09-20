@@ -52,6 +52,13 @@ namespace agv_bridge
             return true;
         }
 
+        // 倒车朝向偏差阈值：超过则不执行倒车（参见 backUpNavigationInternal）
+        if (!node_->has_parameter("back_up_max_heading_error_deg"))
+        {
+            node_->declare_parameter<double>("back_up_max_heading_error_deg", 20.0);
+        }
+        node_->get_parameter("back_up_max_heading_error_deg", back_up_max_heading_error_deg_);
+
         // 创建导航动作客户端
         nav_action_client_ = rclcpp_action::create_client<NavigateToPose>(node_, "navigate_to_pose");
 
@@ -262,7 +269,9 @@ namespace agv_bridge
                     executeFollowPath(current_pose, task);
                 }
             }
-            // 🔴 新增: 倒车旋转完成后执行倒车路径
+            // ⚠️ 已失效分支（保留仅为兼容旧状态机）：
+            //    backUpNavigationInternal 现在不再发送 Spin，因此 BACKING_UP 状态
+            //    不可能出现在 Spin 回调里。留在此处避免大改，可安全删除。
             else if (current_state_ == NavigationState::BACKING_UP)
             {
                 // 执行倒车路径
@@ -356,94 +365,95 @@ namespace agv_bridge
 
         std::lock_guard<std::mutex> lock(mutex_);
 
-        // 倒车逻辑:先原地旋转180度,然后使用反向路径
-        double robot_yaw = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
-        double target_yaw = std::atan2(moveToMessage.y - robot_pose.position.y, moveToMessage.x - robot_pose.position.x);
+        // ===== 倒车逻辑：只后退，绝不旋转车体 =====
+        // 充电桩对接、窄过道通行、贴边作业等场景下，原地旋转会剐蹭甚至碰撞，
+        // 因此这里不再调用 sendSpinCommand()。若朝向偏差导致直线后退在几何上不可行，
+        // 直接以 FAILED 结束，把「先摆正车体」的决定权交回调度系统 / 现场操作员。
+        const double robot_yaw = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
+        const double target_yaw = std::atan2(moveToMessage.y - robot_pose.position.y,
+                                            moveToMessage.x - robot_pose.position.x);
 
-        // 倒车方向与前进方向相反
-        double backup_yaw = angles::normalize_angle(target_yaw + M_PI);
+        // 后退时车头应朝向「目标方向 + 180°」，即车尾对着目标点
+        const double desired_backup_yaw = angles::normalize_angle(target_yaw + M_PI);
+        const double heading_error_deg =
+            std::abs(angles::shortest_angular_distance(robot_yaw, desired_backup_yaw)) * 180.0 / M_PI;
 
-        double angle_diff = angles::shortest_angular_distance(robot_yaw, backup_yaw);
-
-        RCLCPP_INFO(logger_, "倒车导航: 目标点(%.2f, %.2f), 当前朝向:%.2f°, 倒车朝向:%.2f°, 角度差:%.2f°",
+        RCLCPP_INFO(logger_,
+                    "倒车导航(不旋转): 目标点(%.2f, %.2f), 当前朝向:%.2f°, 车尾应对准:%.2f°, 偏差:%.2f°",
                     moveToMessage.x, moveToMessage.y,
-                    robot_yaw * 180 / M_PI, backup_yaw * 180 / M_PI, angle_diff * 180 / M_PI);
+                    robot_yaw * 180 / M_PI, desired_backup_yaw * 180 / M_PI, heading_error_deg);
 
-        // 如果角度差较大,先旋转到倒车方向
-        if (std::abs(angle_diff) > M_PI / 6) // 30度阈值
+        if (heading_error_deg > back_up_max_heading_error_deg_)
         {
-            if (!sendSpinCommand(angle_diff))
-            {
-                RCLCPP_ERROR(logger_, "倒车导航，发送旋转命令失败");
-                return false;
-            }
-            setState(NavigationState::PRE_ROTATING);
-            return true;
+            RCLCPP_ERROR(logger_,
+                         "倒车朝向偏差 %.2f° 超过阈值 %.2f°：直线后退无法贴合路径，"
+                         "已拒绝执行（不会自动旋转车体）。请先摆正车体，或改用前进导航指令。",
+                         heading_error_deg, back_up_max_heading_error_deg_);
+            failTask("FAILED", "倒车朝向偏差过大，未执行（不自动旋转车体）");
+            return true; // 结果已通过 failTask 回传，非「启动失败」
         }
-        else
+
+        // 朝向可用，执行直线后退
+        auto path = generateBackUpPath(robot_pose, current_task_.value());
+        if (path.empty())
         {
-            // 直接执行倒车路径
-            auto path = generateBackUpPath(robot_pose, current_task_.value());
-            if (path.empty())
-            {
-                RCLCPP_ERROR(logger_, "Failed to generate backup path");
-                return false;
-            }
-
-            // 设置倒车速度限制(负值表示倒车)
-            setSpeedLimit(-moveToMessage.edgeInfo.maxSpeed);
-
-            // 创建 FollowPath 目标
-            auto goal_msg = FollowPath::Goal();
-            goal_msg.path.poses = path;
-            goal_msg.path.header.frame_id = "map";
-            goal_msg.path.header.stamp = node_->now();
-            goal_msg.controller_id = "FollowPath";
-
-            auto send_goal_options = rclcpp_action::Client<FollowPath>::SendGoalOptions();
-            send_goal_options.goal_response_callback =
-                std::bind(&NavigationManager::followPathGoalResponseCallback, this, std::placeholders::_1);
-            send_goal_options.feedback_callback =
-                std::bind(&NavigationManager::followPathFeedbackCallback, this,
-                          std::placeholders::_1, std::placeholders::_2);
-            send_goal_options.result_callback =
-                std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
-
-            follow_path_client_->async_send_goal(goal_msg, send_goal_options);
-            setState(NavigationState::BACKING_UP); // 🔴 使用倒车状态
-
-            RCLCPP_INFO(logger_,
-                        "开始倒车: (%.2f, %.2f) -> (%.2f, %.2f), 倒车距离: %.2fm, 速度: %.2fm/s",
-                        robot_pose.position.x, robot_pose.position.y, moveToMessage.x, moveToMessage.y,
-                        std::hypot(moveToMessage.x - robot_pose.position.x, moveToMessage.y - robot_pose.position.y),
-                        moveToMessage.edgeInfo.maxSpeed);
-
-            return true;
+            RCLCPP_ERROR(logger_, "Failed to generate backup path");
+            return false;
         }
+
+        // 设置倒车速度限制(负值表示倒车)
+        setSpeedLimit(-moveToMessage.edgeInfo.maxSpeed);
+
+        // 创建 FollowPath 目标
+        auto goal_msg = FollowPath::Goal();
+        goal_msg.path.poses = path;
+        goal_msg.path.header.frame_id = "map";
+        goal_msg.path.header.stamp = node_->now();
+        goal_msg.controller_id = "FollowPath";
+
+        auto send_goal_options = rclcpp_action::Client<FollowPath>::SendGoalOptions();
+        send_goal_options.goal_response_callback =
+            std::bind(&NavigationManager::followPathGoalResponseCallback, this, std::placeholders::_1);
+        send_goal_options.feedback_callback =
+            std::bind(&NavigationManager::followPathFeedbackCallback, this,
+                      std::placeholders::_1, std::placeholders::_2);
+        send_goal_options.result_callback =
+            std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
+
+        follow_path_client_->async_send_goal(goal_msg, send_goal_options);
+        setState(NavigationState::BACKING_UP); // 使用倒车状态
+
+        RCLCPP_INFO(logger_,
+                    "开始倒车(保持当前朝向): (%.2f, %.2f) -> (%.2f, %.2f), 倒车距离: %.2fm, 速度: %.2fm/s",
+                    robot_pose.position.x, robot_pose.position.y, moveToMessage.x, moveToMessage.y,
+                    std::hypot(moveToMessage.x - robot_pose.position.x, moveToMessage.y - robot_pose.position.y),
+                    moveToMessage.edgeInfo.maxSpeed);
+
+        return true;
     }
 
     std::vector<geometry_msgs::msg::PoseStamped> NavigationManager::generateBackUpPath(
         const geometry_msgs::msg::Pose robot_pose, const agv_bridge::MoveToMessage &msg)
     {
         std::vector<geometry_msgs::msg::PoseStamped> path;
-        double dx = msg.x - robot_pose.position.x;
-        double dy = msg.y - robot_pose.position.y;
-        double distance = std::hypot(dx, dy);
-
-        // 倒车速度通常较慢,使用较小的速度估算到达时间
-        double estimated_total_time = distance / msg.edgeInfo.maxSpeed * 1.2;
+        const double dx = msg.x - robot_pose.position.x;
+        const double dy = msg.y - robot_pose.position.y;
+        const double distance = std::hypot(dx, dy);
 
         // 计算点数(最少10个点)
-        int num_points = std::max(10, static_cast<int>(distance / msg.edgeInfo.step) + 1);
+        const int num_points = std::max(10, static_cast<int>(distance / msg.edgeInfo.step) + 1);
 
-        double time_step = estimated_total_time / (num_points - 1);
-
-        // 倒车方向:从机器人指向目标
-        double backup_yaw = std::atan2(dy, dx);
+        // 后退全程保持机器人「当前朝向」不变：
+        // Nav2 控制器以路径点的朝向作为期望朝向，期望朝向 == 当前朝向 ⇒ 不产生转向量，
+        // 配合负的 /speed_limit，车体沿当前朝向缓慢平移后退。
+        // ⚠️ 切勿改成 atan2(dy, dx)（指向目标）。那会让控制器把车头转向目标，
+        //    在充电桩 / 窄过道现场会造成剐蹭 —— 这正是必须避免的行为。
+        const double hold_yaw = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
 
         RCLCPP_INFO(logger_,
-                    "生成倒车路径: 起点(%.2f,%.2f) → 终点(%.2f,%.2f), 距离=%.2fm, 点数=%d, 倒车朝向=%.2f°",
-                    robot_pose.position.x, robot_pose.position.y, msg.x, msg.y, distance, num_points, backup_yaw * 180 / M_PI);
+                    "生成倒车路径(保持当前朝向): 起点(%.2f,%.2f) → 终点(%.2f,%.2f), 距离=%.2fm, 点数=%d, 保持朝向=%.2f°",
+                    robot_pose.position.x, robot_pose.position.y, msg.x, msg.y,
+                    distance, num_points, hold_yaw * 180 / M_PI);
 
         // 生成倒车路径点
         for (int i = 0; i < num_points; ++i)
@@ -459,9 +469,9 @@ namespace agv_bridge
             pose.pose.position.y = robot_pose.position.y + dy * ratio;
             pose.pose.position.z = 0.0;
 
-            // 🔴 关键:所有点的朝向为倒车方向(机器人背向目标)
-            // 这样Nav2会沿着相反方向移动
-            pose.pose.orientation = TransformUtils::yaw_to_quaternion(backup_yaw);
+            // ✅ 关键:所有点的朝向 = 机器人当前朝向，全程不转向
+            //    位置在后退方向上插值，朝向保持不变，实现「保持姿态平移后退」
+            pose.pose.orientation = TransformUtils::yaw_to_quaternion(hold_yaw);
 
             path.push_back(pose);
         }
