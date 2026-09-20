@@ -394,9 +394,9 @@
           </horizontal>
           <!-- ===== 稳定版(v1.0.0-nav-stable)雷达配置，整段覆盖用于对比 ===== -->
           <vertical>
-            <samples>16</samples>
-            <min_angle>-0.2618</min_angle>
-            <max_angle>0.2618</max_angle>
+            <samples>32</samples>
+            <min_angle>-0.1745</min_angle>
+            <max_angle>0.3490</max_angle>
           </vertical>
         </scan>
         <range>
@@ -412,26 +412,6 @@
           <bias_stddev>0.005</bias_stddev>
           <precision>0.01</precision>
         </noise>
-        <!-- ===== jazzy 旧配置(Mid360 风格 32线)，注释保留以便对比 =====
-        <vertical>
-          <samples>32</samples>
-          <min_angle>-0.1745</min_angle>
-          <max_angle>0.5236</max_angle>
-        </vertical>
-        <range>
-          <min>0.5</min>
-          <max>40.0</max>
-          <resolution>0.02</resolution>
-        </range>
-        <noise>
-          <type>gaussian</type>
-          <mean>0.0</mean>
-          <stddev>0.02</stddev>
-          <bias_mean>0.0</bias_mean>
-          <bias_stddev>0.005</bias_stddev>
-          <precision>0.01</precision>
-        </noise>
-        ===== jazzy 旧配置结束 ===== -->
       </lidar>
     </sensor>
   </gazebo>

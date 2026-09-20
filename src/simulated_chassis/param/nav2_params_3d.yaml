@@ -438,7 +438,8 @@ collision_monitor:
     use_sim_time: True
     base_frame_id: "base_footprint"
     odom_frame_id: "odom"
-    cmd_vel_in_topic: "cmd_vel_nav"        # ⭐ 绕过有问题的 smoother，直连 MPPI 输出
+    cmd_vel_in_topic: "cmd_vel_smoothed"   # 标准链路：MPPI→smoother→collision_monitor→cmd_vel
+                                            # smoother 已是 passthrough(deadband=0),不丢 vy,无需绕过
     cmd_vel_out_topic: "cmd_vel"
     transform_tolerance: 0.3
     source_timeout: 5.0
