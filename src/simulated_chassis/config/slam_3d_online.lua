@@ -36,7 +36,7 @@ MAP_BUILDER.num_background_threads = 4
 -- ✅ 3D 轨迹构建器配置
 TRAJECTORY_BUILDER_3D.min_range = 0.5
 TRAJECTORY_BUILDER_3D.max_range = 24.0
-TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 1
+TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 3
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08       -- 5cm 精度，比 10cm 更精细
 
@@ -57,7 +57,7 @@ POSE_GRAPH.constraint_builder.min_score = 0.65
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
 POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2  -- 默认 110
 POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000（恢复官方默认）
-POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
-POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
+POSE_GRAPH.optimization_problem.odometry_translation_weight = 5e4
+POSE_GRAPH.optimization_problem.odometry_rotation_weight = 5e4
 
 return options

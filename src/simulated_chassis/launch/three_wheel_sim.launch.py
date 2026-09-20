@@ -80,10 +80,10 @@ def generate_launch_description():
         clock_gz_topic = f"/world/{world_name}/clock"
 
         gazebo = ExecuteProcess(
-            # cmd=["gz", "sim", "-r", world_path],
+            cmd=["gz", "sim", "-r","-s", world_path],
             # cmd=["gz", "sim", "-r", "-s", "--render-engine", "ogre",
             #      "--render-engine-api-backend", "opengl", world_path],
-            cmd=["gz", "sim", "-r","--render-engine", "ogre",world_path],
+            # cmd=["gz", "sim", "-r","--render-engine", "ogre",world_path],
              
             output="screen",
         )
