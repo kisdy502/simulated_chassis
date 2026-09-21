@@ -146,12 +146,12 @@ def generate_launch_description():
         output="screen",
     )
 
-    # 速度转发: /cmd_vel → /diff_drive_controller/cmd_vel
-    # Humble 的 diff_drive_controller 接收 Twist（非 TwistStamped），用普通 relay 即可
+    # 速度转发: /cmd_vel → /diff_drive_controller/cmd_vel_unstamped
+    # 注意: use_stamped_vel: false 时, 2.54 版控制器的 Twist 订阅话题是 ~/cmd_vel_unstamped
     cmd_vel_relay = Node(
         package="topic_tools",
         executable="relay",
-        arguments=["/cmd_vel", "/diff_drive_controller/cmd_vel"],
+        arguments=["/cmd_vel", "/diff_drive_controller/cmd_vel_unstamped"],
         output="screen",
     )
 

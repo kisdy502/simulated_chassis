@@ -15,9 +15,10 @@ COPY src/agv_bridge_v2_interfaces/ ./agv_bridge_v2_interfaces/
 
 WORKDIR /ros2_ws
 
-# 先编接口包（agv_bridge_v2 依赖它生成 action/srv/msg）
-RUN source /opt/ros/jazzy/setup.bash \
+# 先编译接口包（agv_bridge_v2 依赖它生成 action/srv/msg）
+RUN source /opt/ros/humble/setup.bash \
     && colcon build --packages-up-to agv_bridge_v2 \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
     && rm -rf build log
 
 COPY docker/agv-bridge/launch_bridge.sh /launch_bridge.sh

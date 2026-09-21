@@ -46,7 +46,7 @@ class RosbridgeClient:
 
     def run_forever(self, on_ready):
         self._on_ready = on_ready
-        self.ws.run_forever(ping_interval=5, ping_timeout=15)
+        self.ws.run_forever(ping_interval=15, ping_timeout=5)
 
     def _on_open(self, _):
         print(f"[WS OPEN] {self.url}")

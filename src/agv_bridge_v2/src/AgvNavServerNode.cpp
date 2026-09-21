@@ -115,6 +115,9 @@ namespace agv_bridge
         status_qos.transient_local();
         status_pub_ = this->create_publisher<AgvStatus>("/agv/status", status_qos);
 
+        // ---- topic: /agv/pose (map 系 PoseStamped，10Hz，上位机直读位姿专用) ----
+        pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/agv/pose", 10);
+
         // ---- 可选：真实电池数据，无发布者时保持 battery_level 参数值 ----
         battery_sub_ = this->create_subscription<sensor_msgs::msg::BatteryState>(
             "battery_state", rclcpp::QoS(10),
@@ -411,6 +414,12 @@ namespace agv_bridge
         transform.transform.rotation = pose.orientation;
 
         tf_broadcaster_->sendTransform(transform);
+
+        // 同一 10Hz 节拍同步发布专用位姿话题（与 TF 内容一致，上位机直读不受 /tf 混帧影响）
+        geometry_msgs::msg::PoseStamped pose_stamped;
+        pose_stamped.header = transform.header;
+        pose_stamped.pose = pose;
+        pose_pub_->publish(pose_stamped);
     }
 
     // ============================ NavigationCallbacks 实现 ============================

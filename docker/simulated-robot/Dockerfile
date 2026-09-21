@@ -8,16 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     xvfb \
     xterm \
-    ros-jazzy-gz-sim-vendor \
-    ros-jazzy-ros-gz-sim \
-    ros-jazzy-ros-gz-bridge \
-    ros-jazzy-ros-gz-image \
-    ros-jazzy-teleop-twist-keyboard \
-    ros-jazzy-topic-tools \
-    ros-jazzy-gz-ros2-control \
-    ros-jazzy-rviz2 \
-    ros-jazzy-joint-state-publisher-gui \
-    ros-jazzy-pointcloud-to-laserscan \
+    ros-humble-teleop-twist-keyboard \
+    ros-humble-topic-tools \
+    ros-humble-rviz2 \
+    ros-humble-joint-state-publisher-gui \
+    ros-humble-pointcloud-to-laserscan \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros2_ws/src
@@ -27,8 +22,9 @@ COPY src/simulated_chassis/ ./simulated_chassis/
 
 WORKDIR /ros2_ws
 
-RUN source /opt/ros/jazzy/setup.bash \
+RUN source /opt/ros/humble/setup.bash \
     && colcon build --packages-select jzt_robot simulated_chassis \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
     && rm -rf build log
 
 ENV GAZEBO_MODEL_PATH=/ros2_ws/src/jzt_robot/models:/ros2_ws/src/simulated_chassis/models

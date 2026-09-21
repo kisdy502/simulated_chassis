@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 source /ros2_ws/install/setup.bash
 
@@ -13,7 +13,7 @@ export BACK_UP_MAX_HEADING_ERROR_DEG=${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}
 echo "Starting AGV Nav Server + rosbridge"
 echo "  AGV_ID: $AGV_ID"
 echo "  rosbridge Port: $WEBSOCKET_PORT"
-echo "  上位机接入: ws://<host>:$WEBSOCKET_PORT"
+echo "  上位机接入? ws://<host>:$WEBSOCKET_PORT"
 
 exec ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
     agv_id:=$AGV_ID \

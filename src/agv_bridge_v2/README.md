@@ -57,7 +57,7 @@ colcon build --packages-up-to agv_bridge_v2 --cmake-args -DCMAKE_BUILD_TYPE=Rele
 先决条件（已写入 `docker/ros2-base/Dockerfile`）：
 
 ```bash
-sudo apt install ros-jazzy-rosbridge-suite      # rosbridge_server + rosapi
+sudo apt install ros-humble-rosbridge-suite      # rosbridge_server + rosapi
 ```
 
 > 本包**不再需要** `libwebsockets-dev` / `libcurl4-openssl-dev` / `nlohmann-json3-dev`。

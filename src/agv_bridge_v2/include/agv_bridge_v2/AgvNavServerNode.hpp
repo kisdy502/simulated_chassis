@@ -4,6 +4,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "tf2_ros/transform_broadcaster.h"
 
@@ -125,6 +126,7 @@ namespace agv_bridge
         rclcpp_action::Server<FollowEdge>::SharedPtr follow_edge_server_;
         rclcpp::Service<SetControl>::SharedPtr set_control_srv_;
         rclcpp::Publisher<AgvStatus>::SharedPtr status_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
         rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
         std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 

@@ -136,7 +136,7 @@ ros2 topic pub /goal_pose geometry_msgs/PoseStamped "{header: {frame_id: 'map'},
 ```
 simulated_chassis/
 ├── docker/
-│   ├── ros2-base/           # ROS2基础镜像 (Jazzy+Nav2+Carto)
+│   ├── ros2-base/           # ROS2基础镜像 (Humble+Nav2+Carto)
 │   ├── simulated-robot/     # 机器人仿真镜像
 │   └── agv-bridge/          # Bridge节点镜像
 ├── src/

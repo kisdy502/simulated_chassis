@@ -24,6 +24,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -35,12 +36,14 @@ def generate_launch_description():
     address = LaunchConfiguration("address")
     back_up_max_heading_error_deg = LaunchConfiguration("back_up_max_heading_error_deg")
 
-    # 上报白名单：上位机只允许 subscribe 这些 topic（防止整张 ROS 图暴露）
-    topics_pub_glob = LaunchConfiguration("topics_pub_glob")
-    # 下发白名单：上位机只允许 publish / advertise 这些 topic
-    topics_sub_glob = LaunchConfiguration("topics_sub_glob")
-    # 服务白名单
-    services_glob = LaunchConfiguration("services_glob")
+    # ⚠️ rosbridge 语义（以 humble 分支源码为准）：
+    #   topics_sub_glob  = 上位机「能订阅」（收数据）的白名单
+    #   topics_pub_glob  = 上位机「能发布」（下数据）的白名单
+    # 且四个 glob 参数在 rosbridge 侧声明为 STRING 类型（内容是 "['a','b']" 形式的字面量），
+    # launch_ros 会把形如列表的字符串自动解析成数组，必须用 ParameterValue(value_type=str) 钉死为字符串。
+    topics_pub_glob = ParameterValue(LaunchConfiguration("topics_pub_glob"), value_type=str)
+    topics_sub_glob = ParameterValue(LaunchConfiguration("topics_sub_glob"), value_type=str)
+    services_glob = ParameterValue(LaunchConfiguration("services_glob"), value_type=str)
 
     args = [
         DeclareLaunchArgument("use_sim_time", default_value="true",
@@ -60,7 +63,17 @@ def generate_launch_description():
             description="倒车时车尾对目标的朝向偏差容忍上限（度）",
         ),
 
-        # ==== 上报：上位机 subscribe 的 topic ====
+        # ==== 下发：上位机 publish 的 topic（rosbridge 语义：gates advertise/publish）====
+        # /cmd_vel        —— 手动点动（经 cmd_vel_relay 转发到底盘）
+        # /initialpose    —— 重定位（Cartographer）
+        # /goal_pose      —— 自由导航到任意目标点（nav2 行为树直接接单）
+        DeclareLaunchArgument(
+            "topics_pub_glob",
+            default_value="['/cmd_vel', '/initialpose', '/goal_pose']",
+            description="允许上位机发布（下发）的 topic 白名单",
+        ),
+
+        # ==== 上报：上位机 subscribe 的 topic（rosbridge 语义：gates subscribe）====
         # 依据 simulated_chassis 的实际话题核对：
         #   /odom              nav_msgs/Odometry        里程计位姿+速度（odom_relay_node 转发）
         #   /tf,/tf_static     tf2_msgs/TFMessage       map->odom->base_link，算位姿必须
@@ -68,29 +81,14 @@ def generate_launch_description():
         #   /plan /local_plan  nav_msgs/Path            全局/局部路径，可视化和监控用
         #   /joint_states      sensor_msgs/JointState   三舵轮转角
         #   /agv/status        AgvStatus                本包的 1Hz 业务状态
-        #
-        # ⚠️ 刻意不开放的话题：
-        #   /points2_1 /points2_2  双 3D 雷达 PointCloud2，单帧 JSON 可达数 MB，走 WS 会打爆链路
-        #   /imu                   Gazebo IMU 高频（>100Hz），且已由 Cartographer 融合
-        #   /clock                 仿真时钟高频，上位机用消息自带 header.stamp 即可
-        #   /scan /amcl_pose       本仿真栈不产生（用 3D 雷达 + Cartographer，非 AMCL）
-        DeclareLaunchArgument(
-            "topics_pub_glob",
-            default_value=(
-                "['/odom', '/tf', '/tf_static', '/map', '/plan', '/local_plan', "
-                "'/joint_states', '/agv/status']"
-            ),
-            description="允许上位机订阅（上报）的 topic 白名单",
-        ),
-
-        # ==== 下发：上位机 publish 的 topic ====
-        # /cmd_vel        —— 对应旧的 velocity_command
-        # /initialpose    —— 对应旧的 set_initial_pose
-        # /goal_pose      —— 直触发 nav2 行为树（自由导航，占位用）
+        # 加 pointcloud_to_laserscan 后可补 '/scan'
         DeclareLaunchArgument(
             "topics_sub_glob",
-            default_value="['/cmd_vel', '/initialpose', '/goal_pose']",
-            description="允许上位机发布（下发）的 topic 白名单",
+            default_value=(
+                "['/odom', '/tf', '/tf_static', '/map', '/plan', '/local_plan', "
+                "'/joint_states', '/agv/status', '/scan_1', '/scan_2', '/agv/pose']"
+            ),
+            description="允许上位机订阅（上报）的 topic 白名单",
         ),
 
         DeclareLaunchArgument(
@@ -160,7 +158,7 @@ def generate_launch_description():
                 "topics_sub_glob": topics_sub_glob,
                 "services_glob": services_glob,
                 # 参数只允许访问本节点，防止远端改掉 nav2 关键参数
-                "params_glob": "['/agv_nav_server/*']",
+                "params_glob": ParameterValue("['/agv_nav_server/*']", value_type=str),
             }
         ],
     )
@@ -178,7 +176,7 @@ def generate_launch_description():
                 "topics_pub_glob": topics_pub_glob,
                 "topics_sub_glob": topics_sub_glob,
                 "services_glob": services_glob,
-                "params_glob": "['/agv_nav_server/*']",
+                "params_glob": ParameterValue("['/agv_nav_server/*']", value_type=str),
                 "params_timeout": 5.0,
             }
         ],

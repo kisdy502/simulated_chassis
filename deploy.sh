@@ -118,7 +118,7 @@ save_map() {
     echo -e "${GREEN}Saving Cartographer state as: ${map_name}${NC}"
 
     docker exec cartographer_slam bash -c "
-        source /opt/ros/jazzy/setup.bash
+        source /opt/ros/humble/setup.bash
         source /ros2_ws/install/setup.bash
         export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
         ros2 service call /write_state cartographer_ros_msgs/srv/WriteState \"{filename: '/ros2_ws/maps/${map_name}.pbstream'}\"
@@ -140,7 +140,7 @@ explore() {
     echo "Press Ctrl+C to stop"
     
     docker exec -it robot_simulation bash -c '
-        source /opt/ros/jazzy/setup.bash
+        source /opt/ros/humble/setup.bash
         export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
         
         LINEAR_SPEED=${1:-0.3}

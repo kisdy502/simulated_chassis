@@ -112,6 +112,9 @@ def generate_launch_description():
             # 双3D雷达点云（前+后），Ignition 在 <topic>/points 子话题发 PointCloudPacked
             '/front_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
             '/rear_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
+            # 2D LaserScan（RViz 轻量显示 + 上位机使用），gpu_lidar 在基础话题发 LaserScan
+            '/front_lidar/point_cloud@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+            '/rear_lidar/point_cloud@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
             '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
             '/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
         ],
@@ -123,6 +126,9 @@ def generate_launch_description():
             # Ignition 的 /xxx/points 桥接到 ROS 后，重命名为 Cartographer 期望的话题
             ('/front_lidar/point_cloud/points', '/points2_1'),
             ('/rear_lidar/point_cloud/points', '/points2_2'),
+            # 2D LaserScan 重映射
+            ('/front_lidar/point_cloud', '/scan_1'),
+            ('/rear_lidar/point_cloud', '/scan_2'),
         ],
         output='screen'
     )
