@@ -10,9 +10,9 @@ namespace three_wheel_controller
         // 默认轮位配置：基于你的URDF坐标
         // 前轮: (0.3, 0), 左后轮: (-0.15, 0.26), 右后轮: (-0.15, -0.26)
         wheel_configs_ = {
-            {"wheel_front_steering_joint", "wheel_front_wheel_joint", 0.3, 0.0, M_PI / 2.0},
-            {"wheel_left_steering_joint", "wheel_left_wheel_joint", -0.15, 0.26, M_PI / 2.0},
-            {"wheel_right_steering_joint", "wheel_right_wheel_joint", -0.15, -0.26, M_PI / 2.0}};
+            {"wheel_front_steering_joint", "wheel_front_wheel_joint", 0.3, 0.0, M_PI},
+            {"wheel_left_steering_joint", "wheel_left_wheel_joint", -0.15, 0.26, M_PI},
+            {"wheel_right_steering_joint", "wheel_right_wheel_joint", -0.15, -0.26, M_PI}};
     }
 
     controller_interface::InterfaceConfiguration
@@ -564,32 +564,38 @@ namespace three_wheel_controller
     }
 
     /**
-     * @brief 后退优化
+     * @brief 等价表示选择（后退优化）
      *
-     * 当目标舵角与当前舵角差值 > 90° 时，
-     * 选择反转轮速（wheel_speed *= -1）而非旋转舵轮180°
+     * 每个目标舵角有两种物理等价的执行方式：(α, +v) 或 (α±180°, -v)。
+     * 选择既能落在最大转向角限位内、又离当前舵角最近的表示，
+     * 保证后续 clamp 只作为保险丝，不会截断出错误方向。
      */
     void ThreeWheelSteeringController::optimizeReverse(
         std::array<double, 3> &steering_angles,
         std::array<double, 3> &wheel_speeds,
         const std::array<double, 3> &current_angles)
     {
+        auto ang_diff = [](double a, double b)
+        {
+            return std::abs(std::remainder(a - b, 2.0 * M_PI));
+        };
+
         for (size_t i = 0; i < 3; ++i)
         {
-            double diff = std::abs(steering_angles[i] - current_angles[i]);
-            // 取最小角度差（考虑周期性）
-            while (diff > M_PI)
-                diff -= 2.0 * M_PI;
-            diff = std::abs(diff);
+            double target = steering_angles[i];
+            double flipped = (target > 0.0) ? target - M_PI : target + M_PI;
+            double max_steer = wheel_configs_[i].max_steering_angle;
 
-            if (diff > M_PI / 2.0)
+            const double out_of_range = 1000.0;
+            double cost_keep = ang_diff(target, current_angles[i]) +
+                               (std::abs(target) > max_steer ? out_of_range : 0.0);
+            double cost_flip = ang_diff(flipped, current_angles[i]) +
+                               (std::abs(flipped) > max_steer ? out_of_range : 0.0);
+
+            if (cost_flip < cost_keep)
             {
-                // 反转轮速，调整舵角 ±180°
+                steering_angles[i] = flipped;
                 wheel_speeds[i] = -wheel_speeds[i];
-                if (steering_angles[i] > 0)
-                    steering_angles[i] -= M_PI;
-                else
-                    steering_angles[i] += M_PI;
             }
         }
     }
