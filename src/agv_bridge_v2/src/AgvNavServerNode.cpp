@@ -94,7 +94,7 @@ namespace agv_bridge
         this->declare_parameter<std::string>("localization_launch_file", "localization.launch.py");
         this->declare_parameter<std::string>("slam_launch_package", "");
         this->declare_parameter<std::string>("slam_launch_file", "slam.launch.py");
-        this->declare_parameter<bool>("use_sim_time", false);
+        // 注意：use_sim_time 由 rclcpp 内置自动声明，这里只能读取，不能重复 declare
 
         this->get_parameter("agv_id", agv_id_);
         this->get_parameter("battery_level", battery_level_);
