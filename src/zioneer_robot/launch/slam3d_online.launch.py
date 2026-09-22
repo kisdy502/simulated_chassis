@@ -83,9 +83,9 @@ def generate_launch_description():
 
         *declared_arguments,
 
-        TimerAction(period=1.0, actions=[cartographer_node]),
-        TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
-        TimerAction(period=3.0, actions=[rviz_node]),
+        TimerAction(period=5.0, actions=[cartographer_node]),
+        TimerAction(period=7.0, actions=[cartographer_occupancy_grid_node]),
+        TimerAction(period=8.0, actions=[rviz_node]),
 
         LogInfo(msg=['3D建图节点 + RViz 已启动']),
         LogInfo(msg=['使用键盘控制机器人移动完成建图']),

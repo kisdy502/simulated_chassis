@@ -116,7 +116,7 @@
         </joint>
     </xacro:macro>
 
-    <!-- 四个脚轮：z=-0.1205，底部低于地面0.5mm预紧，防止机器人两点支撑翘起1.1° -->
+    <!-- 四个脚轮：z=-0.1205，半径0.028，轮底高于地面1.5mm，驱动轮接地 -->
     <xacro:caster_wheel prefix="caster_front_right" x="0.24" y="0.14" z="-0.1205" />
     <xacro:caster_wheel prefix="caster_front_left"  x="0.24" y="-0.14" z="-0.1205" />
     <xacro:caster_wheel prefix="caster_rear_right"  x="-0.24" y="0.14" z="-0.1205" />

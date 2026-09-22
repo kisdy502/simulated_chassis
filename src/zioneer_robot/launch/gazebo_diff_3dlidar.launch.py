@@ -158,16 +158,16 @@ def generate_launch_description():
     rear_cloud_filter = make_cloud_filter_node("rear_cloud_filter", "/points2_2_raw", "/points2_2")
 
     # 6. 键盘遥控（需在单独终端手动运行，见下方注释）
-    #    xterm 在 Docker/WSL 下可能无法弹出，改为手动启动：
-    #    ros2 run teleop_twist_keyboard teleop_twist_keyboard
-    # teleop = Node(
-    #     package="teleop_twist_keyboard",
-    #     executable="teleop_twist_keyboard",
-    #     name="teleop_twistkeyboard",
-    #     prefix="xterm -e",
-    #     parameters=[{"stamped": False}],
-    #     output="screen",
-    # )
+    # xterm 在 Docker/WSL 下可能无法弹出，改为手动启动：
+    #ros2 run teleop_twist_keyboard teleop_twist_keyboard
+    teleop = Node(
+        package="teleop_twist_keyboard",
+        executable="teleop_twist_keyboard",
+        name="teleop_twistkeyboard",
+        prefix="xterm -e",
+        parameters=[{"stamped": False}],
+        output="screen",
+    )
 
     # 7. 手柄遥控（joy 驱动 + gamepad_teleop 节点）
     joy_node = Node(

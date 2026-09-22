@@ -26,8 +26,8 @@
     <xacro:property name="wheel_separation" value="0.36" />
     <xacro:property name="wheel_diameter" value="0.18" />
 
-    <!-- 脚轮参数（比动力轮小，z略高于地面防止动力轮悬空） -->
-    <xacro:property name="caster_radius" value="0.03" />
+    <!-- 脚轮参数（比动力轮小，轮底略高于地面，确保驱动轮接地有牵引力） -->
+    <xacro:property name="caster_radius" value="0.028" />
     <xacro:property name="caster_width" value="0.02" />
     <xacro:property name="caster_mass" value="0.05" />
 

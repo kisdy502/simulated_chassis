@@ -5,7 +5,8 @@ options = {
   map_builder = MAP_BUILDER,
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "map",
-  tracking_frame = "base_link",
+  --tracking_frame = "base_link",
+  tracking_frame = "imu_link",
   published_frame = "base_footprint",
   odom_frame = "odom",
   provide_odom_frame = true,
@@ -41,7 +42,7 @@ TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08       -- 8cm 体素滤波
 
 -- 3D 前端开启在线相关扫描匹配(OCSM)兜底：ceres 只做局部精修，初始位姿偏差大时无法恢复
-TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = true
+TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.15
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(5.0)
 
@@ -51,7 +52,7 @@ TRAJECTORY_BUILDER_3D.submaps.num_range_data = 120
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0 -- 平移权重
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2    -- 默认 400
 
-POSE_GRAPH.optimize_every_n_nodes = 40
+POSE_GRAPH.optimize_every_n_nodes = 90
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.65   -- 0.5→0.65,多评估候选回环对
 POSE_GRAPH.constraint_builder.min_score = 0.55        -- 0.65→0.60,回收边界回环(3D 默认 0.55)
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70

@@ -101,3 +101,14 @@ ros2 topic pub /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.0, y: 0.0}, angu
 - 差速运动学：`config/diff_controllers.yaml`（wheel_separation=0.36, wheel_radius=0.09）
 - MPPI 差速控制：`param/nav2_params_3d.yaml`（motion_model=DiffDrive, vx_max=1.0, wz_max=1.0）
 - 3D建图参数：`config/slam_3d_online.lua`（num_point_clouds=2, num_accumulated_range_data=2）
+
+第 0 步：先分清是物理还是估计(10 秒)：看 Gazebo 窗口里机器人本体是否水平。或：
+ros2 topic echo /odom --field pose.pose.orientation   # 物理正常应恒为 ~identity
+第 1 步：TF 链逐段看谁在动：
+ros2 run tf2_ros tf2_echo map odom            # 静止时应稳定不变
+ros2 run tf2_ros tf2_echo odom base_footprint # 反映里程计(物理)
+ros2 run tf2_ros tf2_echo base_link front_lidar_link  # 应恒 z=0.20 无旋转
+ros2 run tf2_tools view_frames                # 看树结构是否完整
+第 2 步：时间戳与数据流(cartographer 对时钟极其敏感)：
+ros2 topic hz /points2_1 & ros2 topic hz /points2_2 & ros2 topic hz /imu
+ros2 topic echo /points2_1 --field header --once   # stamp 应为仿真时间且单调递增
