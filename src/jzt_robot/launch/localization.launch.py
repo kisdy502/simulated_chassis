@@ -1,31 +1,33 @@
 #!/usr/bin/env python3
 """
-Nav2 导航 + Cartographer 2D双雷达定位 (带RViz显示)
+Cartographer 2D 双雷达纯定位（可独立重启的最小单元）
+
+只包含定位链路：cartographer_node + occupancy_grid_node + pointcloud_to_laserscan。
+与 nav2 解耦 —— 上位机 /agv/load_map 切换地图时，agv_nav_server 只杀掉并重拉
+这一组节点，nav2 全栈（控制器/规划器/代价地图）不重启。
+
+用法：
+  ros2 launch jzt_robot localization.launch.py pbstream_file:=/abs/path/my_map.pbstream
 """
 
 import os
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (
-    DeclareLaunchArgument, TimerAction, LogInfo, IncludeLaunchDescription,
-)
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
     pkg_share = get_package_share_directory('jzt_robot')
-
     cartographer_config_dir = os.path.join(pkg_share, 'config')
-    nav2_params_file = os.path.join(pkg_share, 'param', 'nav2_params_mppi_cartographer_double_lidar.yaml')
-    rviz_config = os.path.join(pkg_share, 'rviz', 'nav2_double_lidar.rviz')
 
     declared_arguments = [
         DeclareLaunchArgument(
             'pbstream_file',
             default_value='',
-            description='Cartographer pbstream 地图文件路径'
+            description='Cartographer pbstream 地图文件路径（纯定位必须提供）'
         ),
         DeclareLaunchArgument(
             'use_sim_time',
@@ -92,34 +94,10 @@ def generate_launch_description():
         output="screen",
     )
 
-    # Nav2 导航
-    nav2_bringup_share = get_package_share_directory('nav2_bringup')
-    nav2_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(nav2_bringup_share, 'launch', 'navigation_launch.py')
-        ),
-        launch_arguments={
-            'params_file': nav2_params_file,
-            'use_sim_time': use_sim_time,
-            'autostart': 'true',
-        }.items(),
-    )
-
-    # RViz 可视化 (使用包装脚本强制软件渲染)
-    rviz_node = Node(
-        package='rviz2',
-        executable='/run_rviz.sh',
-        name='rviz2',
-        arguments=['-d', rviz_config],
-        parameters=[{'use_sim_time': use_sim_time}],
-        output='screen',
-    )
-
     return LaunchDescription([
-        LogInfo(msg=['Nav2 + Cartographer Localization + RViz']),
+        LogInfo(msg=['Cartographer Localization（独立重启单元，与 nav2 解耦）']),
         *declared_arguments,
-        TimerAction(period=0.2, actions=[cartographer_node]),
-        TimerAction(period=1.0, actions=[occupancy_grid_node]),
-        TimerAction(period=2.0, actions=[nav2_launch]),
-        TimerAction(period=3.0, actions=[rviz_node, pointcloud_to_laserscan_node]),
+        TimerAction(period=0.0, actions=[cartographer_node]),
+        TimerAction(period=0.5, actions=[occupancy_grid_node]),
+        TimerAction(period=1.0, actions=[pointcloud_to_laserscan_node]),
     ])

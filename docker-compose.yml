@@ -43,6 +43,9 @@ services:
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-9090}
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    volumes:
+      # 地图目录：/agv/get_map、/agv/list_maps 读取；切图重启定位（预留）
+      - ./maps:/ros2_ws/maps
     ports:
       # rosbridge 的 JSON over WebSocket 端口，上位机从这里接入
       - "${WEBSOCKET_PORT:-9090}:${WEBSOCKET_PORT:-9090}"

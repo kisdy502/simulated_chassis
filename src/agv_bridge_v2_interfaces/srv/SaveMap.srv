@@ -1,0 +1,13 @@
+# 保存建图结果并回到定位模式（需在 mode=MAPPING 时调用）：
+#   1. 调 cartographer /write_state 保存 <maps_dir>/<map_name>.pbstream
+#   2. pbstream 转 <map_name>.pgm + <map_name>.yaml（三件套齐，可被 list_maps/get_map 识别）
+#   3. 停建图 launch，用新图拉起定位 launch（mode=RELOCALIZING）
+# 定位收敛后 /agv/status.mode 自动回到 NAVIGATION
+# 保存/转换失败时 mode 保持 MAPPING（建图不中断，可换名重试）
+# 上位机通过 rosbridge 调用：
+#   {"op":"call_service","id":"m2","service":"/agv/save_map","args":{"map_name":"map0922"}}
+string map_name        # 地图名（不带扩展名，需合法：非空且不含路径分隔符）
+---
+bool success
+string message
+string map_name        # 实际保存的地图名

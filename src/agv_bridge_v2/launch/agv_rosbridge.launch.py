@@ -14,6 +14,10 @@ agv_rosbridge.launch.py —— rosbridge 架构下的 AGV 对接 launch
 用法：
   ros2 launch agv_bridge_v2 agv_rosbridge.launch.py
   ros2 launch agv_bridge_v2 agv_rosbridge.launch.py port:=9090 agv_id:=three_wheel_agv
+  # 托管定位（启用 /agv/load_map 切图，navigation launch 需 include_localization:=false）：
+  ros2 launch agv_bridge_v2 agv_rosbridge.launch.py pbstream_file:=$PWD/maps/my_map.pbstream
+  # 换机器人（定位/建图 launch 从该包拉起）：
+  ros2 launch agv_bridge_v2 agv_rosbridge.launch.py robot_package:=zioneer_robot
 
 上位机自测（Python）：
   pip install roslibpy
@@ -35,6 +39,11 @@ def generate_launch_description():
     port = LaunchConfiguration("port")
     address = LaunchConfiguration("address")
     back_up_max_heading_error_deg = LaunchConfiguration("back_up_max_heading_error_deg")
+    maps_dir = LaunchConfiguration("maps_dir")
+    pbstream_file = LaunchConfiguration("pbstream_file")
+    robot_package = LaunchConfiguration("robot_package")
+    localization_launch_file = LaunchConfiguration("localization_launch_file")
+    slam_launch_file = LaunchConfiguration("slam_launch_file")
 
     # ⚠️ rosbridge 语义（以 humble 分支源码为准）：
     #   topics_sub_glob  = 上位机「能订阅」（收数据）的白名单
@@ -61,6 +70,38 @@ def generate_launch_description():
             "back_up_max_heading_error_deg",
             default_value="20.0",
             description="倒车时车尾对目标的朝向偏差容忍上限（度）",
+        ),
+
+        # ==== 地图管理（上位机 /agv/get_map、/agv/load_map、/agv/list_maps、
+        #      /agv/start_mapping、/agv/save_map）====
+        # 机器人包标准契约：包内需提供 localization.launch.py 与 slam.launch.py。
+        # pbstream_file 非空时，定位由 agv_nav_server 以子进程托管（load_map 切图、
+        # save_map 保存后自动重启定位）；此时 navigation launch 需传
+        # include_localization:=false，避免 cartographer 双开。
+        DeclareLaunchArgument(
+            "maps_dir",
+            default_value="maps",
+            description="地图目录（pgm/yaml/pbstream 三件套所在，相对启动 cwd）",
+        ),
+        DeclareLaunchArgument(
+            "pbstream_file",
+            default_value="",
+            description="初始定位地图 pbstream（空 = 启动后无定位，可先 start_mapping 建图）",
+        ),
+        DeclareLaunchArgument(
+            "robot_package",
+            default_value="jzt_robot",
+            description="机器人包名（定位/建图 launch 所在包，如 simulated_chassis / zioneer_robot）",
+        ),
+        DeclareLaunchArgument(
+            "localization_launch_file",
+            default_value="localization.launch.py",
+            description="定位 launch 文件名（在 robot_package 内）",
+        ),
+        DeclareLaunchArgument(
+            "slam_launch_file",
+            default_value="slam.launch.py",
+            description="建图 launch 文件名（在 robot_package 内）",
         ),
 
         # ==== 下发：上位机 publish 的 topic（rosbridge 语义：gates advertise/publish）====
@@ -93,7 +134,10 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             "services_glob",
-            default_value="['/rosapi/*', '/agv/set_control']",
+            default_value=(
+                "['/rosapi/*', '/agv/set_control', '/agv/get_map', '/agv/load_map', "
+                "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map']"
+            ),
             description="允许上位机调用的 service 白名单",
         ),
     ]
@@ -116,6 +160,11 @@ def generate_launch_description():
                 "battery_level": 100.0,
                 "enable_tf_broadcast": True,
                 "back_up_max_heading_error_deg": back_up_max_heading_error_deg,
+                "maps_dir": maps_dir,
+                "pbstream_file": pbstream_file,
+                "robot_package": robot_package,
+                "localization_launch_file": localization_launch_file,
+                "slam_launch_file": slam_launch_file,
             }
         ],
     )

@@ -4,7 +4,7 @@ Cartographer 2D 双雷达离线建图启动文件
 从 ROS2 bag 文件全速处理，生成高质量 pbstream 地图
 
 用法:
-    ros2 launch jzt_robot slam_offline_2lidar.launch.py \
+    ros2 launch jzt_robot slam_offline.launch.py \
         bag_filenames:=/path/to/bag_file \
         save_state_filename:=/path/to/map.pbstream
 """

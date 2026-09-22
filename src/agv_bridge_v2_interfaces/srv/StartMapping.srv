@@ -1,0 +1,11 @@
+# 上位机发起在线建图：停掉托管定位，拉起建图 launch（slam.launch.py）
+# 期间 /agv/status.mode = MAPPING：
+#   - 导航任务（follow_edge）被拒绝
+#   - 手动遥控（/cmd_vel -> relay -> 底盘）不受影响，可遥控机器人探索建图
+# 建图完成后需调用 /agv/save_map 保存并回到定位模式
+# 前置条件：mode=NAVIGATION 且无导航任务；定位由本节点托管时会被自动停掉
+# 上位机通过 rosbridge 调用：
+#   {"op":"call_service","id":"m1","service":"/agv/start_mapping","args":{}}
+---
+bool success
+string message

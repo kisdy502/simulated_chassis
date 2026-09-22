@@ -3,19 +3,29 @@
 Nav2 导航 + Cartographer 3D定位 + RViz 可视化启动文件
 适用于：差速底盘 + 双3D雷达
 
+v2: 定位链路（cartographer + occupancy_grid）拆分到 localization.launch.py，
+    本 launch 默认仍包含它（独立使用/docker 部署行为不变）。
+
 使用方法:
-    # 使用默认地图
+    # 使用默认地图（定位 + 导航一体）
     ros2 launch zioneer_robot navigation.launch.py
 
     # 指定地图文件
     ros2 launch zioneer_robot navigation.launch.py \
         pbstream_file:=/path/to/map.pbstream
+
+    # 上位机地图管理模式（定位由 agv_nav_server 托管，切图/建图只切定位，nav2 不动）：
+    ros2 launch zioneer_robot navigation.launch.py include_localization:=false
+    ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
+        pbstream_file:=$PWD/maps/my_map.pbstream \
+        robot_package:=zioneer_robot
 """
 
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -50,43 +60,27 @@ def generate_launch_description():
             default_value='true',
             description='自动启动 Nav2 导航'
         ),
+        DeclareLaunchArgument(
+            'include_localization',
+            default_value='true',
+            description='是否包含 Cartographer 定位链路。'
+                        '上位机切图流程传 false，改由 agv_nav_server 托管定位',
+        ),
     ]
 
     use_sim_time = LaunchConfiguration('use_sim_time')
 
-    # ===== Cartographer 定位节点 =====
-    cartographer_node = Node(
-        package='cartographer_ros',
-        executable='cartographer_node',
-        name='cartographer_node',
-        output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
-        arguments=[
-            '-configuration_directory', cartographer_config_dir,
-            '-configuration_basename', LaunchConfiguration('configuration_basename'),
-            '-load_state_filename', LaunchConfiguration('pbstream_file'),
-            '--ros-args',
-            '--log-level', 'WARN',
-        ],
-        remappings=[
-            ('points2_1', '/points2_1'),
-            ('points2_2', '/points2_2'),
-            ('odom', '/odom'),
-            ('imu', '/imu'),
-        ],
-    )
-
-    # ===== 占据栅格地图发布 =====
-    occupancy_grid_node = Node(
-        package='cartographer_ros',
-        executable='cartographer_occupancy_grid_node',
-        name='occupancy_grid_node',
-        output='screen',
-        parameters=[{
+    # ===== Cartographer 定位链路（独立 launch，可被 agv_nav_server 单独重启）=====
+    localization_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_share, 'launch', 'localization.launch.py')
+        ),
+        launch_arguments={
+            'pbstream_file': LaunchConfiguration('pbstream_file'),
+            'configuration_basename': LaunchConfiguration('configuration_basename'),
             'use_sim_time': use_sim_time,
-            'resolution': 0.05,
-            'publish_period_sec': 1.0,
-        }],
+        }.items(),
+        condition=IfCondition(LaunchConfiguration('include_localization')),
     )
 
     # ===== Nav2 /cmd_vel(Twist) -> 差速控制器(TwistStamped) =====
@@ -132,11 +126,10 @@ def generate_launch_description():
 
         *declared_arguments,
 
-        TimerAction(period=0.5, actions=[cartographer_node]),
-        TimerAction(period=2.0, actions=[occupancy_grid_node]),
-        TimerAction(period=3.0, actions=[cmd_vel_relay]),
-        TimerAction(period=4.0, actions=[nav2_launch]),
-        TimerAction(period=6.0, actions=[rviz_node]),
+        TimerAction(period=0.5, actions=[localization_launch]),
+        TimerAction(period=2.5, actions=[cmd_vel_relay]),
+        TimerAction(period=3.5, actions=[nav2_launch]),
+        TimerAction(period=5.5, actions=[rviz_node]),
 
         LogInfo(msg=['导航节点已启动']),
         LogInfo(msg=['在 RViz 中设置 2D Goal 启动自主导航']),

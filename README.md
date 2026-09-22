@@ -10,7 +10,7 @@ ros2 launch simulated_chassis three_wheel_sim.launch.py world:=world_octagon.sdf
 
 ## 在线建图
 source install/setup.bash
-ros2 launch simulated_chassis slam3d_online.launch.py
+ros2 launch simulated_chassis slam.launch.py
 
 # 保存为 .pbstream（Cartographer 原生格式）
 ros2 service call /write_state cartographer_ros_msgs/srv/WriteState "{filename: 'my_map.pbstream'}"
@@ -32,7 +32,7 @@ ros2 bag record -o my_bag \
     /clock
 
 # 离线建图
-ros2 launch simulated_chassis slam3d_offline.launch.py \
+ros2 launch simulated_chassis slam_offline.launch.py \
     bag_filenames:=my_bag \
     save_state_filename:=my_map_optimized.pbstream
 
@@ -41,15 +41,24 @@ ros2 launch simulated_chassis slam3d_offline.launch.py \
 cd ~/workspace/simulated_chassis
 
 source install/setup.bash
-ros2 launch simulated_chassis slam3d_offline.launch.py \
+ros2 launch simulated_chassis slam_offline.launch.py \
     bag_filenames:="/home/kisdy/workspace/simulated_chassis/my_bag" \
     save_state_filename:="/home/kisdy/workspace/simulated_chassis/my_map_optimized.pbstream"
 
 
 # 启动导航
+# 导航 launch 已拆分：localization.launch.py（Cartographer 3D 纯定位，可独立重启）
+# + navigation.launch.py（Nav2，默认仍包含定位，独立使用行为不变）
 source install/setup.bash
 ros2 launch simulated_chassis navigation.launch.py \
-    pbstream_file:=/mnt/d/github/simulated_chassis/my_map_optimized.pbstream 
+    pbstream_file:=/mnt/d/github/simulated_chassis/my_map_optimized.pbstream
+
+# 上位机地图管理模式（定位/建图由 agv_nav_server 托管，navigation 只启动 Nav2；
+# 支持 /agv/load_map 切图、/agv/start_mapping 建图、/agv/save_map 保存）：
+ros2 launch simulated_chassis navigation.launch.py include_localization:=false
+ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
+    pbstream_file:=$PWD/maps/my_map_optimized.pbstream \
+    robot_package:=simulated_chassis
 
 
 ## 前进

@@ -24,3 +24,13 @@ bool pose_initialized
 # 当前正在执行的指令，无任务时为空字符串
 string active_command_id
 string active_node_id
+
+# 业务模式（由 /agv/load_map、/agv/start_mapping、/agv/save_map 驱动，与 state 正交）：
+#   NAVIGATION   —— 正常导航定位（默认）
+#   RELOCALIZING —— 正在重启定位节点加载新地图，收敛后自动回到 NAVIGATION
+#   MAPPING      —— 在线建图中（start_mapping 进入，save_map 保存后退出）
+string mode
+
+# 当前加载的定位地图名（maps_dir 下三件套的文件名主干，不含扩展名）；
+# 未记录 / 未知时为空
+string map_name

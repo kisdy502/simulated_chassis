@@ -2,11 +2,14 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>agv_bridge_v2_interfaces</name>
-  <version>0.1.0</version>
+  <version>0.3.0</version>
   <description>
     标准 ROS 2 接口定义（IDL），供真实 AGV 上位机通过 rosbridge 调用。
     上位机可用 /rosapi/topics_and_raw_types、/rosapi/message_details 下载这些
     定义并自动生成 Java/Python DTO，取代原先手写的 bean 类与 HTTP endpoint 约定。
+    v0.2.0 新增地图服务：/agv/get_map、/agv/load_map、/agv/list_maps，
+    并为 /agv/status 扩展 mode / map_name 字段。
+    v0.3.0 新增建图服务：/agv/start_mapping、/agv/save_map（mode=MAPPING 全链路）。
   </description>
   <maintainer email="robot@todo.todo">robot</maintainer>
   <license>Apache-2.0</license>
@@ -16,6 +19,7 @@
 
   <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
 
   <exec_depend>rosidl_default_runtime</exec_depend>
 

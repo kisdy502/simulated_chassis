@@ -18,7 +18,9 @@ find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
+find_package(cartographer_ros_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -33,7 +35,9 @@ set(AGV_ROS_DEPS
   geometry_msgs
   std_msgs
   sensor_msgs
+  nav_msgs
   nav2_msgs
+  cartographer_ros_msgs
   tf2
   tf2_ros
   tf2_geometry_msgs
@@ -42,16 +46,18 @@ set(AGV_ROS_DEPS
 )
 
 # ==================== 可执行文件 ====================
-# 全部业务逻辑只有 5 个源文件：
+# 全部业务逻辑只有 6 个源文件：
 #   AgvNavServerNode  —— 瘦节点：action/srv/status/TF 接口
 #   NavigationManager —— 直线/贝塞尔/倒车路径生成 + nav2 FollowPath/Spin 调度
 #   LocalizationMonitor —— TF 定位收敛监控
+#   MapFileManager    —— 地图目录扫描 + pgm/yaml -> OccupancyGrid（/agv/get_map 等）
 #   TransformUtils    —— 四元数/偏航角/贝塞尔数学
 add_executable(agv_nav_server
   src/agv_nav_server_main.cpp
   src/AgvNavServerNode.cpp
   src/NavigationManager.cpp
   src/LocalizationMonitor.cpp
+  src/MapFileManager.cpp
   src/TransformUtils.cpp
 )
 

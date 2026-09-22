@@ -1,0 +1,7 @@
+# 列出 maps_dir 下可用的地图（pgm + yaml 齐全才算可用）
+# 上位机通过 rosbridge 调用：
+#   {"op":"call_service","id":"m1","service":"/agv/list_maps","args":{}}
+---
+bool success
+string message
+string[] map_names     # 可导入的地图名（按名称排序）

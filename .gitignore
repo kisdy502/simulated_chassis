@@ -65,3 +65,5 @@ my_bag
 my_bag_sm
 
 *.pbstream
+
+/maps/*

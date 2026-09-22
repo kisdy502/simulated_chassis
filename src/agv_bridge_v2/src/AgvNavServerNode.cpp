@@ -4,13 +4,33 @@
 
 #include <chrono>
 #include <cmath>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
 #include <utility>
+
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <thread>
+#include <unistd.h>
 
 using namespace std::chrono_literals;
 using namespace agv_bridge;
 
 namespace agv_bridge
 {
+    namespace
+    {
+        /// use_sim_time 参数串（"use_sim_time:=" + bool），const char* 不能直接拼接
+        std::string useSimTimeArg(bool use_sim_time)
+        {
+            return "use_sim_time:=" + std::string(use_sim_time ? "true" : "false");
+        }
+    }
+
 
     // ============================ 构造 / 析构 ============================
 
@@ -23,9 +43,10 @@ namespace agv_bridge
         create_timers();
 
         RCLCPP_INFO(this->get_logger(),
-                    "AGV Nav Server 已启动 (agv_id=%s)。上位机请通过 rosbridge 访问 "
-                    "/agv/follow_edge、/agv/set_control、/agv/status",
-                    agv_id_.c_str());
+                    "AGV Nav Server 已启动 (agv_id=%s, map=%s)。上位机请通过 rosbridge 访问 "
+                    "/agv/follow_edge、/agv/set_control、/agv/get_map、/agv/load_map、"
+                    "/agv/list_maps、/agv/status",
+                    agv_id_.c_str(), map_name_.c_str());
     }
 
     AgvNavServerNode::~AgvNavServerNode() noexcept
@@ -46,6 +67,14 @@ namespace agv_bridge
         {
             RCLCPP_ERROR(this->get_logger(), "析构中发生未知异常");
         }
+
+        // 回收模式切换后台线程，再停掉托管的定位/建图子进程
+        if (transition_thread_.joinable())
+        {
+            transition_thread_.join();
+        }
+        stop_child_process(slam_pid_, "建图");
+        stop_child_process(localization_pid_, "定位");
     }
 
     // ============================ 初始化 ============================
@@ -57,10 +86,39 @@ namespace agv_bridge
         this->declare_parameter<int>("feedback_interval_ms", 400);
         this->declare_parameter<bool>("enable_tf_broadcast", true);
 
+        // ===== 地图管理 =====
+        this->declare_parameter<std::string>("maps_dir", "maps");
+        this->declare_parameter<std::string>("pbstream_file", "");
+        this->declare_parameter<std::string>("robot_package", "jzt_robot");
+        this->declare_parameter<std::string>("localization_launch_package", "");
+        this->declare_parameter<std::string>("localization_launch_file", "localization.launch.py");
+        this->declare_parameter<std::string>("slam_launch_package", "");
+        this->declare_parameter<std::string>("slam_launch_file", "slam.launch.py");
+        this->declare_parameter<bool>("use_sim_time", false);
+
         this->get_parameter("agv_id", agv_id_);
         this->get_parameter("battery_level", battery_level_);
         this->get_parameter("feedback_interval_ms", feedback_interval_ms_);
         this->get_parameter("enable_tf_broadcast", enable_tf_broadcast_);
+        this->get_parameter("use_sim_time", use_sim_time_);
+
+        this->get_parameter("maps_dir", maps_dir_);
+        this->get_parameter("pbstream_file", pbstream_file_);
+        this->get_parameter("robot_package", robot_package_);
+        this->get_parameter("localization_launch_package", localization_launch_package_);
+        this->get_parameter("localization_launch_file", localization_launch_file_);
+        this->get_parameter("slam_launch_package", slam_launch_package_);
+        this->get_parameter("slam_launch_file", slam_launch_file_);
+
+        // 定位/建图 launch 包名缺省跟随机器人包
+        if (localization_launch_package_.empty())
+        {
+            localization_launch_package_ = robot_package_;
+        }
+        if (slam_launch_package_.empty())
+        {
+            slam_launch_package_ = robot_package_;
+        }
 
         if (feedback_interval_ms_ <= 0)
         {
@@ -86,6 +144,44 @@ namespace agv_bridge
             RCLCPP_WARN(this->get_logger(),
                         "NavigationManager 初始化未完全成功（nav2 动作服务可能尚未起来）");
         }
+
+        // ===== 地图管理：目录扫描 + 可选托管定位子进程 =====
+        map_file_manager_ = std::make_unique<MapFileManager>(maps_dir_);
+        RCLCPP_INFO(this->get_logger(), "地图目录: %s（机器人包: %s）",
+                    map_file_manager_->mapsDir().c_str(), robot_package_.c_str());
+
+        // cartographer /write_state 客户端（save_map 保存 pbstream 用）
+        write_state_client_ = this->create_client<cartographer_ros_msgs::srv::WriteState>(
+            "/write_state");
+
+        if (!pbstream_file_.empty())
+        {
+            // 定位由本节点托管：初始地图即启动参数 pbstream_file，
+            // 之后 /agv/load_map 才能杀掉旧进程换新图
+            const std::string pbstream_abs = absolute_path(pbstream_file_);
+            {
+                std::lock_guard<std::mutex> lock(mode_mutex_);
+                map_name_ = file_stem(pbstream_abs);
+            }
+            if (!spawn_ros_launch(
+                    localization_launch_package_, localization_launch_file_,
+                    {"pbstream_file:=" + pbstream_abs, useSimTimeArg(use_sim_time_)},
+                    localization_pid_, "/tmp/agv_localization.log"))
+            {
+                std::lock_guard<std::mutex> lock(mode_mutex_);
+                map_name_.clear();
+                RCLCPP_ERROR(this->get_logger(),
+                             "初始定位子进程启动失败，请检查 %s / %s 是否安装（ros2 launch <pkg> <file>）",
+                             localization_launch_package_.c_str(), localization_launch_file_.c_str());
+            }
+        }
+        else
+        {
+            RCLCPP_WARN(this->get_logger(),
+                        "未配置 pbstream_file：启动后无定位。可先 /agv/start_mapping 建图，"
+                        "再 /agv/save_map 保存后自动进入定位（navigation launch 请传 "
+                        "include_localization:=false，避免 cartographer 双开）");
+        }
     }
 
     void AgvNavServerNode::create_interfaces()
@@ -108,6 +204,36 @@ namespace agv_bridge
         set_control_srv_ = this->create_service<SetControl>(
             "/agv/set_control",
             std::bind(&AgvNavServerNode::handle_set_control, this,
+                      std::placeholders::_1, std::placeholders::_2));
+
+        // ---- service: /agv/get_map（导出栅格给上位机）----
+        get_map_srv_ = this->create_service<GetMap>(
+            "/agv/get_map",
+            std::bind(&AgvNavServerNode::handle_get_map, this,
+                      std::placeholders::_1, std::placeholders::_2));
+
+        // ---- service: /agv/load_map（重启定位加载新图）----
+        load_map_srv_ = this->create_service<LoadMap>(
+            "/agv/load_map",
+            std::bind(&AgvNavServerNode::handle_load_map, this,
+                      std::placeholders::_1, std::placeholders::_2));
+
+        // ---- service: /agv/list_maps（列出可导入地图）----
+        list_maps_srv_ = this->create_service<ListMaps>(
+            "/agv/list_maps",
+            std::bind(&AgvNavServerNode::handle_list_maps, this,
+                      std::placeholders::_1, std::placeholders::_2));
+
+        // ---- service: /agv/start_mapping（进入在线建图）----
+        start_mapping_srv_ = this->create_service<StartMapping>(
+            "/agv/start_mapping",
+            std::bind(&AgvNavServerNode::handle_start_mapping, this,
+                      std::placeholders::_1, std::placeholders::_2));
+
+        // ---- service: /agv/save_map（保存建图并回到定位）----
+        save_map_srv_ = this->create_service<SaveMap>(
+            "/agv/save_map",
+            std::bind(&AgvNavServerNode::handle_save_map, this,
                       std::placeholders::_1, std::placeholders::_2));
 
         // ---- topic: /agv/status (transient_local，新客户端一接入即可拿到最后一帧) ----
@@ -175,6 +301,17 @@ namespace agv_bridge
             RCLCPP_WARN(this->get_logger(),
                         "AGV 处于 stop 状态，拒绝导航任务 (command_id=%s)", goal->command_id.c_str());
             return rclcpp_action::GoalResponse::REJECT;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            if (mode_ != MODE_NAVIGATION)
+            {
+                RCLCPP_WARN(this->get_logger(),
+                            "当前 mode=%s (map=%s)，拒绝导航任务 (command_id=%s)",
+                            mode_.c_str(), map_name_.c_str(), goal->command_id.c_str());
+                return rclcpp_action::GoalResponse::REJECT;
+            }
         }
 
         RCLCPP_INFO(this->get_logger(),
@@ -308,6 +445,374 @@ namespace agv_bridge
                     action.c_str(), static_cast<int>(response->success), response->state.c_str());
     }
 
+    void AgvNavServerNode::handle_get_map(
+        std::shared_ptr<GetMap::Request> request,
+        std::shared_ptr<GetMap::Response> response)
+    {
+        std::string name = request->map_name;
+        if (name.empty())
+        {
+            // 未指定时取当前定位地图
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            name = map_name_;
+        }
+        if (name.empty())
+        {
+            response->success = false;
+            response->message = "未指定 map_name，且当前无已加载地图";
+            return;
+        }
+        if (!map_file_manager_)
+        {
+            response->success = false;
+            response->message = "地图管理未初始化（maps_dir 参数无效）";
+            return;
+        }
+
+        std::string error;
+        if (!map_file_manager_->loadGrid(name, response->map, error))
+        {
+            response->success = false;
+            response->message = error;
+            return;
+        }
+
+        response->map.header.stamp = this->now();
+        response->map_name = name;
+        response->success = true;
+        response->message = "ok";
+
+        RCLCPP_INFO(this->get_logger(),
+                    "get_map(%s) -> %ux%u @ %.3fm/px, data=%zu",
+                    name.c_str(), response->map.info.width, response->map.info.height,
+                    response->map.info.resolution, response->map.data.size());
+    }
+
+    void AgvNavServerNode::handle_list_maps(
+        std::shared_ptr<ListMaps::Request> /*request*/,
+        std::shared_ptr<ListMaps::Response> response)
+    {
+        if (!map_file_manager_)
+        {
+            response->success = false;
+            response->message = "地图管理未初始化（maps_dir 参数无效）";
+            return;
+        }
+
+        std::string error;
+        const auto entries = map_file_manager_->listMaps(&error);
+        if (!error.empty())
+        {
+            response->success = false;
+            response->message = error;
+            return;
+        }
+
+        for (const auto &entry : entries)
+        {
+            response->map_names.push_back(entry.name);
+        }
+        response->success = true;
+        response->message = "ok";
+
+        RCLCPP_INFO(this->get_logger(), "list_maps -> %zu 张 (pgm+yaml 齐全)",
+                    response->map_names.size());
+    }
+
+    void AgvNavServerNode::handle_load_map(
+        std::shared_ptr<LoadMap::Request> request,
+        std::shared_ptr<LoadMap::Response> response)
+    {
+        const std::string &name = request->map_name;
+
+        if (!MapFileManager::isValidMapName(name))
+        {
+            response->success = false;
+            response->message = "地图名非法（非空且不含路径分隔符）: '" + name + "'";
+            return;
+        }
+        if (!map_file_manager_ || !map_file_manager_->hasPbstream(name))
+        {
+            response->success = false;
+            response->message = "地图目录下不存在 " + name +
+                                ".pbstream（load_map 需要 pbstream，可用 /agv/list_maps 查看）";
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            if (mode_ == MODE_RELOCALIZING)
+            {
+                response->success = false;
+                response->message = "正在切换地图 (map=" + map_name_ +
+                                    ")，请等待 /agv/status.mode 回到 NAVIGATION";
+                return;
+            }
+            if (mode_ == MODE_MAPPING)
+            {
+                response->success = false;
+                response->message = "正在建图 (MAPPING)，请先 /agv/save_map 保存后再切换地图";
+                return;
+            }
+        }
+
+        {
+            // 定位子进程必须由本节点托管，否则无法停掉外部启动的 cartographer
+            std::lock_guard<std::mutex> lock(proc_mutex_);
+            if (localization_pid_ <= 0)
+            {
+                response->success = false;
+                response->message =
+                    "定位节点不由 agv_nav_server 托管，无法切换地图。"
+                    "请以 pbstream_file:=<abs> 参数启动本节点（同时 navigation launch 传 "
+                    "include_localization:=false），由本节点拉起定位";
+                return;
+            }
+        }
+
+        if (navigation_manager_ && navigation_manager_->isNavigating())
+        {
+            response->success = false;
+            response->message = "正在执行导航任务，请先取消或等待完成后再切换地图";
+            return;
+        }
+
+        if (transition_in_progress_.exchange(true))
+        {
+            response->success = false;
+            response->message = "上一次模式切换仍在进行中";
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            mode_ = MODE_RELOCALIZING;
+            map_name_ = name;
+        }
+
+        const std::string pbstream_abs = map_file_manager_->pbstreamPath(name);
+        if (transition_thread_.joinable())
+        {
+            transition_thread_.join();
+        }
+        transition_thread_ = std::thread([this, pbstream_abs, name]()
+        {
+            RCLCPP_INFO(this->get_logger(), "load_map(%s)：停止旧定位进程...", name.c_str());
+            stop_child_process(localization_pid_, "定位");
+
+            RCLCPP_INFO(this->get_logger(), "load_map(%s)：以新 pbstream 重启定位...", name.c_str());
+            if (!spawn_ros_launch(
+                    localization_launch_package_, localization_launch_file_,
+                    {"pbstream_file:=" + pbstream_abs, useSimTimeArg(use_sim_time_)},
+                    localization_pid_, "/tmp/agv_localization.log"))
+            {
+                RCLCPP_ERROR(this->get_logger(),
+                             "load_map(%s)：定位进程重启失败，定位丢失（pose_initialized=false），"
+                             "请检查日志 /tmp/agv_localization.log", name.c_str());
+                std::lock_guard<std::mutex> lock(mode_mutex_);
+                mode_ = MODE_NAVIGATION;
+            }
+            transition_in_progress_.store(false);
+            // 收敛后由 update_localization_monitor 把 RELOCALIZING 切回 NAVIGATION
+        });
+
+        response->success = true;
+        response->map_name = name;
+        response->message = "定位重启中，等待 /agv/status.mode: RELOCALIZING -> NAVIGATION";
+
+        RCLCPP_INFO(this->get_logger(), "load_map(%s) -> 已发起定位重启", name.c_str());
+    }
+
+    void AgvNavServerNode::handle_start_mapping(
+        std::shared_ptr<StartMapping::Request> /*request*/,
+        std::shared_ptr<StartMapping::Response> response)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            if (mode_ == MODE_RELOCALIZING)
+            {
+                response->success = false;
+                response->message = "正在切换地图，请等待 mode 回到 NAVIGATION 后再建图";
+                return;
+            }
+            if (mode_ == MODE_MAPPING)
+            {
+                response->success = false;
+                response->message = "已在建图中 (MAPPING)，遥控探索完成后请调用 /agv/save_map";
+                return;
+            }
+        }
+
+        if (navigation_manager_ && navigation_manager_->isNavigating())
+        {
+            response->success = false;
+            response->message = "正在执行导航任务，请先取消或等待完成后再开始建图";
+            return;
+        }
+
+        if (transition_in_progress_.exchange(true))
+        {
+            response->success = false;
+            response->message = "上一次模式切换仍在进行中";
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(proc_mutex_);
+            if (localization_pid_ <= 0)
+            {
+                // 没有托管定位：允许直接建图，但外部若还跑着 cartographer 会 TF 双发，
+                // 这里只能提示（navigation launch 必须 include_localization:=false）
+                RCLCPP_WARN(this->get_logger(),
+                            "本节点未托管定位进程：请确认外部没有 cartographer 在跑"
+                            "（navigation launch 需 include_localization:=false）");
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            mode_ = MODE_MAPPING;
+            map_name_.clear();
+        }
+
+        if (transition_thread_.joinable())
+        {
+            transition_thread_.join();
+        }
+        transition_thread_ = std::thread([this]()
+        {
+            RCLCPP_INFO(this->get_logger(), "start_mapping：停止托管定位进程...");
+            stop_child_process(localization_pid_, "定位");
+
+            RCLCPP_INFO(this->get_logger(), "start_mapping：拉起建图进程...");
+            if (!spawn_ros_launch(
+                    slam_launch_package_, slam_launch_file_,
+                    {useSimTimeArg(use_sim_time_)},
+                    slam_pid_, "/tmp/agv_slam.log"))
+            {
+                RCLCPP_ERROR(this->get_logger(),
+                             "start_mapping：建图进程启动失败，请检查 %s / %s 与日志 /tmp/agv_slam.log",
+                             slam_launch_package_.c_str(), slam_launch_file_.c_str());
+                std::lock_guard<std::mutex> lock(mode_mutex_);
+                mode_ = MODE_NAVIGATION;
+            }
+            transition_in_progress_.store(false);
+        });
+
+        response->success = true;
+        response->message = "建图已启动（mode=MAPPING）：导航任务被拒绝，/cmd_vel 遥控可用；"
+                            "完成后调用 /agv/save_map 保存并回到定位";
+
+        RCLCPP_INFO(this->get_logger(), "start_mapping -> 已发起建图");
+    }
+
+    void AgvNavServerNode::handle_save_map(
+        std::shared_ptr<SaveMap::Request> request,
+        std::shared_ptr<SaveMap::Response> response)
+    {
+        const std::string &name = request->map_name;
+
+        if (!MapFileManager::isValidMapName(name))
+        {
+            response->success = false;
+            response->message = "地图名非法（非空且不含路径分隔符）: '" + name + "'";
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            if (mode_ != MODE_MAPPING)
+            {
+                response->success = false;
+                response->message = "当前 mode=" + mode_ + "，仅 MAPPING 模式下可保存地图（先 /agv/start_mapping）";
+                return;
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(proc_mutex_);
+            if (slam_pid_ <= 0)
+            {
+                response->success = false;
+                response->message = "建图进程不由本节点托管，无法保存";
+                return;
+            }
+        }
+
+        if (transition_in_progress_.exchange(true))
+        {
+            response->success = false;
+            response->message = "上一次模式切换仍在进行中";
+            return;
+        }
+
+        const std::string maps_dir = map_file_manager_->mapsDir();
+        const std::string pbstream_abs = map_file_manager_->pbstreamPath(name);
+        const std::string stem = maps_dir + "/" + name;
+
+        if (transition_thread_.joinable())
+        {
+            transition_thread_.join();
+        }
+        transition_thread_ = std::thread([this, name, pbstream_abs, stem]()
+        {
+            // 1. 保存 pbstream（cartographer /write_state）
+            std::string error;
+            RCLCPP_INFO(this->get_logger(), "save_map(%s)：写入 %s ...", name.c_str(), pbstream_abs.c_str());
+            if (!call_write_state(pbstream_abs, error))
+            {
+                RCLCPP_ERROR(this->get_logger(), "save_map(%s)：保存 pbstream 失败: %s（mode 保持 MAPPING，可重试）",
+                             name.c_str(), error.c_str());
+                transition_in_progress_.store(false);
+                return;
+            }
+
+            // 2. pbstream -> pgm + yaml（三件套齐，get_map/list_maps 才能识别）
+            RCLCPP_INFO(this->get_logger(), "save_map(%s)：转换 pgm/yaml ...", name.c_str());
+            if (!run_command_sync(
+                    {"ros2", "run", "cartographer_ros", "cartographer_pbstream_to_ros_map",
+                     "-pbstream_filename", pbstream_abs, "-map_filestem", stem},
+                    "/tmp/agv_map_export.log"))
+            {
+                RCLCPP_ERROR(this->get_logger(),
+                             "save_map(%s)：pbstream 转 pgm/yaml 失败，详见 /tmp/agv_map_export.log"
+                             "（mode 保持 MAPPING，可重试）", name.c_str());
+                transition_in_progress_.store(false);
+                return;
+            }
+
+            // 3. 停建图，用新图拉起定位
+            RCLCPP_INFO(this->get_logger(), "save_map(%s)：停止建图进程，拉起定位...", name.c_str());
+            stop_child_process(slam_pid_, "建图");
+
+            {
+                std::lock_guard<std::mutex> lock(mode_mutex_);
+                map_name_ = name;
+                mode_ = MODE_RELOCALIZING;
+            }
+            if (!spawn_ros_launch(
+                    localization_launch_package_, localization_launch_file_,
+                    {"pbstream_file:=" + pbstream_abs, useSimTimeArg(use_sim_time_)},
+                    localization_pid_, "/tmp/agv_localization.log"))
+            {
+                RCLCPP_ERROR(this->get_logger(),
+                             "save_map(%s)：定位进程启动失败，请检查日志 /tmp/agv_localization.log",
+                             name.c_str());
+                std::lock_guard<std::mutex> lock(mode_mutex_);
+                mode_ = MODE_NAVIGATION;
+            }
+            transition_in_progress_.store(false);
+            // 收敛后由 update_localization_monitor 把 RELOCALIZING 切回 NAVIGATION
+        });
+
+        response->success = true;
+        response->map_name = name;
+        response->message = "保存与定位重启已发起：保存/转换失败时 mode 保持 MAPPING，"
+                            "成功则 RELOCALIZING -> NAVIGATION";
+
+        RCLCPP_INFO(this->get_logger(), "save_map(%s) -> 已发起", name.c_str());
+    }
+
     // ============================ 定时器回调 ============================
 
     void AgvNavServerNode::publish_status()
@@ -319,6 +824,12 @@ namespace agv_bridge
         msg.state = control_stopped_.load() ? "STOPPED" : agv_state_;
         msg.battery = battery_level_;
         msg.pose_initialized = localization_monitor_ ? localization_monitor_->isInitialized() : false;
+
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            msg.mode = mode_;
+            msg.map_name = map_name_;
+        }
 
         {
             std::lock_guard<std::mutex> lock(goal_mutex_);
@@ -382,6 +893,17 @@ namespace agv_bridge
                 RCLCPP_WARN(this->get_logger(), "状态变化：位置未初始化 ❌");
             }
             last_initialized_state = current;
+        }
+
+        // 切图重启定位收敛后（TF 恢复新鲜），RELOCALIZING -> NAVIGATION
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            if (mode_ == MODE_RELOCALIZING && current && !transition_in_progress_.load())
+            {
+                mode_ = MODE_NAVIGATION;
+                RCLCPP_INFO(this->get_logger(), "地图 %s 定位已收敛，mode -> NAVIGATION",
+                            map_name_.c_str());
+            }
         }
 
         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 30000,
@@ -590,6 +1112,201 @@ namespace agv_bridge
         current_goal_handle_.reset();
         active_command_id_.clear();
         active_node_id_.clear();
+    }
+
+    // ============================ 地图 / 定位 / 建图进程管理 ============================
+
+    std::string AgvNavServerNode::absolute_path(const std::string &path)
+    {
+        if (path.empty() || path[0] == '/')
+        {
+            return path;
+        }
+        char *cwd = ::getcwd(nullptr, 0);
+        if (cwd == nullptr)
+        {
+            return path;
+        }
+        std::string abs = std::string(cwd) + (cwd[std::strlen(cwd) - 1] == '/' ? "" : "/") + path;
+        ::free(cwd);
+        return abs;
+    }
+
+    std::string AgvNavServerNode::file_stem(const std::string &path)
+    {
+        const auto slash = path.rfind('/');
+        const std::string filename = slash == std::string::npos ? path : path.substr(slash + 1);
+        const auto dot = filename.rfind('.');
+        return dot == std::string::npos ? filename : filename.substr(0, dot);
+    }
+
+    bool AgvNavServerNode::spawn_ros_launch(const std::string &package, const std::string &launch_file,
+                                            const std::vector<std::string> &extra_args,
+                                            pid_t &pid_slot, const char *log_path)
+    {
+        std::vector<std::string> argv_str = {"ros2", "launch", package, launch_file};
+        argv_str.insert(argv_str.end(), extra_args.begin(), extra_args.end());
+
+        const pid_t pid = ::fork();
+        if (pid < 0)
+        {
+            RCLCPP_ERROR(this->get_logger(), "fork 子进程失败: %s", std::strerror(errno));
+            return false;
+        }
+        if (pid == 0)
+        {
+            // 子进程：独立进程组（便于整组终止），输出重定向到日志文件
+            ::setpgid(0, 0);
+            const int fd = ::open(log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd >= 0)
+            {
+                ::dup2(fd, STDOUT_FILENO);
+                ::dup2(fd, STDERR_FILENO);
+                if (fd > STDERR_FILENO)
+                {
+                    ::close(fd);
+                }
+            }
+            ::signal(SIGINT, SIG_DFL);
+            ::signal(SIGTERM, SIG_DFL);
+
+            std::vector<char *> argv;
+            argv.reserve(argv_str.size() + 1);
+            for (const auto &arg : argv_str)
+            {
+                argv.push_back(const_cast<char *>(arg.c_str()));
+            }
+            argv.push_back(nullptr);
+            ::execvp(argv[0], argv.data());
+            ::_exit(127); // execvp 仅在失败时返回
+        }
+        // 父子两侧都 setpgid，避免竞态
+        ::setpgid(pid, pid);
+        {
+            std::lock_guard<std::mutex> lock(proc_mutex_);
+            pid_slot = pid;
+        }
+
+        std::string cmdline;
+        for (const auto &arg : argv_str)
+        {
+            cmdline += arg + " ";
+        }
+        RCLCPP_INFO(this->get_logger(), "子进程已启动 pid=%d: %s（日志: %s）",
+                    pid, cmdline.c_str(), log_path);
+        return true;
+    }
+
+    void AgvNavServerNode::stop_child_process(pid_t &pid_slot, const char *what)
+    {
+        pid_t pid = -1;
+        {
+            std::lock_guard<std::mutex> lock(proc_mutex_);
+            pid = pid_slot;
+            pid_slot = -1;
+        }
+        if (pid <= 0)
+        {
+            return;
+        }
+
+        // 先 SIGINT（ros2 launch 会优雅停掉 cartographer 等子节点），超时整组 SIGKILL
+        if (::kill(-pid, SIGINT) != 0)
+        {
+            ::kill(pid, SIGINT);
+        }
+        for (int i = 0; i < 20; ++i)
+        {
+            if (::waitpid(pid, nullptr, WNOHANG) == pid)
+            {
+                RCLCPP_INFO(this->get_logger(), "%s子进程 pid=%d 已退出", what, pid);
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        RCLCPP_WARN(this->get_logger(), "%s子进程 pid=%d 未在 2s 内退出，SIGKILL 整个进程组", what, pid);
+        ::kill(-pid, SIGKILL);
+        ::waitpid(pid, nullptr, 0);
+    }
+
+    bool AgvNavServerNode::run_command_sync(const std::vector<std::string> &args, const char *log_path)
+    {
+        const pid_t pid = ::fork();
+        if (pid < 0)
+        {
+            RCLCPP_ERROR(this->get_logger(), "fork 失败: %s", std::strerror(errno));
+            return false;
+        }
+        if (pid == 0)
+        {
+            ::setpgid(0, 0);
+            const int fd = ::open(log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd >= 0)
+            {
+                ::dup2(fd, STDOUT_FILENO);
+                ::dup2(fd, STDERR_FILENO);
+                if (fd > STDERR_FILENO)
+                {
+                    ::close(fd);
+                }
+            }
+            std::vector<char *> argv;
+            argv.reserve(args.size() + 1);
+            for (const auto &arg : args)
+            {
+                argv.push_back(const_cast<char *>(arg.c_str()));
+            }
+            argv.push_back(nullptr);
+            ::execvp(argv[0], argv.data());
+            ::_exit(127);
+        }
+
+        int status = 0;
+        ::waitpid(pid, &status, 0);
+        const bool ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+        if (!ok)
+        {
+            const int exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            std::string cmdline;
+            for (const auto &arg : args)
+            {
+                cmdline += arg + " ";
+            }
+            RCLCPP_ERROR(this->get_logger(), "命令执行失败(exit=%d): %s（详见 %s）",
+                         exit_code, cmdline.c_str(), log_path);
+        }
+        return ok;
+    }
+
+    bool AgvNavServerNode::call_write_state(const std::string &pbstream_abs_path, std::string &error)
+    {
+        if (!write_state_client_->wait_for_service(std::chrono::seconds(5)))
+        {
+            error = "cartographer /write_state 服务不可用（建图节点未运行？）";
+            return false;
+        }
+
+        auto request = std::make_shared<cartographer_ros_msgs::srv::WriteState::Request>();
+        request->filename = pbstream_abs_path;
+
+        auto future = write_state_client_->async_send_request(request);
+        const auto rc = future.wait_for(std::chrono::seconds(15));
+        if (rc != std::future_status::ready)
+        {
+            error = "/write_state 调用超时（15s）";
+            return false;
+        }
+        // Humble 版 WriteState 响应不带结果字段：服务正常返回后以文件落盘为准
+        future.get();
+
+        struct stat st;
+        if (::stat(pbstream_abs_path.c_str(), &st) != 0 || st.st_size <= 0)
+        {
+            error = "/write_state 已返回但 pbstream 未落盘: " + pbstream_abs_path;
+            return false;
+        }
+        return true;
     }
 
 } // namespace agv_bridge

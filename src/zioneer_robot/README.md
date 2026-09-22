@@ -25,7 +25,7 @@ ros2 launch zioneer_robot gazebo_diff_3dlidar.launch.py
 
 ```bash
 source install/setup.bash
-ros2 launch zioneer_robot slam3d_online.launch.py
+ros2 launch zioneer_robot slam.launch.py
 ```
 
 保存地图：
@@ -53,18 +53,44 @@ ros2 bag record -o my_bag \
     /clock
 
 # 离线建图（关闭仿真和在线建图后执行）
-ros2 launch zioneer_robot slam3d_offline.launch.py \
+ros2 launch zioneer_robot slam_offline.launch.py \
     bag_filenames:=/home/kisdy/workspace/simulated_chassis/my_bag \
     save_state_filename:=/home/kisdy/workspace/simulated_chassis/my_map_optimized.pbstream
 ```
 
 ### 4. 导航
 
+导航 launch 已拆分为「定位 + Nav2」两段：`localization.launch.py`（Cartographer
+3D 纯定位 + occupancy_grid）与 Nav2 全栈解耦，`navigation.launch.py` 默认仍包含定位，
+独立使用行为不变。
+
 ```bash
+# 方式一：独立使用（定位 + 导航一体，默认 include_localization:=true）
 source install/setup.bash
 ros2 launch zioneer_robot navigation.launch.py \
     pbstream_file:=/home/kisdy/workspace/simulated_chassis/my_map_optimized.pbstream
 ```
+
+```bash
+# 方式二：上位机地图管理模式（定位/建图由 agv_nav_server 托管，navigation 只启动 Nav2）
+ros2 launch zioneer_robot navigation.launch.py include_localization:=false
+
+ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
+    pbstream_file:=$PWD/maps/my_map_optimized.pbstream \
+    robot_package:=zioneer_robot
+
+# 切图：地图三件套（.pbstream + .pgm + .yaml）放 maps/ 后
+ros2 service call /agv/load_map agv_bridge_v2_interfaces/srv/LoadMap "{map_name: 'my_map_2'}"
+
+# 在线建图：start_mapping（停定位拉建图，mode=MAPPING，遥控可用）
+ros2 service call /agv/start_mapping agv_bridge_v2_interfaces/srv/StartMapping "{}"
+# 保存并回定位：save_map（存 pbstream -> 转 pgm/yaml -> 拉定位）
+ros2 service call /agv/save_map agv_bridge_v2_interfaces/srv/SaveMap "{map_name: 'my_map_new'}"
+
+ros2 topic echo /agv/status   # mode: NAVIGATION / RELOCALIZING / MAPPING
+```
+
+全场景下 Nav2 导航进程与仿真进程均不需要重启，只有定位/建图子进程被切换。
 
 ### 键盘控制（teleop）
 

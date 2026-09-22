@@ -1,0 +1,11 @@
+# 切换定位地图：以 maps_dir/<map_name>.pbstream 重启 Cartographer 纯定位节点
+# 重启期间 pose_initialized=false（上位机不要下发导航指令），
+# 定位收敛后 AgvStatus.mode 自动回到 NAVIGATION。
+# 上位机通过 rosbridge 调用：
+#   {"op":"call_service","id":"l1","service":"/agv/load_map","args":{"map_name":"map0921"}}
+
+string map_name        # 地图名（不带扩展名，需存在 <map_name>.pbstream）
+---
+bool success
+string message
+string map_name        # 实际加载（重启中）的地图名

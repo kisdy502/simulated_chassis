@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Cartographer 3D 离线建图启动文件
-ros2 launch simulated_chassis slam3d_offline.launch.py
+ros2 launch simulated_chassis slam_offline.launch.py
 """
 
 import os

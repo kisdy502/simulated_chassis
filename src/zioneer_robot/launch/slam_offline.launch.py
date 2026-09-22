@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Cartographer 3D 离线建图启动文件
-ros2 launch zioneer_robot slam3d_offline.launch.py \
+ros2 launch zioneer_robot slam_offline.launch.py \
     bag_filenames:=/path/to/my_bag \
     save_state_filename:=/path/to/my_map_optimized.pbstream
 """
