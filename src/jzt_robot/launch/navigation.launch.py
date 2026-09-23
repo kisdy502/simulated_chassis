@@ -29,7 +29,6 @@ def generate_launch_description():
     pkg_share = get_package_share_directory('jzt_robot')
 
     nav2_params_file = os.path.join(pkg_share, 'param', 'nav2_params_mppi_cartographer_double_lidar.yaml')
-    rviz_config = os.path.join(pkg_share, 'rviz', 'nav2_double_lidar.rviz')
 
     declared_arguments = [
         DeclareLaunchArgument(
@@ -77,12 +76,11 @@ def generate_launch_description():
         }.items(),
     )
 
-    # RViz 可视化 (使用包装脚本强制软件渲染)
+    # 只启动空白 RViz：WSL 中加载完整配置会造成严重卡顿，所需显示项由用户手动添加。
     rviz_node = Node(
         package='rviz2',
         executable='/run_rviz.sh',
         name='rviz2',
-        arguments=['-d', rviz_config],
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen',
     )

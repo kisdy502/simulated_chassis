@@ -8,6 +8,7 @@
 #include <tf2_msgs/msg/tf_message.hpp>
 #include <rclcpp_lifecycle/state.hpp>
 #include <memory>
+#include <array>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -55,16 +56,19 @@ namespace three_wheel_controller
                                   const std::array<double, 3> &wheel_velocities,
                                   double &vx, double &vy, double &omega);
 
-    // 舵角最短路径归一化：将目标角度映射到 [-π, π] 并选择最短旋转方向
-    double normalizeSteeringAngle(double current, double target) const;
-
     // 速度限制与饱和
     void limitVelocities(std::array<double, 3> &wheel_speeds) const;
 
-    // 后退优化：优先反转轮速而非旋转舵轮180°
+    // 有界等价解：在 (α, v) 与 (α±π, -v) 中选择可达且转角最小的解
     void optimizeReverse(std::array<double, 3> &steering_angles,
                          std::array<double, 3> &wheel_speeds,
                          const std::array<double, 3> &current_angles);
+
+    // 舵轮未对齐期间抑制驱动轮速，避免轮子横向拖拽底盘
+    void scaleWheelSpeedsForSteeringAlignment(
+        const std::array<double, 3> &steering_angles,
+        std::array<double, 3> &wheel_speeds,
+        const std::array<double, 3> &current_angles) const;
 
     // 发布里程计（含TF）
     void publishOdometry(const rclcpp::Time &time, double vx, double vy, double omega);
@@ -98,6 +102,10 @@ namespace three_wheel_controller
     double max_wheel_speed_{15.0};           // rad/s (约1.5m/s / 0.1m)
     double cmd_timeout_{0.8};                // s
     bool enable_reverse_optimization_{true}; // 是否启用后退优化
+    double steering_hold_velocity_threshold_{0.01}; // 轮心线速度低于此值时保持当前舵角 (m/s)
+    double alignment_full_speed_angle_{0.174532925}; // 舵角误差 <= 10° 时全速
+    double alignment_stop_angle_{0.785398163};       // 舵角误差 >= 45° 时停止驱动
+    double reverse_switch_hysteresis_{0.087266463};  // 切换轮速方向的 5° 惩罚
     bool publish_tf_{false};
     std::string odom_frame_id_{"odom"};
     std::string base_frame_id_{"base_link"};
@@ -111,6 +119,7 @@ namespace three_wheel_controller
 
     // 上一周期的舵角（用于最短路径计算）
     std::array<double, 3> prev_steering_angles_{0.0, 0.0, 0.0};
+    std::array<int, 3> selected_drive_directions_{1, 1, 1};
 
   };
 

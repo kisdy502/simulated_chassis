@@ -136,3 +136,9 @@ ros2 action send_goal /agv/follow_edge \
 
 `Edge.hpp` / `MoveToMessage.hpp` 也随之去掉了全部 `to_json` / `from_json` 与
 `nlohmann::json` 依赖，`BaseMessage` 继承链一并取消 —— 对外契约完全由 IDL 定义。
+
+
+
+curl -X POST http://127.0.0.1:8090/api/v1/scheduler/release-charger 
+-H 'Content-Type: application/json' 
+-d '{"robot_code": "RB_20260922_00024"}'

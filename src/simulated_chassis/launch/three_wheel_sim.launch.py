@@ -133,17 +133,17 @@ def generate_launch_description():
         output='screen'
     )
     
-    # teleop = Node(
-    #     package='teleop_twist_keyboard',
-    #     executable='teleop_twist_keyboard',
-    #     name='teleop_twistkeyboard',
-    #     prefix='xterm -e',  # 在独立终端中运行
-    #     remappings=[
-    #         ('/cmd_vel', '/three_wheel_base_controller/cmd_vel'),  # 重映射
-    #     ],
+    teleop = Node(
+        package='teleop_twist_keyboard',
+        executable='teleop_twist_keyboard',
+        name='teleop_twistkeyboard',
+        prefix='xterm -e',  # 在独立终端中运行
+        remappings=[
+            ('/cmd_vel', '/three_wheel_base_controller/cmd_vel'),  # 重映射
+        ],
 
-    #     output='screen',  # 输出会显示在启动launch的终端中
-    # )
+        output='screen',  # 输出会显示在启动launch的终端中
+    )
     
     # joy 手柄驱动
     joy_node = Node(
@@ -194,7 +194,7 @@ def generate_launch_description():
         spawn_after_gazebo,
         controller_spawners,
         bridge,
-        # teleop, ##用游戏手柄替代键盘
+        teleop, ##用游戏手柄替代键盘
         joy_node,
         gamepad_teleop_node,
         odom_relay_node,

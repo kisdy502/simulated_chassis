@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Humble + Gazebo Fortress 差速机器人仿真启动文件 (Docker无头Gazebo + X11转发GUI)
+Humble + Gazebo Fortress 差速机器人仿真启动文件（带 Gazebo GUI）
 
 传感器：前270°激光 + 后270°激光 + IMU
 驱动方式：ros2_control + diff_drive_controller
@@ -63,9 +63,9 @@ def generate_launch_description():
         ],
     )
 
-    # 2. Gazebo (无头/Server模式)
+    # 2. Gazebo（Server + GUI，方便核对仿真世界与地图）
     gazebo = ExecuteProcess(
-        cmd=["ign", "gazebo", "-r", "-s", world_path],
+        cmd=["ign", "gazebo", "-r","-s", world_path],
         output="screen",
     )
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Cartographer 在线建图启动文件 (带RViz显示)
+Cartographer 在线建图启动文件
+
+RViz 由 navigation.launch.py 持续托管，定位/建图切换时本 launch 不重复启动 RViz。
 
 使用方法:
     ros2 launch jzt_robot slam.launch.py
@@ -18,11 +20,6 @@ def generate_launch_description():
     config_dir = os.path.join(
         get_package_share_directory('jzt_robot'),
         'config'
-    )
-
-    rviz_config = os.path.join(
-        get_package_share_directory('jzt_robot'),
-        'rviz', 'slam_double_lidar.rviz'
     )
 
     declared_arguments = [
@@ -69,26 +66,15 @@ def generate_launch_description():
         ],
     )
 
-    # RViz 可视化 (显示在Windows上)
-    rviz_node = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', rviz_config],
-        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
-        output='screen',
-    )
-
     return LaunchDescription([
         LogInfo(msg=['==========================================']),
-        LogInfo(msg=['Cartographer SLAM + RViz']),
+        LogInfo(msg=['Cartographer SLAM']),
         LogInfo(msg=['==========================================']),
 
         *declared_arguments,
 
         TimerAction(period=1.0, actions=[cartographer_node]),
         TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
-        TimerAction(period=3.0, actions=[rviz_node]),
 
-        LogInfo(msg=['SLAM + RViz started']),
+        LogInfo(msg=['SLAM started; using the persistent RViz from navigation.launch.py']),
     ])

@@ -36,6 +36,10 @@ three_wheel_base_controller:
     # 控制参数
     cmd_timeout: 0.5             # s
     enable_reverse_optimization: true
+    steering_hold_velocity_threshold: 0.01  # m/s，低速时保持当前舵角
+    alignment_full_speed_angle: 0.174533     # 10°，此误差内允许全速
+    alignment_stop_angle: 0.785398           # 45°，超过此误差先停轮摆舵
+    reverse_switch_hysteresis: 0.0872665     # 5°，防止正反转在临界点抖动
     publish_tf: false
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"

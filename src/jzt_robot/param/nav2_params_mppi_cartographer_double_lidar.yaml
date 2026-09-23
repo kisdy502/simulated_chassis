@@ -355,38 +355,4 @@ velocity_smoother:
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
 
-# 碰撞检测 MPPI → /cmd_vel_nav → velocity_smoother → /cmd_vel_smoothed → collision_monitor → /cmd_vel → relay → /diff_drive_controller/cmd_vel 
-collision_monitor:
-  ros__parameters:
-    use_sim_time: True
-    base_frame_id: "base_footprint"
-    odom_frame_id: "odom"
-    cmd_vel_in_topic: "cmd_vel_smoothed"
-    cmd_vel_out_topic: "cmd_vel"
-    transform_tolerance: 0.5
-    source_timeout: 5.0
-    stop_pub_timeout: 2.0
-    polygons: ["PolygonStop", "PolygonSlow"]
-    PolygonStop:
-      type: "polygon"
-      points: "[[0.4, 0.3], [0.4, -0.3], [0.0, -0.3], [0.0, 0.3]]"
-      action_type: "stop"
-      min_points: 4
-      visualize: True
-      polygon_pub_topic: "polygon_stop"
-    PolygonSlow:
-      type: "polygon"
-      points: "[[0.6, 0.4], [0.6, -0.4], [0.0, -0.4], [0.0, 0.4]]"
-      action_type: "slowdown"
-      min_points: 4
-      slowdown_ratio: 0.3
-      visualize: True
-      polygon_pub_topic: "polygon_slowdown"
-    observation_sources: ["scan_1", "scan_2"]
-    scan_1:
-      type: "scan"
-      topic: "/scan_1"
-    scan_2:
-      type: "scan"
-      topic: "/scan_2"
 

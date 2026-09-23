@@ -1,6 +1,7 @@
 
 #include "simulated_chassis/three_wheel_steering_controller.hpp"
 #include <cmath>
+#include <limits>
 
 namespace three_wheel_controller
 {
@@ -10,9 +11,9 @@ namespace three_wheel_controller
         // 默认轮位配置：基于你的URDF坐标
         // 前轮: (0.3, 0), 左后轮: (-0.15, 0.26), 右后轮: (-0.15, -0.26)
         wheel_configs_ = {
-            {"wheel_front_steering_joint", "wheel_front_wheel_joint", 0.3, 0.0, M_PI},
-            {"wheel_left_steering_joint", "wheel_left_wheel_joint", -0.15, 0.26, M_PI},
-            {"wheel_right_steering_joint", "wheel_right_wheel_joint", -0.15, -0.26, M_PI}};
+            {"wheel_front_steering_joint", "wheel_front_wheel_joint", 0.3, 0.0, M_PI / 2.0},
+            {"wheel_left_steering_joint", "wheel_left_wheel_joint", -0.15, 0.26, M_PI / 2.0},
+            {"wheel_right_steering_joint", "wheel_right_wheel_joint", -0.15, -0.26, M_PI / 2.0}};
     }
 
     controller_interface::InterfaceConfiguration
@@ -82,6 +83,14 @@ namespace three_wheel_controller
             node->declare_parameter<double>("cmd_timeout", cmd_timeout_);
         if (!node->has_parameter("enable_reverse_optimization"))
             node->declare_parameter<bool>("enable_reverse_optimization", enable_reverse_optimization_);
+        if (!node->has_parameter("steering_hold_velocity_threshold"))
+            node->declare_parameter<double>("steering_hold_velocity_threshold", steering_hold_velocity_threshold_);
+        if (!node->has_parameter("alignment_full_speed_angle"))
+            node->declare_parameter<double>("alignment_full_speed_angle", alignment_full_speed_angle_);
+        if (!node->has_parameter("alignment_stop_angle"))
+            node->declare_parameter<double>("alignment_stop_angle", alignment_stop_angle_);
+        if (!node->has_parameter("reverse_switch_hysteresis"))
+            node->declare_parameter<double>("reverse_switch_hysteresis", reverse_switch_hysteresis_);
         if (!node->has_parameter("publish_tf"))
             node->declare_parameter<bool>("publish_tf", publish_tf_);
         if (!node->has_parameter("odom_frame_id"))
@@ -114,9 +123,22 @@ namespace three_wheel_controller
         node->get_parameter("max_wheel_speed", max_wheel_speed_);
         node->get_parameter("cmd_timeout", cmd_timeout_);
         node->get_parameter("enable_reverse_optimization", enable_reverse_optimization_);
+        node->get_parameter("steering_hold_velocity_threshold", steering_hold_velocity_threshold_);
+        node->get_parameter("alignment_full_speed_angle", alignment_full_speed_angle_);
+        node->get_parameter("alignment_stop_angle", alignment_stop_angle_);
+        node->get_parameter("reverse_switch_hysteresis", reverse_switch_hysteresis_);
         node->get_parameter("publish_tf", publish_tf_);
         node->get_parameter("odom_frame_id", odom_frame_id_);
         node->get_parameter("base_frame_id", base_frame_id_);
+
+        if (alignment_full_speed_angle_ < 0.0 ||
+            alignment_stop_angle_ <= alignment_full_speed_angle_ ||
+            reverse_switch_hysteresis_ < 0.0 ||
+            steering_hold_velocity_threshold_ < 0.0)
+        {
+            RCLCPP_ERROR(node->get_logger(), "Invalid steering alignment/hold/hysteresis parameters");
+            return controller_interface::CallbackReturn::ERROR;
+        }
 
         // 根据最大线速度重新计算轮速上限（如果用户没指定）
         if (max_wheel_speed_ < 0.01)
@@ -271,6 +293,7 @@ namespace three_wheel_controller
 
         odom_x_ = odom_y_ = odom_yaw_ = 0.0;
         prev_steering_angles_ = {0.0, 0.0, 0.0};
+        selected_drive_directions_ = {1, 1, 1};
 
         return controller_interface::CallbackReturn::SUCCESS;
     }
@@ -333,18 +356,12 @@ namespace three_wheel_controller
 
             computeKinematics(vx, vy, omega, steering_angles, wheel_speeds);
 
-            // 5. 后退优化：优先反转轮速而非旋转舵轮180° ，舵轮转角限制在正负90度，必须反转轮速
+            // 5. 从物理等价的舵角/轮速中选择可达的最优解
             optimizeReverse(steering_angles, wheel_speeds, prev_steering_angles_);
 
-            // 6. 舵角最短路径归一化
-            for (size_t i = 0; i < 3; ++i)
-            {
-                steering_angles[i] = normalizeSteeringAngle(prev_steering_angles_[i], steering_angles[i]);
-                // 限制在最大转向角范围内
-                steering_angles[i] = std::clamp(steering_angles[i],
-                                                -wheel_configs_[i].max_steering_angle,
-                                                wheel_configs_[i].max_steering_angle);
-            }
+            // 6. 舵轮转动期间先降低驱动速度，舵角偏差过大时先原地摆舵
+            scaleWheelSpeedsForSteeringAlignment(
+                steering_angles, wheel_speeds, prev_steering_angles_);
 
             // 7. 轮速限制
             limitVelocities(wheel_speeds);
@@ -526,78 +543,112 @@ namespace three_wheel_controller
     }
 
     /**
-     * @brief 舵角最短路径归一化
+     * @brief 在有限舵角内选择等价的舵角/轮速
      *
-     * 将目标角度映射到与当前角度差值最小的等效角度
-     * 例如：current=179°, target=-179° → 实际转 +2°（到181°）
-     */
-    double ThreeWheelSteeringController::normalizeSteeringAngle(double current, double target) const
-    {
-        // 先归一化到 [-π, π]
-        auto normalize_pi = [](double angle)
-        {
-            while (angle > M_PI)
-                angle -= 2.0 * M_PI;
-            while (angle < -M_PI)
-                angle += 2.0 * M_PI;
-            return angle;
-        };
-
-        target = normalize_pi(target);
-        current = normalize_pi(current);
-
-        double diff = target - current;
-
-        // 找到最短路径的等效角度
-        while (diff > M_PI)
-        {
-            diff -= 2.0 * M_PI;
-            target -= 2.0 * M_PI;
-        }
-        while (diff < -M_PI)
-        {
-            diff += 2.0 * M_PI;
-            target += 2.0 * M_PI;
-        }
-
-        return target;
-    }
-
-    /**
-     * @brief 等价表示选择（后退优化）
-     *
-     * 每个目标舵角有两种物理等价的执行方式：(α, +v) 或 (α±180°, -v)。
-     * 选择既能落在最大转向角限位内、又离当前舵角最近的表示，
-     * 保证后续 clamp 只作为保险丝，不会截断出错误方向。
+     * 滚动方向满足 v*[cos(α), sin(α)] =
+     * (-v)*[cos(α±π), sin(α±π)]。枚举 α+kπ，只在物理限位内
+     * 比较真实转角，不对 revolute 关节使用跨限位的周期“捷径”。
      */
     void ThreeWheelSteeringController::optimizeReverse(
         std::array<double, 3> &steering_angles,
         std::array<double, 3> &wheel_speeds,
         const std::array<double, 3> &current_angles)
     {
-        auto ang_diff = [](double a, double b)
-        {
-            return std::abs(std::remainder(a - b, 2.0 * M_PI));
-        };
-
         for (size_t i = 0; i < 3; ++i)
         {
-            double target = steering_angles[i];
-            double flipped = (target > 0.0) ? target - M_PI : target + M_PI;
-            double max_steer = wheel_configs_[i].max_steering_angle;
-
-            const double out_of_range = 1000.0;
-            double cost_keep = ang_diff(target, current_angles[i]) +
-                               (std::abs(target) > max_steer ? out_of_range : 0.0);
-            double cost_flip = ang_diff(flipped, current_angles[i]) +
-                               (std::abs(flipped) > max_steer ? out_of_range : 0.0);
-
-            if (cost_flip < cost_keep)
+            const double linear_speed = std::abs(wheel_speeds[i]) * wheel_radius_;
+            if (linear_speed < steering_hold_velocity_threshold_)
             {
-                steering_angles[i] = flipped;
-                wheel_speeds[i] = -wheel_speeds[i];
+                steering_angles[i] = std::clamp(
+                    current_angles[i],
+                    -wheel_configs_[i].max_steering_angle,
+                    wheel_configs_[i].max_steering_angle);
+                wheel_speeds[i] = 0.0;
+                continue;
             }
+
+            const double raw_angle = steering_angles[i];
+            const double raw_speed = wheel_speeds[i];
+            const double max_steer = wheel_configs_[i].max_steering_angle;
+            double best_cost = std::numeric_limits<double>::infinity();
+            double best_angle = std::clamp(raw_angle, -max_steer, max_steer);
+            int best_direction = 0;
+
+            // atan2 输出 [-π, π]，k∈[-2,2] 已覆盖所有可能落入舵角限位的等价解。
+            for (int k = -2; k <= 2; ++k)
+            {
+                const double candidate = raw_angle + static_cast<double>(k) * M_PI;
+                const int direction = (std::abs(k) % 2 == 0) ? 1 : -1;
+                const double bounded_candidate = std::clamp(candidate, -max_steer, max_steer);
+                const double limit_overflow = std::abs(candidate - bounded_candidate);
+
+                // 在±90°附近允许保持上次轮速符号，将几度的越界量吸收在限位上。
+                // 这避免目标方向在 90° 两侧微小波动时，舵轮在 +90°/-90° 间往返跳变。
+                const bool inside_limit = limit_overflow <= 1e-9;
+                const bool keep_direction_in_hysteresis =
+                    direction == selected_drive_directions_[i] &&
+                    limit_overflow <= reverse_switch_hysteresis_;
+                if (!inside_limit && !keep_direction_in_hysteresis)
+                    continue;
+
+                double cost = std::abs(bounded_candidate - current_angles[i]);
+
+                // 等价解成本非常接近时，优先保持上次轮速符号，避免在边界抖动。
+                if (direction != selected_drive_directions_[i])
+                    cost += reverse_switch_hysteresis_;
+
+                // 关闭“优化”时优先正向轮速，但超出舵角限位时仍必须反转。
+                if (!enable_reverse_optimization_ && direction < 0)
+                    cost += 100.0;
+
+                if (cost < best_cost)
+                {
+                    best_cost = cost;
+                    best_angle = bounded_candidate;
+                    best_direction = direction;
+                }
+            }
+
+            // ±90° 限位对任意平面速度都应存在等价解；无解时安全停止该轮。
+            if (best_direction == 0)
+            {
+                steering_angles[i] = std::clamp(current_angles[i], -max_steer, max_steer);
+                wheel_speeds[i] = 0.0;
+                continue;
+            }
+
+            steering_angles[i] = best_angle;
+            wheel_speeds[i] = raw_speed * static_cast<double>(best_direction);
+            selected_drive_directions_[i] = best_direction;
         }
+    }
+
+    void ThreeWheelSteeringController::scaleWheelSpeedsForSteeringAlignment(
+        const std::array<double, 3> &steering_angles,
+        std::array<double, 3> &wheel_speeds,
+        const std::array<double, 3> &current_angles) const
+    {
+        double common_scale = 1.0;
+        for (size_t i = 0; i < 3; ++i)
+        {
+            const double error = std::abs(steering_angles[i] - current_angles[i]);
+            if (error <= alignment_full_speed_angle_)
+                continue;
+            if (error >= alignment_stop_angle_)
+            {
+                common_scale = 0.0;
+                break;
+            }
+
+            const double t = (error - alignment_full_speed_angle_) /
+                             (alignment_stop_angle_ - alignment_full_speed_angle_);
+            const double smooth_step = t * t * (3.0 - 2.0 * t);
+            common_scale = std::min(common_scale, 1.0 - smooth_step);
+        }
+
+        // 所有轮使用同一缩放比，保持三轮速度间的运动学比例。
+        for (auto &speed : wheel_speeds)
+            speed *= common_scale;
     }
 
     /**

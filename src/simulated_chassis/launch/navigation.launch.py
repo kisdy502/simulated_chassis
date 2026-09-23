@@ -40,7 +40,6 @@ def generate_launch_description():
 
     # ===== 文件路径 =====
     nav2_params_file = os.path.join(pkg_share, 'param', 'nav2_params_3d.yaml')
-    rviz_config = os.path.join(pkg_share, 'rviz', 'nav_3d.rviz')
     default_pbstream = os.path.join(pkg_share, 'maps', 'my_map_optimized.pbstream')
 
     # ===== 启动参数 =====
@@ -119,7 +118,6 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        arguments=['-d', rviz_config],
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen',
     )
