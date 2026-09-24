@@ -16,8 +16,11 @@
 #include "agv_bridge_v2_interfaces/srv/list_maps.hpp"
 #include "agv_bridge_v2_interfaces/srv/start_mapping.hpp"
 #include "agv_bridge_v2_interfaces/srv/save_map.hpp"
+#include "agv_bridge_v2_interfaces/srv/relocalize.hpp"
 
 #include "cartographer_ros_msgs/srv/write_state.hpp"
+#include "cartographer_ros_msgs/srv/start_trajectory.hpp"
+#include "cartographer_ros_msgs/srv/get_trajectory_states.hpp"
 
 #include "agv_bridge_v2/NavigationManager.hpp"
 #include "agv_bridge_v2/LocalizationMonitor.hpp"
@@ -30,6 +33,7 @@
 #include <atomic>
 #include <thread>
 #include <vector>
+#include <chrono>
 #include <sys/types.h>
 
 namespace agv_bridge
@@ -67,6 +71,7 @@ namespace agv_bridge
         using ListMaps = agv_bridge_v2_interfaces::srv::ListMaps;
         using StartMapping = agv_bridge_v2_interfaces::srv::StartMapping;
         using SaveMap = agv_bridge_v2_interfaces::srv::SaveMap;
+        using Relocalize = agv_bridge_v2_interfaces::srv::Relocalize;
         using AgvStatus = agv_bridge_v2_interfaces::msg::AgvStatus;
 
         /// 业务模式（/agv/status.mode）：与导航任务状态 state 正交
@@ -139,6 +144,10 @@ namespace agv_bridge
             std::shared_ptr<SaveMap::Request> request,
             std::shared_ptr<SaveMap::Response> response);
 
+        void handle_relocalize(
+            std::shared_ptr<Relocalize::Request> request,
+            std::shared_ptr<Relocalize::Response> response);
+
         // ===== 定时器回调 =====
         void publish_status();
         void publish_feedback();
@@ -177,6 +186,18 @@ namespace agv_bridge
         /// @brief 调 cartographer /write_state 保存 pbstream（超时 15s）
         bool call_write_state(const std::string &pbstream_abs_path, std::string &error);
 
+        /// @brief 拉起只加载冻结地图的 Cartographer，并通过 /start_trajectory 启动定位。
+        bool start_managed_localization(
+            const std::string &pbstream_abs_path,
+            const std::string &map_name,
+            const geometry_msgs::msg::Pose *initial_pose,
+            std::string &error);
+
+        bool load_remembered_pose(const std::string &map_name, geometry_msgs::msg::Pose &pose) const;
+        bool save_remembered_pose(const std::string &map_name,
+                                  const geometry_msgs::msg::Pose &pose,
+                                  std::string &error) const;
+
         // ===== 参数 =====
         std::string agv_id_ = "AGV001";
         double battery_level_ = 100.0;
@@ -190,6 +211,7 @@ namespace agv_bridge
         std::string robot_package_ = "jzt_robot";            // 机器人包（定位/建图 launch 所在包的默认值）
         std::string localization_launch_package_;            // 空 = 用 robot_package_
         std::string localization_launch_file_ = "localization.launch.py";
+        std::string localization_configuration_basename_;
         std::string slam_launch_package_;                    // 空 = 用 robot_package_
         std::string slam_launch_file_ = "slam.launch.py";
 
@@ -213,7 +235,11 @@ namespace agv_bridge
         mutable std::mutex proc_mutex_;
         std::atomic<bool> transition_in_progress_{false};   // 模式切换互斥（load/start_mapping/save_map）
         std::thread transition_thread_;               // 模式切换后台线程（析构时 join）
+        std::chrono::steady_clock::time_point last_pose_save_time_{};
+        rclcpp::CallbackGroup::SharedPtr cartographer_client_group_;
         rclcpp::Client<cartographer_ros_msgs::srv::WriteState>::SharedPtr write_state_client_;
+        rclcpp::Client<cartographer_ros_msgs::srv::StartTrajectory>::SharedPtr start_trajectory_client_;
+        rclcpp::Client<cartographer_ros_msgs::srv::GetTrajectoryStates>::SharedPtr trajectory_states_client_;
 
         // ===== ROS 组件 =====
         rclcpp_action::Server<FollowEdge>::SharedPtr follow_edge_server_;
@@ -223,6 +249,7 @@ namespace agv_bridge
         rclcpp::Service<ListMaps>::SharedPtr list_maps_srv_;
         rclcpp::Service<StartMapping>::SharedPtr start_mapping_srv_;
         rclcpp::Service<SaveMap>::SharedPtr save_map_srv_;
+        rclcpp::Service<Relocalize>::SharedPtr relocalize_srv_;
         rclcpp::Publisher<AgvStatus>::SharedPtr status_pub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
         rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;

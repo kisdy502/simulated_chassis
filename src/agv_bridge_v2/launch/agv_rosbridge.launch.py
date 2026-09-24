@@ -15,7 +15,7 @@ agv_rosbridge.launch.py —— rosbridge 架构下的 AGV 对接 launch
   ros2 launch agv_bridge_v2 agv_rosbridge.launch.py
   ros2 launch agv_bridge_v2 agv_rosbridge.launch.py port:=9090 agv_id:=three_wheel_agv
   # 托管定位（启用 /agv/load_map 切图，navigation launch 需 include_localization:=false）：
-  ros2 launch agv_bridge_v2 agv_rosbridge.launch.py pbstream_file:=$PWD/maps/my_map.pbstream
+  ros2 launch agv_bridge_v2 agv_rosbridge.launch.py pbstream_file:=$PWD/maps/my_map/my_map.pbstream
   # 换机器人（定位/建图 launch 从该包拉起）：
   ros2 launch agv_bridge_v2 agv_rosbridge.launch.py robot_package:=zioneer_robot
 
@@ -81,7 +81,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "maps_dir",
             default_value="maps",
-            description="地图目录（pgm/yaml/pbstream 三件套所在，相对启动 cwd）",
+            description="地图根目录（每张地图位于 <maps_dir>/<map_name>/，相对启动 cwd）",
         ),
         DeclareLaunchArgument(
             "pbstream_file",
@@ -136,7 +136,7 @@ def generate_launch_description():
             "services_glob",
             default_value=(
                 "['/rosapi/*', '/agv/set_control', '/agv/get_map', '/agv/load_map', "
-                "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map']"
+                "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize']"
             ),
             description="允许上位机调用的 service 白名单",
         ),

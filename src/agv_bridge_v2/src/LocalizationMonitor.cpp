@@ -94,6 +94,19 @@ namespace agv_bridge
         return is_initialized_;
     }
 
+    void LocalizationMonitor::reset()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        is_initialized_ = false;
+        tf_initialized_ = false;
+        tf_stable_count_ = 0;
+        have_previous_ = false;
+        continuous_yaw_ = 0.0;
+        last_raw_yaw_ = 0.0;
+        pose_stamped = geometry_msgs::msg::PoseStamped();
+        tf_buffer_.clear();
+    }
+
     // ============================================================
     //  checkTFStability() — Cartographer 纯定位模式
     //  判定依据：map→base_footprint TF 链完整 + 时间戳新鲜

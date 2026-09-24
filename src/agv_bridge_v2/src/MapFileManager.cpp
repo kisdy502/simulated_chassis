@@ -3,6 +3,7 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
@@ -45,6 +46,12 @@ namespace agv_bridge
         {
             struct stat st;
             return ::stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+        }
+
+        bool directoryExists(const std::string &path)
+        {
+            struct stat st;
+            return ::stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
         }
 
         std::string joinPath(const std::string &dir, const std::string &name)
@@ -131,6 +138,25 @@ namespace agv_bridge
         while (const dirent *entry = ::readdir(dir))
         {
             const std::string filename = entry->d_name;
+            if (filename == "." || filename == "..")
+            {
+                continue;
+            }
+
+            // 新结构：maps/<name>/<name>.{yaml,pgm,pbstream}
+            const std::string child_path = joinPath(maps_dir_, filename);
+            if (isValidMapName(filename) && directoryExists(child_path))
+            {
+                if (fileExists(joinPath(child_path, filename + ".yaml")))
+                    yaml_names.insert(filename);
+                if (fileExists(joinPath(child_path, filename + ".pgm")))
+                    pgm_names.insert(filename);
+                if (fileExists(joinPath(child_path, filename + ".pbstream")))
+                    pbstream_names.insert(filename);
+                continue;
+            }
+
+            // 旧结构：maps/<name>.{yaml,pgm,pbstream}
             const auto dot = filename.rfind('.');
             if (dot == std::string::npos || dot == 0)
             {
@@ -175,7 +201,44 @@ namespace agv_bridge
 
     std::string MapFileManager::pbstreamPath(const std::string &map_name) const
     {
+        const std::string nested = mapStem(map_name) + ".pbstream";
+        if (fileExists(nested))
+        {
+            return nested;
+        }
         return joinPath(maps_dir_, map_name + ".pbstream");
+    }
+
+    std::string MapFileManager::mapDirectory(const std::string &map_name) const
+    {
+        return joinPath(maps_dir_, map_name);
+    }
+
+    std::string MapFileManager::mapStem(const std::string &map_name) const
+    {
+        return joinPath(mapDirectory(map_name), map_name);
+    }
+
+    bool MapFileManager::ensureMapDirectory(
+        const std::string &map_name, std::string &error) const
+    {
+        if (!isValidMapName(map_name))
+        {
+            error = "地图名非法: " + map_name;
+            return false;
+        }
+
+        const std::string directory = mapDirectory(map_name);
+        if (directoryExists(directory))
+        {
+            return true;
+        }
+        if (::mkdir(directory.c_str(), 0755) == 0)
+        {
+            return true;
+        }
+        error = "无法创建地图目录 " + directory + ": " + std::strerror(errno);
+        return false;
     }
 
     bool MapFileManager::hasPbstream(const std::string &map_name) const
@@ -365,7 +428,10 @@ namespace agv_bridge
             error = "地图名非法（非空且不含路径分隔符）: " + map_name;
             return false;
         }
-        const std::string yaml_path = joinPath(maps_dir_, map_name + ".yaml");
+        const std::string nested_yaml = mapStem(map_name) + ".yaml";
+        const std::string yaml_path = fileExists(nested_yaml)
+                                          ? nested_yaml
+                                          : joinPath(maps_dir_, map_name + ".yaml");
         YamlMeta meta;
         if (!parseYaml(yaml_path, meta, error))
         {

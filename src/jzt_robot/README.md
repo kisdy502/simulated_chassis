@@ -57,10 +57,10 @@ ros2 launch jzt_robot navigation.launch.py \
 ros2 launch jzt_robot navigation.launch.py include_localization:=false
 
 ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
-    pbstream_file:=$PWD/maps/my_map_m_optimized.pbstream
+    pbstream_file:=$PWD/maps/my_map_m_optimized/my_map_m_optimized.pbstream
 #（agv_bridge_v2 默认 robot_package=jzt_robot，定位/建图 launch 从本包拉起）
 
-# 切图：地图三件套（.pbstream + .pgm + .yaml）放 maps/ 后
+# 切图：地图三件套放在 maps/<map_name>/ 子目录后
 ros2 service call /agv/load_map agv_bridge_v2_interfaces/srv/LoadMap "{map_name: 'my_map_2'}"
 ros2 topic echo /agv/status   # mode: RELOCALIZING -> NAVIGATION 即切换完成
 ```

@@ -31,14 +31,14 @@ three_wheel_base_controller:
     wheel_radius: 0.1
     max_linear_velocity: 1.5      # m/s
     max_angular_velocity: 1.0     # rad/s
-    max_wheel_speed: 15.0         # rad/s (=1.5/0.1)
+    # 与 URDF 驱动轮关节的 velocity="10.0" 上限保持一致，避免各轮被单独截断。
+    max_wheel_speed: 10.0         # rad/s (=1.0 m/s / 0.1 m)
 
     # 控制参数
     cmd_timeout: 0.5             # s
     enable_reverse_optimization: true
     steering_hold_velocity_threshold: 0.01  # m/s，低速时保持当前舵角
-    alignment_full_speed_angle: 0.174533     # 10°，此误差内允许全速
-    alignment_stop_angle: 0.785398           # 45°，超过此误差先停轮摆舵
+    alignment_full_speed_angle: 0.174533     # 10°，所有舵轮进入此误差后才允许驱动
     reverse_switch_hysteresis: 0.0872665     # 5°，防止正反转在临界点抖动
     publish_tf: false
     odom_frame_id: "odom"

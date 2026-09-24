@@ -30,6 +30,9 @@ namespace agv_bridge
         /// @brief 定位是否已初始化（map→base 变换可用且持续更新）
         bool isInitialized() const;
 
+        /// @brief 定位进程重启前清除旧 TF 与稳定计数，防止旧变换被误判为新定位收敛。
+        void reset();
+
         /// @brief 查询指定 frame 到 map 的 TF 变换
         bool getTransform(
             const std::string &frame,

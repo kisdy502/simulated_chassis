@@ -2,12 +2,20 @@
 
 #include "agv_bridge_v2/utils/TransformUtils.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
+#include <optional>
 #include <utility>
+
+#include "ament_index_cpp/get_package_share_directory.hpp"
+#include "cartographer_ros_msgs/msg/trajectory_states.hpp"
 
 #include <fcntl.h>
 #include <signal.h>
@@ -29,6 +37,7 @@ namespace agv_bridge
         {
             return "use_sim_time:=" + std::string(use_sim_time ? "true" : "false");
         }
+
     }
 
 
@@ -42,10 +51,39 @@ namespace agv_bridge
         create_interfaces();
         create_timers();
 
+        // ROS 接口创建完毕后再异步拉起初始定位。主线程进入 executor 后，
+        // 工作线程才能可靠收到 /start_trajectory 的响应。
+        if (!pbstream_file_.empty())
+        {
+            const std::string pbstream_abs = absolute_path(pbstream_file_);
+            const std::string name = file_stem(pbstream_abs);
+            {
+                std::lock_guard<std::mutex> lock(mode_mutex_);
+                map_name_ = name;
+                mode_ = MODE_RELOCALIZING;
+            }
+            transition_in_progress_.store(true);
+            transition_thread_ = std::thread([this, pbstream_abs, name]()
+            {
+                geometry_msgs::msg::Pose remembered_pose;
+                const bool has_pose = load_remembered_pose(name, remembered_pose);
+                std::string error;
+                if (!start_managed_localization(
+                        pbstream_abs, name, has_pose ? &remembered_pose : nullptr, error))
+                {
+                    RCLCPP_ERROR(this->get_logger(), "初始定位启动失败: %s (has_pose=%d)",
+                                 error.c_str(), has_pose);
+                    std::lock_guard<std::mutex> lock(mode_mutex_);
+                    mode_ = MODE_NAVIGATION;
+                }
+                transition_in_progress_.store(false);
+            });
+        }
+
         RCLCPP_INFO(this->get_logger(),
                     "AGV Nav Server 已启动 (agv_id=%s, map=%s)。上位机请通过 rosbridge 访问 "
                     "/agv/follow_edge、/agv/set_control、/agv/get_map、/agv/load_map、"
-                    "/agv/list_maps、/agv/status",
+                    "/agv/list_maps、/agv/relocalize、/agv/status",
                     agv_id_.c_str(), map_name_.c_str());
     }
 
@@ -92,6 +130,7 @@ namespace agv_bridge
         this->declare_parameter<std::string>("robot_package", "jzt_robot");
         this->declare_parameter<std::string>("localization_launch_package", "");
         this->declare_parameter<std::string>("localization_launch_file", "localization.launch.py");
+        this->declare_parameter<std::string>("localization_configuration_basename", "");
         this->declare_parameter<std::string>("slam_launch_package", "");
         this->declare_parameter<std::string>("slam_launch_file", "slam.launch.py");
         // 注意：use_sim_time 由 rclcpp 内置自动声明，这里只能读取，不能重复 declare
@@ -107,6 +146,7 @@ namespace agv_bridge
         this->get_parameter("robot_package", robot_package_);
         this->get_parameter("localization_launch_package", localization_launch_package_);
         this->get_parameter("localization_launch_file", localization_launch_file_);
+        this->get_parameter("localization_configuration_basename", localization_configuration_basename_);
         this->get_parameter("slam_launch_package", slam_launch_package_);
         this->get_parameter("slam_launch_file", slam_launch_file_);
 
@@ -118,6 +158,11 @@ namespace agv_bridge
         if (slam_launch_package_.empty())
         {
             slam_launch_package_ = robot_package_;
+        }
+        if (localization_configuration_basename_.empty())
+        {
+            localization_configuration_basename_ =
+                robot_package_ == "jzt_robot" ? "localization_2d.lua" : "localization_3d.lua";
         }
 
         if (feedback_interval_ms_ <= 0)
@@ -150,32 +195,20 @@ namespace agv_bridge
         RCLCPP_INFO(this->get_logger(), "地图目录: %s（机器人包: %s）",
                     map_file_manager_->mapsDir().c_str(), robot_package_.c_str());
 
+        // Cartographer 管理请求可能在后台线程同步等待响应，必须使用独立的
+        // Reentrant callback group，不能与 10Hz TF 查询定时器共用默认互斥组。
+        cartographer_client_group_ = this->create_callback_group(
+            rclcpp::CallbackGroupType::Reentrant);
+
         // cartographer /write_state 客户端（save_map 保存 pbstream 用）
         write_state_client_ = this->create_client<cartographer_ros_msgs::srv::WriteState>(
-            "/write_state");
+            "/write_state", rmw_qos_profile_services_default, cartographer_client_group_);
+        start_trajectory_client_ = this->create_client<cartographer_ros_msgs::srv::StartTrajectory>(
+            "/start_trajectory", rmw_qos_profile_services_default, cartographer_client_group_);
+        trajectory_states_client_ = this->create_client<cartographer_ros_msgs::srv::GetTrajectoryStates>(
+            "/get_trajectory_states", rmw_qos_profile_services_default, cartographer_client_group_);
 
-        if (!pbstream_file_.empty())
-        {
-            // 定位由本节点托管：初始地图即启动参数 pbstream_file，
-            // 之后 /agv/load_map 才能杀掉旧进程换新图
-            const std::string pbstream_abs = absolute_path(pbstream_file_);
-            {
-                std::lock_guard<std::mutex> lock(mode_mutex_);
-                map_name_ = file_stem(pbstream_abs);
-            }
-            if (!spawn_ros_launch(
-                    localization_launch_package_, localization_launch_file_,
-                    {"pbstream_file:=" + pbstream_abs, useSimTimeArg(use_sim_time_)},
-                    localization_pid_, "/tmp/agv_localization.log"))
-            {
-                std::lock_guard<std::mutex> lock(mode_mutex_);
-                map_name_.clear();
-                RCLCPP_ERROR(this->get_logger(),
-                             "初始定位子进程启动失败，请检查 %s / %s 是否安装（ros2 launch <pkg> <file>）",
-                             localization_launch_package_.c_str(), localization_launch_file_.c_str());
-            }
-        }
-        else
+        if (pbstream_file_.empty())
         {
             RCLCPP_WARN(this->get_logger(),
                         "未配置 pbstream_file：启动后无定位。可先 /agv/start_mapping 建图，"
@@ -234,6 +267,12 @@ namespace agv_bridge
         save_map_srv_ = this->create_service<SaveMap>(
             "/agv/save_map",
             std::bind(&AgvNavServerNode::handle_save_map, this,
+                      std::placeholders::_1, std::placeholders::_2));
+
+        // ---- service: /agv/relocalize（指定地图坐标重启 Cartographer 定位）----
+        relocalize_srv_ = this->create_service<Relocalize>(
+            "/agv/relocalize",
+            std::bind(&AgvNavServerNode::handle_relocalize, this,
                       std::placeholders::_1, std::placeholders::_2));
 
         // ---- topic: /agv/status (transient_local，新客户端一接入即可拿到最后一帧) ----
@@ -600,15 +639,16 @@ namespace agv_bridge
             RCLCPP_INFO(this->get_logger(), "load_map(%s)：停止旧定位进程...", name.c_str());
             stop_child_process(localization_pid_, "定位");
 
-            RCLCPP_INFO(this->get_logger(), "load_map(%s)：以新 pbstream 重启定位...", name.c_str());
-            if (!spawn_ros_launch(
-                    localization_launch_package_, localization_launch_file_,
-                    {"pbstream_file:=" + pbstream_abs, useSimTimeArg(use_sim_time_)},
-                    localization_pid_, "/tmp/agv_localization.log"))
+            geometry_msgs::msg::Pose remembered_pose;
+            const bool has_pose = load_remembered_pose(name, remembered_pose);
+            std::string error;
+            RCLCPP_INFO(this->get_logger(), "load_map(%s)：以%s初始位姿重启定位...",
+                        name.c_str(), has_pose ? "记忆的" : "全局搜索");
+            if (!start_managed_localization(
+                    pbstream_abs, name, has_pose ? &remembered_pose : nullptr, error))
             {
                 RCLCPP_ERROR(this->get_logger(),
-                             "load_map(%s)：定位进程重启失败，定位丢失（pose_initialized=false），"
-                             "请检查日志 /tmp/agv_localization.log", name.c_str());
+                             "load_map(%s)：定位进程重启失败: %s", name.c_str(), error.c_str());
                 std::lock_guard<std::mutex> lock(mode_mutex_);
                 mode_ = MODE_NAVIGATION;
             }
@@ -621,6 +661,83 @@ namespace agv_bridge
         response->message = "定位重启中，等待 /agv/status.mode: RELOCALIZING -> NAVIGATION";
 
         RCLCPP_INFO(this->get_logger(), "load_map(%s) -> 已发起定位重启", name.c_str());
+    }
+
+    void AgvNavServerNode::handle_relocalize(
+        std::shared_ptr<Relocalize::Request> request,
+        std::shared_ptr<Relocalize::Response> response)
+    {
+        const std::string name = request->map_name;
+        if (!MapFileManager::isValidMapName(name) ||
+            !std::isfinite(request->x) || !std::isfinite(request->y) ||
+            !std::isfinite(request->yaw))
+        {
+            response->success = false;
+            response->message = "地图名或 x/y/yaw 非法";
+            return;
+        }
+        if (!map_file_manager_ || !map_file_manager_->hasPbstream(name))
+        {
+            response->success = false;
+            response->message = "地图不存在或缺少 pbstream: " + name;
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            if (mode_ == MODE_MAPPING)
+            {
+                response->success = false;
+                response->message = "正在建图，请先保存地图";
+                return;
+            }
+        }
+        if (navigation_manager_ && navigation_manager_->isNavigating())
+        {
+            response->success = false;
+            response->message = "正在执行导航任务，请先取消后再重定位";
+            return;
+        }
+        if (transition_in_progress_.exchange(true))
+        {
+            response->success = false;
+            response->message = "上一次模式切换仍在进行中";
+            return;
+        }
+
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = request->x;
+        pose.position.y = request->y;
+        pose.position.z = 0.0;
+        pose.orientation = TransformUtils::yaw_to_quaternion(request->yaw);
+        const std::string pbstream_abs = map_file_manager_->pbstreamPath(name);
+
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            map_name_ = name;
+            mode_ = MODE_RELOCALIZING;
+        }
+        if (transition_thread_.joinable()) transition_thread_.join();
+        transition_thread_ = std::thread([this, name, pbstream_abs, pose]()
+        {
+            stop_child_process(localization_pid_, "定位");
+            std::string error;
+            if (!start_managed_localization(pbstream_abs, name, &pose, error))
+            {
+                RCLCPP_ERROR(this->get_logger(), "relocalize(%s) 失败: %s",
+                             name.c_str(), error.c_str());
+                std::lock_guard<std::mutex> lock(mode_mutex_);
+                mode_ = MODE_NAVIGATION;
+            }
+            else if (!save_remembered_pose(name, pose, error))
+            {
+                RCLCPP_WARN(this->get_logger(), "定位已启动，但保存位置记忆失败: %s", error.c_str());
+            }
+            transition_in_progress_.store(false);
+        });
+
+        response->success = true;
+        response->map_name = name;
+        response->message = "已接受重定位，等待 /agv/status.mode 从 RELOCALIZING 变为 NAVIGATION";
     }
 
     void AgvNavServerNode::handle_start_mapping(
@@ -746,15 +863,28 @@ namespace agv_bridge
             return;
         }
 
-        const std::string maps_dir = map_file_manager_->mapsDir();
-        const std::string pbstream_abs = map_file_manager_->pbstreamPath(name);
-        const std::string stem = maps_dir + "/" + name;
+        std::string directory_error;
+        if (!map_file_manager_->ensureMapDirectory(name, directory_error))
+        {
+            transition_in_progress_.store(false);
+            response->success = false;
+            response->message = directory_error;
+            return;
+        }
+
+        // 新地图统一保存到 maps/<name>/<name>.*，不再平铺到 maps 根目录。
+        const std::string stem = map_file_manager_->mapStem(name);
+        const std::string pbstream_abs = stem + ".pbstream";
+        // 建图结束时 map→base_link 已知；保存这份位姿并用它启动新图定位，
+        // 避免新轨迹错误地从地图原点开始。
+        const auto mapping_pose = localization_monitor_ ?
+            localization_monitor_->getCurrentPose() : std::nullopt;
 
         if (transition_thread_.joinable())
         {
             transition_thread_.join();
         }
-        transition_thread_ = std::thread([this, name, pbstream_abs, stem]()
+        transition_thread_ = std::thread([this, name, pbstream_abs, stem, mapping_pose]()
         {
             // 1. 保存 pbstream（cartographer /write_state）
             std::string error;
@@ -790,16 +920,18 @@ namespace agv_bridge
                 map_name_ = name;
                 mode_ = MODE_RELOCALIZING;
             }
-            if (!spawn_ros_launch(
-                    localization_launch_package_, localization_launch_file_,
-                    {"pbstream_file:=" + pbstream_abs, useSimTimeArg(use_sim_time_)},
-                    localization_pid_, "/tmp/agv_localization.log"))
+            const geometry_msgs::msg::Pose *initial_pose =
+                mapping_pose.has_value() ? &mapping_pose->pose : nullptr;
+            if (!start_managed_localization(pbstream_abs, name, initial_pose, error))
             {
                 RCLCPP_ERROR(this->get_logger(),
-                             "save_map(%s)：定位进程启动失败，请检查日志 /tmp/agv_localization.log",
-                             name.c_str());
+                             "save_map(%s)：定位进程启动失败: %s", name.c_str(), error.c_str());
                 std::lock_guard<std::mutex> lock(mode_mutex_);
                 mode_ = MODE_NAVIGATION;
+            }
+            else if (initial_pose && !save_remembered_pose(name, *initial_pose, error))
+            {
+                RCLCPP_WARN(this->get_logger(), "新图定位已启动，但保存初始位姿失败: %s", error.c_str());
             }
             transition_in_progress_.store(false);
             // 收敛后由 update_localization_monitor 把 RELOCALIZING 切回 NAVIGATION
@@ -903,6 +1035,38 @@ namespace agv_bridge
                 mode_ = MODE_NAVIGATION;
                 RCLCPP_INFO(this->get_logger(), "地图 %s 定位已收敛，mode -> NAVIGATION",
                             map_name_.c_str());
+            }
+        }
+
+        // 定位稳定后每 5 秒刷新当前地图的位置记忆。异常断电最多丢失约 5 秒，
+        // 下次启动或 load_map 时可直接从最近位姿开始匹配。
+        if (current)
+        {
+            std::string current_map;
+            bool navigation_mode = false;
+            {
+                std::lock_guard<std::mutex> lock(mode_mutex_);
+                current_map = map_name_;
+                navigation_mode = mode_ == MODE_NAVIGATION;
+            }
+            const auto now = std::chrono::steady_clock::now();
+            if (navigation_mode && !current_map.empty() &&
+                (last_pose_save_time_.time_since_epoch().count() == 0 ||
+                 now - last_pose_save_time_ >= std::chrono::seconds(5)))
+            {
+                const auto pose = localization_monitor_->getCurrentPose();
+                if (pose.has_value())
+                {
+                    std::string error;
+                    if (!save_remembered_pose(current_map, pose->pose, error))
+                    {
+                        RCLCPP_WARN(this->get_logger(), "更新位置记忆失败: %s", error.c_str());
+                    }
+                    else
+                    {
+                        last_pose_save_time_ = now;
+                    }
+                }
             }
         }
 
@@ -1277,6 +1441,188 @@ namespace agv_bridge
                          exit_code, cmdline.c_str(), log_path);
         }
         return ok;
+    }
+
+    bool AgvNavServerNode::start_managed_localization(
+        const std::string &pbstream_abs_path,
+        const std::string &map_name,
+        const geometry_msgs::msg::Pose *initial_pose,
+        std::string &error)
+    {
+        if (localization_monitor_) localization_monitor_->reset();
+        if (!spawn_ros_launch(
+                localization_launch_package_, localization_launch_file_,
+                {"pbstream_file:=" + pbstream_abs_path,
+                 "start_trajectory_with_default_topics:=false",
+                 useSimTimeArg(use_sim_time_)},
+                localization_pid_, "/tmp/agv_localization.log"))
+        {
+            error = "无法拉起定位 launch（详见 /tmp/agv_localization.log）";
+            return false;
+        }
+
+        if (!start_trajectory_client_->wait_for_service(std::chrono::seconds(30)))
+        {
+            error = "Cartographer /start_trajectory 服务 30 秒内未就绪";
+            stop_child_process(localization_pid_, "定位");
+            return false;
+        }
+
+        // launch 必须使用单个 gflags 参数
+        // "-start_trajectory_with_default_topics=false"。此时加载 pbstream 后只能有
+        // FROZEN/FINISHED 轨迹，不能已有 ACTIVE 轨迹；否则新轨迹会争用传感器 topics。
+        int frozen_trajectory_id = -1;
+        std::vector<int> active_trajectory_ids;
+        if (!trajectory_states_client_->wait_for_service(std::chrono::seconds(30)))
+        {
+            error = "Cartographer /get_trajectory_states 服务不可用";
+            stop_child_process(localization_pid_, "定位");
+            return false;
+        }
+        auto states_future = trajectory_states_client_->async_send_request(
+            std::make_shared<cartographer_ros_msgs::srv::GetTrajectoryStates::Request>());
+        // 服务名称会在 pbstream 完全加载前就出现。大地图加载期间 Cartographer
+        // 暂时不能处理请求，因此这里不能使用普通 service 的 5 秒短超时。
+        if (states_future.wait_for(std::chrono::seconds(60)) != std::future_status::ready)
+        {
+            error = "读取轨迹状态超时（60 秒，pbstream 可能仍在加载或 Cartographer 已异常）";
+            stop_child_process(localization_pid_, "定位");
+            return false;
+        }
+        const auto states = states_future.get()->trajectory_states;
+        for (size_t i = 0; i < states.trajectory_id.size() && i < states.trajectory_state.size(); ++i)
+        {
+            if (states.trajectory_state[i] ==
+                cartographer_ros_msgs::msg::TrajectoryStates::FROZEN)
+            {
+                // 多轨迹 pbstream 优先使用最后一条冻结轨迹作为相对位姿参照。
+                frozen_trajectory_id = std::max(frozen_trajectory_id, states.trajectory_id[i]);
+            }
+            else if (states.trajectory_state[i] ==
+                     cartographer_ros_msgs::msg::TrajectoryStates::ACTIVE)
+            {
+                active_trajectory_ids.push_back(states.trajectory_id[i]);
+            }
+        }
+
+        if (!active_trajectory_ids.empty())
+        {
+            error = "Cartographer 加载地图后意外存在 ACTIVE 轨迹；请确认 localization.launch.py "
+                    "传入的是单个参数 -start_trajectory_with_default_topics=false，且同一 ROS domain "
+                    "没有第二个 cartographer_node。为避免破坏轨迹，不自动 finish";
+            stop_child_process(localization_pid_, "定位");
+            return false;
+        }
+
+        if (initial_pose && frozen_trajectory_id < 0)
+        {
+            error = "pbstream 中没有可作为初始位姿参照的冻结轨迹";
+            stop_child_process(localization_pid_, "定位");
+            return false;
+        }
+
+        auto request = std::make_shared<cartographer_ros_msgs::srv::StartTrajectory::Request>();
+        try
+        {
+            request->configuration_directory =
+                ament_index_cpp::get_package_share_directory(localization_launch_package_) + "/config";
+        }
+        catch (const std::exception &e)
+        {
+            error = std::string("找不到定位配置包: ") + e.what();
+            stop_child_process(localization_pid_, "定位");
+            return false;
+        }
+        request->configuration_basename = localization_configuration_basename_;
+        request->use_initial_pose = initial_pose != nullptr;
+        if (initial_pose)
+        {
+            request->initial_pose = *initial_pose;
+            request->relative_to_trajectory_id = frozen_trajectory_id;
+        }
+
+        auto future = start_trajectory_client_->async_send_request(request);
+        if (future.wait_for(std::chrono::seconds(60)) != std::future_status::ready)
+        {
+            error = "/start_trajectory 调用超时（60 秒）";
+            stop_child_process(localization_pid_, "定位");
+            return false;
+        }
+        const auto result = future.get();
+        if (result->status.code != 0)
+        {
+            error = "/start_trajectory 被拒绝: " + result->status.message;
+            stop_child_process(localization_pid_, "定位");
+            return false;
+        }
+
+        RCLCPP_INFO(this->get_logger(), "地图 %s 定位轨迹已启动%s",
+                    map_name.c_str(), initial_pose ? "（使用指定初始位姿）" : "（无初始位姿，全局搜索）");
+        return true;
+    }
+
+    bool AgvNavServerNode::load_remembered_pose(
+        const std::string &map_name, geometry_msgs::msg::Pose &pose) const
+    {
+        const std::string path = map_file_manager_->mapDirectory(map_name) + "/last_pose.yaml";
+        std::ifstream in(path);
+        if (!in) return false;
+
+        
+
+        double x = 0.0, y = 0.0, yaw = 0.0;
+        bool have_x = false, have_y = false, have_yaw = false;
+        std::string key;
+        while (in >> key)
+        {
+            double value = 0.0;
+            if (!(in >> value)) return false;
+            if (key == "x:") { x = value; have_x = true; }
+            else if (key == "y:") { y = value; have_y = true; }
+            else if (key == "yaw:") { yaw = value; have_yaw = true; }
+        }
+        if (!have_x || !have_y || !have_yaw ||
+            !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(yaw)) return false;
+
+        pose.position.x = x;
+        pose.position.y = y;
+        pose.position.z = 0.0;
+        pose.orientation = TransformUtils::yaw_to_quaternion(yaw);
+        RCLCPP_INFO(this->get_logger(), "map_name= %s,last_pose配置完整路径：%s",map_name.c_str(), path.c_str());
+        return true;
+    }
+
+    bool AgvNavServerNode::save_remembered_pose(
+        const std::string &map_name,
+        const geometry_msgs::msg::Pose &pose,
+        std::string &error) const
+    {
+        std::string directory_error;
+        if (!map_file_manager_->ensureMapDirectory(map_name, directory_error))
+        {
+            error = directory_error;
+            return false;
+        }
+        const std::string path = map_file_manager_->mapDirectory(map_name) + "/last_pose.yaml";
+        const std::string temporary = path + ".tmp";
+        std::ofstream out(temporary, std::ios::trunc);
+        if (!out)
+        {
+            error = "无法写入位置记忆: " + temporary;
+            return false;
+        }
+        out << std::setprecision(17)
+            << "x: " << pose.position.x << '\n'
+            << "y: " << pose.position.y << '\n'
+            << "yaw: " << TransformUtils::quaternion_to_yaw(pose.orientation) << '\n';
+        out.close();
+        if (!out || std::rename(temporary.c_str(), path.c_str()) != 0)
+        {
+            error = "提交位置记忆失败: " + path;
+            std::remove(temporary.c_str());
+            return false;
+        }
+        return true;
     }
 
     bool AgvNavServerNode::call_write_state(const std::string &pbstream_abs_path, std::string &error)

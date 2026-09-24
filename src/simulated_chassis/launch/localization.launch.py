@@ -22,50 +22,63 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory('simulated_chassis')
+    pkg_share = get_package_share_directory("simulated_chassis")
 
-    cartographer_config_dir = os.path.join(pkg_share, 'config')
-    default_pbstream = os.path.join(pkg_share, 'maps', 'my_map_optimized.pbstream')
+    cartographer_config_dir = os.path.join(pkg_share, "config")
+    default_pbstream = os.path.join(pkg_share, "maps", "my_map_optimized.pbstream")
 
     declared_arguments = [
         DeclareLaunchArgument(
-            'pbstream_file',
+            "pbstream_file",
             default_value=default_pbstream,
-            description='Cartographer pbstream 地图文件'
+            description="Cartographer pbstream 地图文件",
         ),
         DeclareLaunchArgument(
-            'configuration_basename',
-            default_value='localization_3d.lua',
-            description='Cartographer 定位配置文件'
+            "configuration_basename",
+            default_value="localization_3d.lua",
+            description="Cartographer 定位配置文件",
         ),
         DeclareLaunchArgument(
-            'use_sim_time',
-            default_value='true',
-            description='使用仿真时间'
+            "use_sim_time", default_value="true", description="使用仿真时间"
+        ),
+        DeclareLaunchArgument(
+            "start_trajectory_with_default_topics",
+            default_value="true",
+            description="是否自动从零位姿启动轨迹；bridge 托管时设为 false",
         ),
     ]
 
-    use_sim_time = LaunchConfiguration('use_sim_time')
+    use_sim_time = LaunchConfiguration("use_sim_time")
 
     # ===== Cartographer 定位节点 =====
     cartographer_node = Node(
-        package='cartographer_ros',
-        executable='cartographer_node',
-        name='cartographer_node',
-        output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
+        package="cartographer_ros",
+        executable="cartographer_node",
+        name="cartographer_node",
+        output="screen",
+        parameters=[{"use_sim_time": use_sim_time}],
         arguments=[
-            '-configuration_directory', cartographer_config_dir,
-            '-configuration_basename', LaunchConfiguration('configuration_basename'),
-            '-load_state_filename', LaunchConfiguration('pbstream_file'),
-            '--ros-args',
-            '--log-level', 'WARN',
+            "-configuration_directory",
+            cartographer_config_dir,
+            "-configuration_basename",
+            LaunchConfiguration("configuration_basename"),
+            "-load_state_filename",
+            LaunchConfiguration("pbstream_file"),
+            # gflags 的 bool flag 不支持空格分隔（"-flag false" 会解析成 true），
+            # 必须等号连写成单个 argv token："-flag=false"
+            [
+                "-start_trajectory_with_default_topics=",
+                LaunchConfiguration("start_trajectory_with_default_topics"),
+            ],
+            "--ros-args",
+            "--log-level",
+            "WARN",
         ],
         remappings=[
-            ('points2_1', '/points2_1'),
-            ('points2_2', '/points2_2'),
-            ('odom', '/odom'),
-            ('imu', '/imu'),
+            ("points2_1", "/points2_1"),
+            ("points2_2", "/points2_2"),
+            ("odom", "/odom"),
+            ("imu", "/imu"),
         ],
     )
 
@@ -74,20 +87,28 @@ def generate_launch_description():
     # (resolution/publish_period_sec/include_frozen_submaps/include_unfrozen_submaps/
     #  occupancy_grid_topic)，min_z/max_z/z_voxel_size/trajectory_id 均无效，已移除。
     occupancy_grid_node = Node(
-        package='cartographer_ros',
-        executable='cartographer_occupancy_grid_node',
-        name='occupancy_grid_node',
-        output='screen',
-        parameters=[{
-            'use_sim_time': use_sim_time,
-            'resolution': 0.05,
-            'publish_period_sec': 1.0,
-        }],
+        package="cartographer_ros",
+        executable="cartographer_occupancy_grid_node",
+        name="occupancy_grid_node",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+                "resolution": 0.05,
+                "publish_period_sec": 1.0,
+                # 纯定位：只显示 pbstream 中冻结的地图
+                "include_frozen_submaps": True,
+                # 不把定位过程中产生的活动 submap 画进 /map
+                "include_unfrozen_submaps": False,
+            }
+        ],
     )
 
-    return LaunchDescription([
-        LogInfo(msg=['Cartographer 3D Localization（独立重启单元，与 nav2 解耦）']),
-        *declared_arguments,
-        TimerAction(period=0.0, actions=[cartographer_node]),
-        TimerAction(period=1.5, actions=[occupancy_grid_node]),
-    ])
+    return LaunchDescription(
+        [
+            LogInfo(msg=["Cartographer 3D Localization（独立重启单元，与 nav2 解耦）"]),
+            *declared_arguments,
+            TimerAction(period=0.0, actions=[cartographer_node]),
+            TimerAction(period=1.5, actions=[occupancy_grid_node]),
+        ]
+    )

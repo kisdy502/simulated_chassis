@@ -87,8 +87,6 @@ namespace three_wheel_controller
             node->declare_parameter<double>("steering_hold_velocity_threshold", steering_hold_velocity_threshold_);
         if (!node->has_parameter("alignment_full_speed_angle"))
             node->declare_parameter<double>("alignment_full_speed_angle", alignment_full_speed_angle_);
-        if (!node->has_parameter("alignment_stop_angle"))
-            node->declare_parameter<double>("alignment_stop_angle", alignment_stop_angle_);
         if (!node->has_parameter("reverse_switch_hysteresis"))
             node->declare_parameter<double>("reverse_switch_hysteresis", reverse_switch_hysteresis_);
         if (!node->has_parameter("publish_tf"))
@@ -125,14 +123,12 @@ namespace three_wheel_controller
         node->get_parameter("enable_reverse_optimization", enable_reverse_optimization_);
         node->get_parameter("steering_hold_velocity_threshold", steering_hold_velocity_threshold_);
         node->get_parameter("alignment_full_speed_angle", alignment_full_speed_angle_);
-        node->get_parameter("alignment_stop_angle", alignment_stop_angle_);
         node->get_parameter("reverse_switch_hysteresis", reverse_switch_hysteresis_);
         node->get_parameter("publish_tf", publish_tf_);
         node->get_parameter("odom_frame_id", odom_frame_id_);
         node->get_parameter("base_frame_id", base_frame_id_);
 
         if (alignment_full_speed_angle_ < 0.0 ||
-            alignment_stop_angle_ <= alignment_full_speed_angle_ ||
             reverse_switch_hysteresis_ < 0.0 ||
             steering_hold_velocity_threshold_ < 0.0)
         {
@@ -184,22 +180,7 @@ namespace three_wheel_controller
         steering_state_ifaces_.clear();
         drive_state_ifaces_.clear();
 
-        // ===== 打印所有可用命令接口 =====
-        RCLCPP_INFO(get_node()->get_logger(), "=== Available COMMAND interfaces ===");
-        for (const auto &iface : command_interfaces_)
-        {
-            RCLCPP_INFO(get_node()->get_logger(), "  [CMD] %s", iface.get_name().c_str());
-        }
-        RCLCPP_INFO(get_node()->get_logger(), "=======================================");
-
-        // ===== 打印所有可用状态接口 =====
-        RCLCPP_INFO(get_node()->get_logger(), "=== Available STATE interfaces ===");
-        for (const auto &iface : state_interfaces_)
-        {
-            RCLCPP_INFO(get_node()->get_logger(), "  [STATE] %s", iface.get_name().c_str());
-        }
-        RCLCPP_INFO(get_node()->get_logger(), "=======================================");
-
+        // 按关节名查找接口，不依赖 ros2_control 提供的接口顺序。
         auto find_cmd = [&](const std::string &interface_name) -> hardware_interface::LoanedCommandInterface *
         {
             auto it = std::find_if(command_interfaces_.begin(), command_interfaces_.end(),
@@ -232,15 +213,7 @@ namespace three_wheel_controller
         for (const auto &wheel : wheel_configs_)
         {
             auto *steer_pos = find_state(wheel.steering_joint_name + "/position");
-            // auto *steer_vel = find_state(wheel.steering_joint_name + "/velocity");
-            // auto *wheel_pos = find_state(wheel.wheel_joint_name + "/position");
             auto *wheel_vel = find_state(wheel.wheel_joint_name + "/velocity");
-
-            // ✅ 打印每个接口的查找结果
-            RCLCPP_INFO(get_node()->get_logger(),
-                        "  steer_pos: %s, wheel_vel: %s",
-                        steer_pos ? "OK" : "NULL",
-                        wheel_vel ? "OK" : "NULL");
 
             if (!steer_pos || !wheel_vel)
             {
@@ -251,49 +224,14 @@ namespace three_wheel_controller
             drive_state_ifaces_.push_back(std::ref(*wheel_vel));
         }
 
-        // ✅ 打印 steering_state_ifaces_ 的内容
-        RCLCPP_INFO(get_node()->get_logger(), "steering_state_ifaces_ size: %zu", steering_state_ifaces_.size());
-        for (size_t i = 0; i < steering_state_ifaces_.size(); ++i)
-        {
-            RCLCPP_INFO(get_node()->get_logger(),
-                        "  steering_state_ifaces_[%zu]: %s",
-                        i,
-                        steering_state_ifaces_[i].get().get_name().c_str());
-        }
-
-        // ✅ 打印 drive_state_ifaces_ 的内容
-        RCLCPP_INFO(get_node()->get_logger(), "drive_state_ifaces_ size: %zu", drive_state_ifaces_.size());
-        for (size_t i = 0; i < drive_state_ifaces_.size(); ++i)
-        {
-            RCLCPP_INFO(get_node()->get_logger(),
-                        "  drive_state_ifaces_[%zu]: %s",
-                        i,
-                        drive_state_ifaces_[i].get().get_name().c_str());
-        }
-
-        // ✅ 打印 steering_cmds_ 的内容
-        RCLCPP_INFO(get_node()->get_logger(), "steering_cmds_ size: %zu", steering_cmds_.size());
-        for (size_t i = 0; i < steering_cmds_.size(); ++i)
-        {
-            RCLCPP_INFO(get_node()->get_logger(),
-                        "  steering_cmds_[%zu]: %s",
-                        i,
-                        steering_cmds_[i].get().get_name().c_str());
-        }
-
-        // ✅ 打印 drive_cmds_ 的内容
-        RCLCPP_INFO(get_node()->get_logger(), "drive_cmds_ size: %zu", drive_cmds_.size());
-        for (size_t i = 0; i < drive_cmds_.size(); ++i)
-        {
-            RCLCPP_INFO(get_node()->get_logger(),
-                        "  drive_cmds_[%zu]: %s",
-                        i,
-                        drive_cmds_[i].get().get_name().c_str());
-        }
-
         odom_x_ = odom_y_ = odom_yaw_ = 0.0;
-        prev_steering_angles_ = {0.0, 0.0, 0.0};
+        actual_steering_angles_ = {0.0, 0.0, 0.0};
+        actual_wheel_velocities_ = {0.0, 0.0, 0.0};
+        commanded_steering_angles_ = {0.0, 0.0, 0.0};
         selected_drive_directions_ = {1, 1, 1};
+
+        RCLCPP_INFO(get_node()->get_logger(),
+                    "Three-wheel steering controller activated with 3 steering and 3 drive interfaces");
 
         return controller_interface::CallbackReturn::SUCCESS;
     }
@@ -309,7 +247,8 @@ namespace three_wheel_controller
     controller_interface::return_type
     ThreeWheelSteeringController::update(const rclcpp::Time &time, const rclcpp::Duration &period)
     {
-        // 1. 读取当前关节状态
+        // 阶段1：采集真实关节状态。后续的等价解选择和对齐判断
+        // 都必须使用这份状态，不能使用上一周期的目标命令。
         if (!readCurrentWheelStates())
         {
             return controller_interface::return_type::ERROR;
@@ -318,107 +257,111 @@ namespace three_wheel_controller
         double vx = 0.0;
         double vy = 0.0;
         double omega = 0.0;
+        getLimitedCommand(time, vx, vy, omega);
 
-        if (last_cmd_)
+        // 阶段2：逆运动学生成每个轮组的目标舵角和轮速。
+        std::array<double, 3> steering_angles{0.0, 0.0, 0.0};
+        std::array<double, 3> wheel_speeds{0.0, 0.0, 0.0};
+        computeKinematics(vx, vy, omega, steering_angles, wheel_speeds);
+
+        // 阶段3：在 (α, v) 与 (α±π, -v) 中，基于真实舵角选择转动最小的可达解。
+        // 零速时 optimizeReverse() 会保持最后的真实舵角，不强制回零。
+        optimizeReverse(steering_angles, wheel_speeds, actual_steering_angles_);
+
+        // 阶段4：严格“先摆舵，后驱动”。任一舵轮未对齐时，三个驱动轮都为零速。
+        scaleWheelSpeedsForSteeringAlignment(
+            steering_angles, wheel_speeds, actual_steering_angles_);
+        limitVelocities(wheel_speeds);
+
+        // 阶段5：下发命令。目标舵角只用于记录，不会写回真实舵角缓存。
+        writeWheelCommands(steering_angles, wheel_speeds);
+        commanded_steering_angles_ = steering_angles;
+
+        // 阶段6：用真实舵角和真实轮速反算底盘运动，更新里程计。
+        updateOdometryFromWheelStates(time, period);
+
+        return controller_interface::return_type::OK;
+    }
+
+    void ThreeWheelSteeringController::getLimitedCommand(
+        const rclcpp::Time &time, double &vx, double &vy, double &omega)
+    {
+        vx = 0.0;
+        vy = 0.0;
+        omega = 0.0;
+
+        // 没有指令或指令超时时安全停车。不修改 last_cmd_ 消息本身，
+        // 避免控制循环与 ROS 订阅回调同时写入同一个对象。
+        if (!last_cmd_ || (time - last_cmd_time_).seconds() >= cmd_timeout_)
         {
-            double dt = (time - last_cmd_time_).seconds();
-            // RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 10000,
-            //                      "time=%.3f, last_cmd_time=%.3f, dt=%.3f",
-            //                      time.seconds(), last_cmd_time_.seconds(), dt);
-            if (dt < cmd_timeout_) // 0.5秒超时
+            return;
+        }
+
+        vx = last_cmd_->linear.x;
+        vy = last_cmd_->linear.y;
+        omega = last_cmd_->angular.z;
+
+        // 线速度按向量等比限幅，保留 vx/vy 的方向。
+        const double linear_speed = std::hypot(vx, vy);
+        if (linear_speed > max_linear_velocity_)
+        {
+            const double scale = max_linear_velocity_ / linear_speed;
+            vx *= scale;
+            vy *= scale;
+        }
+        omega = std::clamp(omega, -max_angular_velocity_, max_angular_velocity_);
+    }
+
+    void ThreeWheelSteeringController::writeWheelCommands(
+        const std::array<double, 3> &steering_angles,
+        const std::array<double, 3> &wheel_speeds)
+    {
+        for (size_t i = 0; i < 3; ++i)
+        {
+            steering_cmds_[i].get().set_value(steering_angles[i]);
+            drive_cmds_[i].get().set_value(wheel_speeds[i]);
+        }
+    }
+
+    void ThreeWheelSteeringController::updateOdometryFromWheelStates(
+        const rclcpp::Time &time, const rclcpp::Duration &period)
+    {
+        double estimated_vx = 0.0;
+        double estimated_vy = 0.0;
+        double estimated_omega = 0.0;
+        computeForwardKinematics(
+            actual_steering_angles_, actual_wheel_velocities_,
+            estimated_vx, estimated_vy, estimated_omega);
+
+        const double dt = period.seconds();
+        if (dt > 0.0 && dt < 1.0)
+        {
+            if (std::abs(estimated_omega) < 1e-6)
             {
-                vx = last_cmd_->linear.x;
-                vy = last_cmd_->linear.y;
-                omega = last_cmd_->angular.z;
+                odom_x_ += (estimated_vx * std::cos(odom_yaw_) -
+                            estimated_vy * std::sin(odom_yaw_)) * dt;
+                odom_y_ += (estimated_vx * std::sin(odom_yaw_) +
+                            estimated_vy * std::cos(odom_yaw_)) * dt;
             }
             else
             {
-                last_cmd_->linear.x = 0.0;
-                last_cmd_->linear.y = 0.0;
-                last_cmd_->angular.z = 0.0;
-                // 可选：打一次日志
-                // RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 15000,
-                //                      "Command timeout, zeroing velocity");
+                const double delta_yaw = estimated_omega * dt;
+                const double speed = std::hypot(estimated_vx, estimated_vy);
+                const double radius = speed / estimated_omega;
+                const double heading = std::atan2(estimated_vy, estimated_vx) + odom_yaw_;
+
+                odom_x_ += radius * (std::sin(heading + delta_yaw) - std::sin(heading));
+                odom_y_ += -radius * (std::cos(heading + delta_yaw) - std::cos(heading));
+                odom_yaw_ += delta_yaw;
             }
 
-            // 3. 输入速度限制（保护）
-            double v_norm = std::hypot(vx, vy);
-            if (v_norm > max_linear_velocity_)
-            {
-                double scale = max_linear_velocity_ / v_norm;
-                vx *= scale;
-                vy *= scale;
-            }
-            omega = std::clamp(omega, -max_angular_velocity_, max_angular_velocity_);
-
-            std::array<double, 3> steering_angles{0.0, 0.0, 0.0};
-            std::array<double, 3> wheel_speeds{0.0, 0.0, 0.0};
-
-            computeKinematics(vx, vy, omega, steering_angles, wheel_speeds);
-
-            // 5. 从物理等价的舵角/轮速中选择可达的最优解
-            optimizeReverse(steering_angles, wheel_speeds, prev_steering_angles_);
-
-            // 6. 舵轮转动期间先降低驱动速度，舵角偏差过大时先原地摆舵
-            scaleWheelSpeedsForSteeringAlignment(
-                steering_angles, wheel_speeds, prev_steering_angles_);
-
-            // 7. 轮速限制
-            limitVelocities(wheel_speeds);
-
-            // 8. 写入硬件
-            for (size_t i = 0; i < 3; ++i)
-            {
-                steering_cmds_[i].get().set_value(steering_angles[i]);
-                drive_cmds_[i].get().set_value(wheel_speeds[i]);
-            }
-
-            // 9. 记录当前舵角供下一周期使用
-            prev_steering_angles_ = steering_angles;
-
-            // 10. 读实际舵角+轮速 → 前向运动学反算实际速度
-            std::array<double, 3> actual_steering{0, 0, 0};
-            std::array<double, 3> actual_wheel_vel{0, 0, 0};
-            for (size_t i = 0; i < 3; ++i)
-            {
-                actual_steering[i] = steering_state_ifaces_[i].get().get_value();
-                actual_wheel_vel[i] = drive_state_ifaces_[i].get().get_value();
-            }
-            double est_vx, est_vy, est_omega;
-            computeForwardKinematics(actual_steering, actual_wheel_vel, est_vx, est_vy, est_omega);
-
-            // 11. 用反算的实际速度做里程计积分
-            double dt2 = period.seconds();
-            if (dt2 > 0.0 && dt2 < 1.0)
-            {
-                if (std::abs(est_omega) < 1e-6)
-                {
-                    odom_x_ += est_vx * std::cos(odom_yaw_) * dt2 - est_vy * std::sin(odom_yaw_) * dt2;
-                    odom_y_ += est_vx * std::sin(odom_yaw_) * dt2 + est_vy * std::cos(odom_yaw_) * dt2;
-                }
-                else
-                {
-                    double dtheta = est_omega * dt2;
-                    double v = std::hypot(est_vx, est_vy);
-                    double R = v / est_omega;
-                    double theta0 = std::atan2(est_vy, est_vx) + odom_yaw_;
-
-                    odom_x_ += R * (std::sin(theta0 + dtheta) - std::sin(theta0));
-                    odom_y_ += -R * (std::cos(theta0 + dtheta) - std::cos(theta0));
-                    odom_yaw_ += dtheta;
-                }
-                while (odom_yaw_ > M_PI)
-                    odom_yaw_ -= 2.0 * M_PI;
-                while (odom_yaw_ < -M_PI)
-                    odom_yaw_ += 2.0 * M_PI;
-            }
-
-            publishOdometry(time, est_vx, est_vy, est_omega);
-
-            return controller_interface::return_type::OK;
+            while (odom_yaw_ > M_PI)
+                odom_yaw_ -= 2.0 * M_PI;
+            while (odom_yaw_ < -M_PI)
+                odom_yaw_ += 2.0 * M_PI;
         }
 
-        return controller_interface::return_type::OK;
+        publishOdometry(time, estimated_vx, estimated_vy, estimated_omega);
     }
 
     // ==================== 核心算法 ====================
@@ -447,9 +390,6 @@ namespace three_wheel_controller
 
             steering_angles[i] = std::atan2(vyi, vxi);
             wheel_speeds[i] = std::hypot(vxi, vyi) / wheel_radius_;
-
-            // RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000, "Wheel[%zu]: vxi=%.3f, vyi=%.3f, angle=%.1f°",
-            //                      i, vxi, vyi, steering_angles[i] * 180.0 / M_PI);
         }
     }
 
@@ -482,25 +422,24 @@ namespace three_wheel_controller
             // v_w * cos(α) = vx - ω*yi
             // v_w * sin(α) = vy + ω*xi
 
-            // 统一权重（先简化测试）
-            double w = 1.0;
-            double w2 = w * w;
+            // 六个约束使用相同权重。
+            constexpr double w2 = 1.0;
 
             // === X约束: vx - ω*yi = v_w * cos(α) ===
             ATA[0][0] += w2;
-            ATA[0][2] += w2 * (-yi); // ← 改回 -yi
-            ATA[2][0] += w2 * (-yi); // ← 改回 -yi
+            ATA[0][2] += w2 * (-yi);
+            ATA[2][0] += w2 * (-yi);
             ATA[2][2] += w2 * yi * yi;
             ATb[0] += w2 * v_w * c;
-            ATb[2] += w2 * (-yi) * v_w * c; // ← 改回 -yi
+            ATb[2] += w2 * (-yi) * v_w * c;
 
             // === Y约束: vy + ω*xi = v_w * sin(α) ===
             ATA[1][1] += w2;
-            ATA[1][2] += w2 * xi; // ← 改回 +xi
-            ATA[2][1] += w2 * xi; // ← 改回 +xi
+            ATA[1][2] += w2 * xi;
+            ATA[2][1] += w2 * xi;
             ATA[2][2] += w2 * xi * xi;
             ATb[1] += w2 * v_w * s;
-            ATb[2] += w2 * xi * v_w * s; // ← 改回 +xi
+            ATb[2] += w2 * xi * v_w * s;
         }
 
         // ========== 求解线性系统 ==========
@@ -528,18 +467,6 @@ namespace three_wheel_controller
         vy = invATA[1][0] * ATb[0] + invATA[1][1] * ATb[1] + invATA[1][2] * ATb[2];
         omega = invATA[2][0] * ATb[0] + invATA[2][1] * ATb[1] + invATA[2][2] * ATb[2];
 
-        // 调试日志
-        // RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
-        //                      "\n===== Forward Kinematics Debug =====\n"
-        //                      "  Wheel0: steer=%+.4f rad (%+.2f°), vel=%+.4f rad/s\n"
-        //                      "  Wheel1: steer=%+.4f rad (%+.2f°), vel=%+.4f rad/s\n"
-        //                      "  Wheel2: steer=%+.4f rad (%+.2f°), vel=%+.4f rad/s\n"
-        //                      "  Result: vx=%+.4f m/s, vy=%+.4f m/s, omega=%+.4f rad/s (%+.1f°/s)\n"
-        //                      "========================================",
-        //                      steering_angles[0], steering_angles[0] * 180.0 / M_PI, wheel_velocities[0],
-        //                      steering_angles[1], steering_angles[1] * 180.0 / M_PI, wheel_velocities[1],
-        //                      steering_angles[2], steering_angles[2] * 180.0 / M_PI, wheel_velocities[2],
-        //                      vx, vy, omega, omega * 180.0 / M_PI);
     }
 
     /**
@@ -628,27 +555,19 @@ namespace three_wheel_controller
         std::array<double, 3> &wheel_speeds,
         const std::array<double, 3> &current_angles) const
     {
-        double common_scale = 1.0;
+        double max_error = 0.0;
         for (size_t i = 0; i < 3; ++i)
         {
             const double error = std::abs(steering_angles[i] - current_angles[i]);
-            if (error <= alignment_full_speed_angle_)
-                continue;
-            if (error >= alignment_stop_angle_)
-            {
-                common_scale = 0.0;
-                break;
-            }
-
-            const double t = (error - alignment_full_speed_angle_) /
-                             (alignment_stop_angle_ - alignment_full_speed_angle_);
-            const double smooth_step = t * t * (3.0 - 2.0 * t);
-            common_scale = std::min(common_scale, 1.0 - smooth_step);
+            max_error = std::max(max_error, error);
         }
 
-        // 所有轮使用同一缩放比，保持三轮速度间的运动学比例。
-        for (auto &speed : wheel_speeds)
-            speed *= common_scale;
+        // 严格的“先摆舵，再驱动”：只要一个轮组还没有对齐，
+        // 三个驱动轮都保持零速，避免破坏三轮运动学比例。
+        if (max_error > alignment_full_speed_angle_)
+        {
+            wheel_speeds.fill(0.0);
+        }
     }
 
     /**
@@ -687,7 +606,8 @@ namespace three_wheel_controller
 
         for (size_t i = 0; i < 3; ++i)
         {
-            prev_steering_angles_[i] = steering_state_ifaces_[i].get().get_value();
+            actual_steering_angles_[i] = steering_state_ifaces_[i].get().get_value();
+            actual_wheel_velocities_[i] = drive_state_ifaces_[i].get().get_value();
         }
         return true;
     }
@@ -757,11 +677,10 @@ namespace three_wheel_controller
             tf_pub_->publish(tf_msg);
         }
 
-        // ========== 5. 可选的调试日志 ==========
-        RCLCPP_INFO_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
-                             "Odom stamp=%.3f ,Pose: x=%.3f, y=%.3f, yaw=%.1f° | Twist: vx=%.3f, vy=%.3f, omega=%.3f",
-                             time.seconds(), odom_x_, odom_y_, odom_yaw_ * 180.0 / M_PI,
-                             vx, vy, omega);
+        RCLCPP_DEBUG_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
+                              "Odom stamp=%.3f, pose=(%.3f, %.3f, %.1f deg), twist=(%.3f, %.3f, %.3f)",
+                              time.seconds(), odom_x_, odom_y_, odom_yaw_ * 180.0 / M_PI,
+                              vx, vy, omega);
     }
 
 } // namespace three_wheel_controller

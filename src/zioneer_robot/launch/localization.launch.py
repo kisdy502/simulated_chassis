@@ -43,6 +43,11 @@ def generate_launch_description():
             default_value='true',
             description='使用仿真时间'
         ),
+        DeclareLaunchArgument(
+            'start_trajectory_with_default_topics',
+            default_value='true',
+            description='是否自动从零位姿启动轨迹；bridge 托管时设为 false'
+        ),
     ]
 
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -58,6 +63,9 @@ def generate_launch_description():
             '-configuration_directory', cartographer_config_dir,
             '-configuration_basename', LaunchConfiguration('configuration_basename'),
             '-load_state_filename', LaunchConfiguration('pbstream_file'),
+            # gflags 的 bool flag 不支持空格分隔（"-flag false" 会解析成 true），必须等号连写
+            ['-start_trajectory_with_default_topics=',
+             LaunchConfiguration('start_trajectory_with_default_topics')],
             '--ros-args',
             '--log-level', 'WARN',
         ],

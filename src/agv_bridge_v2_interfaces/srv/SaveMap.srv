@@ -1,6 +1,6 @@
 # 保存建图结果并回到定位模式（需在 mode=MAPPING 时调用）：
-#   1. 调 cartographer /write_state 保存 <maps_dir>/<map_name>.pbstream
-#   2. pbstream 转 <map_name>.pgm + <map_name>.yaml（三件套齐，可被 list_maps/get_map 识别）
+#   1. 创建 <maps_dir>/<map_name>/，调 /write_state 保存 <map_name>.pbstream
+#   2. pbstream 转同目录的 <map_name>.pgm + <map_name>.yaml
 #   3. 停建图 launch，用新图拉起定位 launch（mode=RELOCALIZING）
 # 定位收敛后 /agv/status.mode 自动回到 NAVIGATION
 # 保存/转换失败时 mode 保持 MAPPING（建图不中断，可换名重试）

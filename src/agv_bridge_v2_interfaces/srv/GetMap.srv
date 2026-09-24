@@ -1,5 +1,5 @@
 # 获取一张地图（栅格）供上位机导入
-# 约定：maps_dir 下同名三件套 <map_name>.pgm + <map_name>.yaml（pbstream 可选）
+# 约定：maps_dir/<map_name>/ 下保存同名三件套（pbstream 可选）。
 # 上位机通过 rosbridge 调用：
 #   {"op":"call_service","id":"g1","service":"/agv/get_map","args":{"map_name":"map0921"}}
 # 栅格数据直接放在 response 里（814x704 约 2MB JSON，低于 rosbridge 10MB 上限）

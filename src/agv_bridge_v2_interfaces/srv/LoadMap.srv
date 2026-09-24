@@ -1,4 +1,4 @@
-# 切换定位地图：以 maps_dir/<map_name>.pbstream 重启 Cartographer 纯定位节点
+# 切换定位地图：以 maps_dir/<map_name>/<map_name>.pbstream 重启 Cartographer 纯定位节点
 # 重启期间 pose_initialized=false（上位机不要下发导航指令），
 # 定位收敛后 AgvStatus.mode 自动回到 NAVIGATION。
 # 上位机通过 rosbridge 调用：

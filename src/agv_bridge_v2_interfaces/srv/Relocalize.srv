@@ -1,0 +1,10 @@
+# 在指定地图坐标中重启 Cartographer 纯定位轨迹。
+# 上位机在地图页面选择地图并拖拽机器人，提交 x/y/yaw（弧度）。
+string map_name
+float64 x
+float64 y
+float64 yaw
+---
+bool success
+string message
+string map_name

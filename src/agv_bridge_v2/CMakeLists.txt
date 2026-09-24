@@ -13,6 +13,7 @@ endif()
 # 注意：本包已不再需要 libwebsockets / libcurl / nlohmann_json。
 #   对外通信由 rosbridge_server 承担，对外契约由 agv_bridge_v2_interfaces 的 IDL 定义。
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -31,6 +32,7 @@ find_package(agv_bridge_v2_interfaces REQUIRED)
 
 set(AGV_ROS_DEPS
   rclcpp
+  ament_index_cpp
   rclcpp_action
   geometry_msgs
   std_msgs

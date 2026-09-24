@@ -13,7 +13,8 @@ namespace agv_bridge
     /**
      * @brief 地图文件管理：扫描地图目录、解析 map_server 三件套（pgm + yaml，pbstream 可选）。
      *
-     * 目录约定：<maps_dir>/<map_name>.yaml + <map_name>.pgm（+ 可选 <map_name>.pbstream）。
+     * 新目录约定：<maps_dir>/<map_name>/<map_name>.yaml|pgm|pbstream。
+     * 为兼容旧数据，读取时仍支持 <maps_dir>/<map_name>.* 平铺结构。
      * yaml 为 map_server 标准格式：image / resolution / origin / negate /
      * occupied_thresh / free_thresh，image 相对路径相对 yaml 所在目录解析。
      *
@@ -57,8 +58,15 @@ namespace agv_bridge
         /// @brief pbstream 文件是否存在（load_map 的前置条件）
         bool hasPbstream(const std::string &map_name) const;
 
-        /// @brief pbstream 绝对路径（不做存在性检查）
+        /// @brief pbstream 绝对路径（优先子目录，兼容旧平铺文件）
         std::string pbstreamPath(const std::string &map_name) const;
+
+        /// @brief 新结构中的地图目录与无扩展名文件前缀。
+        std::string mapDirectory(const std::string &map_name) const;
+        std::string mapStem(const std::string &map_name) const;
+
+        /// @brief 为新地图创建独立子目录。
+        bool ensureMapDirectory(const std::string &map_name, std::string &error) const;
 
         /// @brief 读取 <map_name>.pgm/.yaml 并转换成 OccupancyGrid
         bool loadGrid(const std::string &map_name,

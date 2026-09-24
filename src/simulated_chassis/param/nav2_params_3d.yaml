@@ -237,7 +237,8 @@ local_costmap:
       width: 8
       height: 8
       resolution: 0.05
-      footprint: "[[-0.3, -0.2], [-0.3, 0.2], [0.3, 0.2], [0.3, -0.2]]"
+      # 覆盖三个舵轮的完整扫掠范围：前轮最远 x=+0.40，后轮最远 y=±0.36。
+      footprint: "[[-0.30, -0.36], [-0.30, 0.36], [0.40, 0.36], [0.40, -0.36]]"
       inflation_radius: 0.6
 
       # ✅ 三舵轮：只用3D雷达点云
@@ -293,7 +294,8 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: True
-      footprint: "[[-0.3, -0.2], [-0.3, 0.2], [0.3, 0.2], [0.3, -0.2]]"
+      # 与 local_costmap 保持一致，避免全局路径使用偏小的机器人外形。
+      footprint: "[[-0.30, -0.36], [-0.30, 0.36], [0.40, 0.36], [0.40, -0.36]]"
       resolution: 0.05
       track_unknown_space: True
 

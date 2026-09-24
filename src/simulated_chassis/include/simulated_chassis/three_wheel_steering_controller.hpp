@@ -25,12 +25,6 @@ namespace three_wheel_controller
     double max_steering_angle; // 最大转向角 (rad)，默认 π/2
   };
 
-  struct WheelState
-  {
-    double steering_angle{0.0}; // 当前舵角 (rad)
-    double wheel_velocity{0.0}; // 当前轮速 (rad/s)
-  };
-
   class ThreeWheelSteeringController : public controller_interface::ControllerInterface
   {
   public:
@@ -76,6 +70,18 @@ namespace three_wheel_controller
     // 读取当前关节状态
     bool readCurrentWheelStates();
 
+    // 读取最新底盘指令，处理超时并限制速度。
+    void getLimitedCommand(const rclcpp::Time &time,
+                           double &vx, double &vy, double &omega);
+
+    // 向 ros2_control 命令接口写入舵角和驱动轮速。
+    void writeWheelCommands(const std::array<double, 3> &steering_angles,
+                            const std::array<double, 3> &wheel_speeds);
+
+    // 用真实关节状态反算底盘速度，积分并发布里程计。
+    void updateOdometryFromWheelStates(const rclcpp::Time &time,
+                                       const rclcpp::Duration &period);
+
     // 参数声明
     void declareParameters();
 
@@ -93,9 +99,7 @@ namespace three_wheel_controller
 
     std::vector<WheelConfig> wheel_configs_;
     double wheel_radius_;
-    double chassis_radius_;
     double odom_x_{0.0}, odom_y_{0.0}, odom_yaw_{0.0};
-    static constexpr double CMD_TIMEOUT = 0.8; // 0.5秒超时
 
     double max_linear_velocity_{1.5};        // m/s
     double max_angular_velocity_{1.0};       // rad/s
@@ -103,8 +107,7 @@ namespace three_wheel_controller
     double cmd_timeout_{0.8};                // s
     bool enable_reverse_optimization_{true}; // 是否启用后退优化
     double steering_hold_velocity_threshold_{0.01}; // 轮心线速度低于此值时保持当前舵角 (m/s)
-    double alignment_full_speed_angle_{0.174532925}; // 舵角误差 <= 10° 时全速
-    double alignment_stop_angle_{0.785398163};       // 舵角误差 >= 45° 时停止驱动
+    double alignment_full_speed_angle_{0.174532925}; // 舵角误差 <= 10° 时才允许驱动
     double reverse_switch_hysteresis_{0.087266463};  // 切换轮速方向的 5° 惩罚
     bool publish_tf_{false};
     std::string odom_frame_id_{"odom"};
@@ -117,8 +120,12 @@ namespace three_wheel_controller
     // 里程计
     rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tf_pub_; // 可选
 
-    // 上一周期的舵角（用于最短路径计算）
-    std::array<double, 3> prev_steering_angles_{0.0, 0.0, 0.0};
+    // 实际舵角只由 state interface 更新，不得被目标命令覆盖。
+    std::array<double, 3> actual_steering_angles_{0.0, 0.0, 0.0};
+    // 实际驱动轮速同样只来自 state interface。
+    std::array<double, 3> actual_wheel_velocities_{0.0, 0.0, 0.0};
+    // 上一周期下发的目标舵角，仅用于调试/状态记录。
+    std::array<double, 3> commanded_steering_angles_{0.0, 0.0, 0.0};
     std::array<int, 3> selected_drive_directions_{1, 1, 1};
 
   };

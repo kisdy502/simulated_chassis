@@ -39,7 +39,7 @@ def generate_launch_description():
         arguments=[
             '-configuration_directory', config_dir,
             '-configuration_basename', LaunchConfiguration('configuration_basename'),
-            '-start_trajectory_with_default_topics', 'true',
+            '-start_trajectory_with_default_topics=true',
             '--ros-args',
             '--log-level', 'info',  # ✅ 添加调试日志
         ],
