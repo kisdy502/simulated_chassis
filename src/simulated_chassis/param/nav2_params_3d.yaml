@@ -427,9 +427,12 @@ velocity_smoother:
     feedback: "OPEN_LOOP"
     # ✅ 正确：全部使用浮点数
     max_velocity: [ 1.2, 0.8, 1.0 ]
-    min_velocity: [ -0.35, -0.8, -1.0 ] # <-- 将 -1 改为 -1.0
+    min_velocity: [ -0.35, -0.8, -1.0 ]
     max_accel: [ 2.0, 2.0, 2.0 ]
-    min_accel: [ -2.0, -2.0, -2.0 ] # <-- 将 -2 改为 -2.0
+    # ⚠️ 节点读取的键名是 max_decel（负值），不是 min_accel！此前误写 min_accel
+    # 被节点静默忽略，y 轴减速回落到默认 0.0，导致 vy 一旦变号 smoother 输出
+    # 永久冻结在全向底盘错误方向的侧移上（绕目标点盘旋的根因）
+    max_decel: [ -2.0, -2.0, -2.0 ]
     odom_topic: "/odom"
     odom_duration: 0.1
     deadband_velocity: [ 0.0, 0.0, 0.0 ]

@@ -1,6 +1,7 @@
 
 #include "simulated_chassis/three_wheel_steering_controller.hpp"
 #include <cmath>
+#include <cstdio>
 #include <limits>
 
 namespace three_wheel_controller
@@ -81,12 +82,16 @@ namespace three_wheel_controller
             node->declare_parameter<double>("max_wheel_speed", max_wheel_speed_);
         if (!node->has_parameter("cmd_timeout"))
             node->declare_parameter<double>("cmd_timeout", cmd_timeout_);
+        if (!node->has_parameter("debug_log_period"))
+            node->declare_parameter<double>("debug_log_period", debug_log_period_);
         if (!node->has_parameter("enable_reverse_optimization"))
             node->declare_parameter<bool>("enable_reverse_optimization", enable_reverse_optimization_);
         if (!node->has_parameter("steering_hold_velocity_threshold"))
             node->declare_parameter<double>("steering_hold_velocity_threshold", steering_hold_velocity_threshold_);
         if (!node->has_parameter("alignment_full_speed_angle"))
             node->declare_parameter<double>("alignment_full_speed_angle", alignment_full_speed_angle_);
+        if (!node->has_parameter("creep_wheel_speed"))
+            node->declare_parameter<double>("creep_wheel_speed", creep_wheel_speed_);
         if (!node->has_parameter("reverse_switch_hysteresis"))
             node->declare_parameter<double>("reverse_switch_hysteresis", reverse_switch_hysteresis_);
         if (!node->has_parameter("publish_tf"))
@@ -120,9 +125,11 @@ namespace three_wheel_controller
         node->get_parameter("max_angular_velocity", max_angular_velocity_);
         node->get_parameter("max_wheel_speed", max_wheel_speed_);
         node->get_parameter("cmd_timeout", cmd_timeout_);
+        node->get_parameter("debug_log_period", debug_log_period_);
         node->get_parameter("enable_reverse_optimization", enable_reverse_optimization_);
         node->get_parameter("steering_hold_velocity_threshold", steering_hold_velocity_threshold_);
         node->get_parameter("alignment_full_speed_angle", alignment_full_speed_angle_);
+        node->get_parameter("creep_wheel_speed", creep_wheel_speed_);
         node->get_parameter("reverse_switch_hysteresis", reverse_switch_hysteresis_);
         node->get_parameter("publish_tf", publish_tf_);
         node->get_parameter("odom_frame_id", odom_frame_id_);
@@ -263,13 +270,15 @@ namespace three_wheel_controller
         std::array<double, 3> steering_angles{0.0, 0.0, 0.0};
         std::array<double, 3> wheel_speeds{0.0, 0.0, 0.0};
         computeKinematics(vx, vy, omega, steering_angles, wheel_speeds);
+        // 逆解原始输出（optimizeReverse 会原地改写），仅供日志对照。
+        const std::array<double, 3> raw_angles = steering_angles;
 
         // 阶段3：在 (α, v) 与 (α±π, -v) 中，基于真实舵角选择转动最小的可达解。
         // 零速时 optimizeReverse() 会保持最后的真实舵角，不强制回零。
         optimizeReverse(steering_angles, wheel_speeds, actual_steering_angles_);
 
         // 阶段4：严格“先摆舵，后驱动”。任一舵轮未对齐时，三个驱动轮都为零速。
-        scaleWheelSpeedsForSteeringAlignment(
+        const bool gate_open = scaleWheelSpeedsForSteeringAlignment(
             steering_angles, wheel_speeds, actual_steering_angles_);
         limitVelocities(wheel_speeds);
 
@@ -279,6 +288,9 @@ namespace three_wheel_controller
 
         // 阶段6：用真实舵角和真实轮速反算底盘运动，更新里程计。
         updateOdometryFromWheelStates(time, period);
+
+        // 阶段7：调试日志（门开关边沿立即打，全量状态按 debug_log_period 周期打）。
+        logDebugState(time, vx, vy, omega, raw_angles, steering_angles, wheel_speeds, gate_open);
 
         return controller_interface::return_type::OK;
     }
@@ -332,6 +344,9 @@ namespace three_wheel_controller
         computeForwardKinematics(
             actual_steering_angles_, actual_wheel_velocities_,
             estimated_vx, estimated_vy, estimated_omega);
+        last_est_vx_ = estimated_vx;
+        last_est_vy_ = estimated_vy;
+        last_est_wz_ = estimated_omega;
 
         const double dt = period.seconds();
         if (dt > 0.0 && dt < 1.0)
@@ -491,6 +506,7 @@ namespace three_wheel_controller
                     -wheel_configs_[i].max_steering_angle,
                     wheel_configs_[i].max_steering_angle);
                 wheel_speeds[i] = 0.0;
+                steering_saturated_[i] = false;
                 continue;
             }
 
@@ -500,6 +516,7 @@ namespace three_wheel_controller
             double best_cost = std::numeric_limits<double>::infinity();
             double best_angle = std::clamp(raw_angle, -max_steer, max_steer);
             int best_direction = 0;
+            double best_overflow = 0.0;
 
             // atan2 输出 [-π, π]，k∈[-2,2] 已覆盖所有可能落入舵角限位的等价解。
             for (int k = -2; k <= 2; ++k)
@@ -533,24 +550,43 @@ namespace three_wheel_controller
                     best_cost = cost;
                     best_angle = bounded_candidate;
                     best_direction = direction;
+                    best_overflow = limit_overflow;
                 }
             }
 
             // ±90° 限位对任意平面速度都应存在等价解；无解时安全停止该轮。
             if (best_direction == 0)
             {
+                RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
+                                     "[等价解无解] wheel%zu: 期望α=%.1f° 当前α=%.1f°，该轮安全停止",
+                                     i, raw_angle * 180.0 / M_PI, current_angles[i] * 180.0 / M_PI);
                 steering_angles[i] = std::clamp(current_angles[i], -max_steer, max_steer);
                 wheel_speeds[i] = 0.0;
+                steering_saturated_[i] = false;
                 continue;
+            }
+
+            // 轮速方向翻转是高风险事件（对应约180°的舵角大摆动），发生即记录。
+            if (best_direction != selected_drive_directions_[i])
+            {
+                RCLCPP_INFO(get_node()->get_logger(),
+                            "[舵轮反向切换] wheel%zu: dir %+d→%+d | 实际α=%+.1f° 期望方向α=%+.1f° → 目标α=%+.1f°%s",
+                            i,
+                            selected_drive_directions_[i], best_direction,
+                            current_angles[i] * 180.0 / M_PI,
+                            raw_angle * 180.0 / M_PI,
+                            best_angle * 180.0 / M_PI,
+                            best_overflow > 1e-9 ? "（限位吸收）" : "");
             }
 
             steering_angles[i] = best_angle;
             wheel_speeds[i] = raw_speed * static_cast<double>(best_direction);
             selected_drive_directions_[i] = best_direction;
+            steering_saturated_[i] = best_overflow > 1e-9;
         }
     }
 
-    void ThreeWheelSteeringController::scaleWheelSpeedsForSteeringAlignment(
+    bool ThreeWheelSteeringController::scaleWheelSpeedsForSteeringAlignment(
         const std::array<double, 3> &steering_angles,
         std::array<double, 3> &wheel_speeds,
         const std::array<double, 3> &current_angles) const
@@ -562,12 +598,19 @@ namespace three_wheel_controller
             max_error = std::max(max_error, error);
         }
 
-        // 严格的“先摆舵，再驱动”：只要一个轮组还没有对齐，
-        // 三个驱动轮都保持零速，避免破坏三轮运动学比例。
+        // 严格的“先摆舵，再驱动”：只要一个轮组还没有对齐，驱动轮降为蠕动转速。
+        // 完全零速会让舵轮在地面静摩擦下转不动（仿真与实车同理），
+        // 导致“门等舵对齐、舵等轮滚动”的死锁；蠕动让轮子滚起来，舵即可自由转向。
+        // 停车指令（零速保持舵角）不会走到这里，机器人静止时不会蠕动。
         if (max_error > alignment_full_speed_angle_)
         {
-            wheel_speeds.fill(0.0);
+            for (size_t i = 0; i < 3; ++i)
+            {
+                wheel_speeds[i] = creep_wheel_speed_ * static_cast<double>(selected_drive_directions_[i]);
+            }
+            return false;
         }
+        return true;
     }
 
     /**
@@ -610,6 +653,74 @@ namespace three_wheel_controller
             actual_wheel_velocities_[i] = drive_state_ifaces_[i].get().get_value();
         }
         return true;
+    }
+
+    void ThreeWheelSteeringController::logDebugState(
+        const rclcpp::Time &time,
+        double vx, double vy, double omega,
+        const std::array<double, 3> &raw_angles,
+        const std::array<double, 3> &target_angles,
+        const std::array<double, 3> &target_speeds,
+        bool gate_open)
+    {
+        constexpr double RAD2DEG = 180.0 / M_PI;
+        static const char *WHEEL_NAMES[3] = {"front", "left", "right"};
+
+        // 对齐门开关是兜圈子问题的高危信号，边沿触发立即打印。
+        if (gate_open != gate_open_last_)
+        {
+            double max_error = 0.0;
+            size_t worst = 0;
+            for (size_t i = 0; i < 3; ++i)
+            {
+                const double error = std::abs(target_angles[i] - actual_steering_angles_[i]);
+                if (error > max_error)
+                {
+                    max_error = error;
+                    worst = i;
+                }
+            }
+            RCLCPP_INFO(get_node()->get_logger(),
+                        "[对齐门%s] wheel%zu 误差 %.1f° (阈值 %.1f°)%s",
+                        gate_open ? "开" : "关", worst, max_error * RAD2DEG,
+                        alignment_full_speed_angle_ * RAD2DEG,
+                        gate_open ? "，驱动恢复" : "，驱动轮降为蠕动转速");
+            gate_open_last_ = gate_open;
+        }
+
+        if (debug_log_period_ <= 0.0 ||
+            (time - last_debug_log_time_).seconds() < debug_log_period_)
+        {
+            return;
+        }
+        last_debug_log_time_ = time;
+
+        const double cmd_speed = std::hypot(vx, vy);
+        char line[512];
+        std::snprintf(line, sizeof(line),
+                      "[cmd] vx=%+.3f vy=%+.3f wz=%+.3f |v|=%.3f 方向=%+.1f° | "
+                      "[odom估计] vx=%+.3f vy=%+.3f wz=%+.3f | [对齐门]%s",
+                      vx, vy, omega, cmd_speed,
+                      std::atan2(vy, vx) * RAD2DEG,
+                      last_est_vx_, last_est_vy_, last_est_wz_,
+                      gate_open ? "开" : "关");
+        RCLCPP_INFO(get_node()->get_logger(), "%s", line);
+
+        for (size_t i = 0; i < 3; ++i)
+        {
+            std::snprintf(line, sizeof(line),
+                          "[wheel%zu %-5s] 期望α=%+.1f° → 目标α=%+.1f° dir=%+d ωcmd=%+.2f%s | "
+                          "实际α=%+.1f° ω=%+.2f",
+                          i, WHEEL_NAMES[i],
+                          raw_angles[i] * RAD2DEG,
+                          target_angles[i] * RAD2DEG,
+                          selected_drive_directions_[i],
+                          target_speeds[i],
+                          steering_saturated_[i] ? "（限位吸收）" : "",
+                          actual_steering_angles_[i] * RAD2DEG,
+                          actual_wheel_velocities_[i]);
+            RCLCPP_INFO(get_node()->get_logger(), "%s", line);
+        }
     }
 
     void ThreeWheelSteeringController::publishOdometry(

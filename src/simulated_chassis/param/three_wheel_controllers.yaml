@@ -36,9 +36,11 @@ three_wheel_base_controller:
 
     # 控制参数
     cmd_timeout: 0.5             # s
+    debug_log_period: 0.5        # s，控制器全量状态日志周期（0=关闭）；门开关/反向切换事件始终即时打印
     enable_reverse_optimization: true
     steering_hold_velocity_threshold: 0.01  # m/s，低速时保持当前舵角
     alignment_full_speed_angle: 0.174533     # 10°，所有舵轮进入此误差后才允许驱动
+    creep_wheel_speed: 0.5                   # rad/s，舵轮未对齐期间的蠕动轮速（滚动中舵轮才能克服地面摩擦转向；0=完全停车，会死锁）
     reverse_switch_hysteresis: 0.0872665     # 5°，防止正反转在临界点抖动
     publish_tf: false
     odom_frame_id: "odom"

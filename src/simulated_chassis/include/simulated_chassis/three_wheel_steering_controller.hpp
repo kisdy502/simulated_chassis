@@ -58,11 +58,20 @@ namespace three_wheel_controller
                          std::array<double, 3> &wheel_speeds,
                          const std::array<double, 3> &current_angles);
 
-    // 舵轮未对齐期间抑制驱动轮速，避免轮子横向拖拽底盘
-    void scaleWheelSpeedsForSteeringAlignment(
+    // 舵轮未对齐期间抑制驱动轮速，避免轮子横向拖拽底盘；返回 true=门开（允许驱动）
+    bool scaleWheelSpeedsForSteeringAlignment(
         const std::array<double, 3> &steering_angles,
         std::array<double, 3> &wheel_speeds,
         const std::array<double, 3> &current_angles) const;
+
+    // 调试日志：指令/逆解原始解/最终命令/实际状态/对齐门/里程计估计。
+    // 对齐门开关是边沿触发（发生即打），全量状态按 debug_log_period 周期打印。
+    void logDebugState(const rclcpp::Time &time,
+                       double vx, double vy, double omega,
+                       const std::array<double, 3> &raw_angles,
+                       const std::array<double, 3> &target_angles,
+                       const std::array<double, 3> &target_speeds,
+                       bool gate_open);
 
     // 发布里程计（含TF）
     void publishOdometry(const rclcpp::Time &time, double vx, double vy, double omega);
@@ -108,6 +117,7 @@ namespace three_wheel_controller
     bool enable_reverse_optimization_{true}; // 是否启用后退优化
     double steering_hold_velocity_threshold_{0.01}; // 轮心线速度低于此值时保持当前舵角 (m/s)
     double alignment_full_speed_angle_{0.174532925}; // 舵角误差 <= 10° 时才允许驱动
+    double creep_wheel_speed_{0.5};                  // 对齐期间轮子蠕动转速 rad/s，0=恢复完全停车（会死锁）
     double reverse_switch_hysteresis_{0.087266463};  // 切换轮速方向的 5° 惩罚
     bool publish_tf_{false};
     std::string odom_frame_id_{"odom"};
@@ -127,6 +137,13 @@ namespace three_wheel_controller
     // 上一周期下发的目标舵角，仅用于调试/状态记录。
     std::array<double, 3> commanded_steering_angles_{0.0, 0.0, 0.0};
     std::array<int, 3> selected_drive_directions_{1, 1, 1};
+
+    // ========== 调试日志状态 ==========
+    double debug_log_period_{0.0};                              // 全量状态日志周期(s)，0=关闭
+    rclcpp::Time last_debug_log_time_{0, 0, RCL_ROS_TIME};
+    bool gate_open_last_{true};                                 // 对齐门上一周期状态（边沿日志用）
+    std::array<bool, 3> steering_saturated_{false, false, false}; // 本周期舵角被限位滞回吸收
+    double last_est_vx_{0.0}, last_est_vy_{0.0}, last_est_wz_{0.0}; // 里程计反算的最新底盘速度
 
   };
 

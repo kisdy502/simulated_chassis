@@ -35,9 +35,12 @@ public:
     declare_parameter<double>("min_z", 0.10);   // 地面上方 10cm 以下的点全部丢弃
     declare_parameter<double>("max_z", 3.00);   // 天花板以上不参与建图
     declare_parameter<std::string>("target_frame", "base_footprint");
+    // TF 不可用超过该时长后透传原始点云（灰点会回来，但定位不至于断粮）
+    declare_parameter<double>("tf_timeout_passthrough_sec", 2.0);
     min_z_ = get_parameter("min_z").as_double();
     max_z_ = get_parameter("max_z").as_double();
     target_frame_ = get_parameter("target_frame").as_string();
+    tf_timeout_passthrough_sec_ = get_parameter("tf_timeout_passthrough_sec").as_double();
 
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
@@ -69,10 +72,20 @@ private:
       sensor_to_target = it->second;
     } else {
       if (!tf_buffer_->canTransform(target_frame_, msg->header.frame_id, tf2::TimePointZero)) {
-        RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 2000,
-          "等待 TF %s -> %s，期间点云丢弃",
-          msg->header.frame_id.c_str(), target_frame_.c_str());
+        // TF 断供兜底：启动竞态/DDS发现异常时透传原始点云，避免下游（Cartographer）
+        // 彻底断粮 —— 灰点会回到地图里，但定位链路活着比干净重要。
+        if ((now() - start_time_).seconds() > tf_timeout_passthrough_sec_) {
+          RCLCPP_WARN_THROTTLE(
+            get_logger(), *get_clock(), 5000,
+            "TF %s -> %s 持续不可用，原始点云透传（未滤地面）",
+            msg->header.frame_id.c_str(), target_frame_.c_str());
+          pub->publish(*msg);
+        } else {
+          RCLCPP_WARN_THROTTLE(
+            get_logger(), *get_clock(), 2000,
+            "等待 TF %s -> %s，期间点云丢弃",
+            msg->header.frame_id.c_str(), target_frame_.c_str());
+        }
         return;
       }
       const auto tf = tf_buffer_->lookupTransform(
@@ -136,6 +149,8 @@ private:
 
   double min_z_;
   double max_z_;
+  double tf_timeout_passthrough_sec_;
+  rclcpp::Time start_time_{now()};
   std::string target_frame_;
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;

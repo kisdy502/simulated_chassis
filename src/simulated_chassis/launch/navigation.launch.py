@@ -21,7 +21,7 @@ v2: 定位链路（cartographer + occupancy_grid）拆分到 localization.launch
     # 上位机地图管理模式（定位由 agv_nav_server 托管，切图/建图只切定位，nav2 不动）：
     ros2 launch simulated_chassis navigation.launch.py include_localization:=false
     ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
-        pbstream_file:=$PWD/maps/my_map/my_map.pbstream \
+        pbstream_file:=$PWD/maps/map0925/map0925.pbstream \
         robot_package:=simulated_chassis
 """
 
@@ -88,6 +88,10 @@ def generate_launch_description():
     )
 
     # ===== Nav2 /cmd_vel -> 三舵轮控制器话题转发 =====
+    # 注意：/cmd_vel 是 MPPI(经 velocity_smoother) 与遥控器共用的总线，入口必须保持 /cmd_vel。
+    # 曾出现的"vy 被冻结在反方向导致绕目标盘旋"根因是 nav2_params_3d.yaml 里把
+    # velocity_smoother 的 max_decel 误写成 min_accel（节点静默忽略，y轴减速=0），
+    # 已在 yaml 中修正。复发时可用 scripts/diag_nav_motion.py 对比 /cmd_vel_nav 与 /cmd_vel。
     cmd_vel_relay = Node(
         package='simulated_chassis',
         executable='cmd_vel_relay_node',
