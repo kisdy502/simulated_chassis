@@ -36,7 +36,7 @@ three_wheel_base_controller:
 
     # 控制参数
     cmd_timeout: 0.5             # s
-    debug_log_period: 0.5        # s，控制器全量状态日志周期（0=关闭）；门开关/反向切换事件始终即时打印
+    debug_log_period: 0.0        # s，控制器调试日志周期（0=关闭，含门开关/反向切换事件日志）；排障时改 0.5
     enable_reverse_optimization: true
     steering_hold_velocity_threshold: 0.01  # m/s，低速时保持当前舵角
     alignment_full_speed_angle: 0.174533     # 10°，所有舵轮进入此误差后才允许驱动

@@ -566,8 +566,9 @@ namespace three_wheel_controller
                 continue;
             }
 
-            // 轮速方向翻转是高风险事件（对应约180°的舵角大摆动），发生即记录。
-            if (best_direction != selected_drive_directions_[i])
+            // 轮速方向翻转是高风险事件（对应约180°的舵角大摆动），
+            // 受 debug_log_period 开关控制（排障时打开，平时保持安静）。
+            if (debug_log_period_ > 0.0 && best_direction != selected_drive_directions_[i])
             {
                 RCLCPP_INFO(get_node()->get_logger(),
                             "[舵轮反向切换] wheel%zu: dir %+d→%+d | 实际α=%+.1f° 期望方向α=%+.1f° → 目标α=%+.1f°%s",
@@ -665,6 +666,11 @@ namespace three_wheel_controller
     {
         constexpr double RAD2DEG = 180.0 / M_PI;
         static const char *WHEEL_NAMES[3] = {"front", "left", "right"};
+
+        if (debug_log_period_ <= 0.0)
+        {
+            return;
+        }
 
         // 对齐门开关是兜圈子问题的高危信号，边沿触发立即打印。
         if (gate_open != gate_open_last_)

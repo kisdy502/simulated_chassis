@@ -1483,11 +1483,11 @@ namespace agv_bridge
             std::make_shared<cartographer_ros_msgs::srv::GetTrajectoryStates::Request>());
         // 服务名称会在 pbstream 完全加载前就出现。大地图加载期间 Cartographer
         // 暂时不能处理请求，因此这里不能使用普通 service 的 5 秒短超时。
-        // 实测 arm64 上大地图 load_state 全局优化可超过 60s（此时杀进程会把
-        // 一个即将就绪的定位杀掉），放宽到 150s。
-        if (states_future.wait_for(std::chrono::seconds(150)) != std::future_status::ready)
+        // 实测 arm64 上大地图 load_state 全局优化可超过 150s（2026-09-26 复测
+        // 01:35 会话正好 150s 被杀），进一步放宽到 300s；上位机任务截止需 >= 360s。
+        if (states_future.wait_for(std::chrono::seconds(300)) != std::future_status::ready)
         {
-            error = "读取轨迹状态超时（150 秒，pbstream 可能仍在加载或 Cartographer 已异常）";
+            error = "读取轨迹状态超时（300 秒，pbstream 可能仍在加载或 Cartographer 已异常）";
             stop_child_process(localization_pid_, "定位");
             return false;
         }
