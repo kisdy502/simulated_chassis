@@ -16,14 +16,15 @@
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <mass value="60.0" />
-      <inertia ixx="1.0" ixy="0.0" ixz="0.0" 
-         iyy="2.0" iyz="0.0" 
-         izz="2.6" />
+      <!-- 惯量按箱体 0.8 x 0.6 x 0.18 公式计算（Ixx=m/12*(y²+z²) 等） -->
+      <inertia ixx="1.96" ixy="0.0" ixz="0.0"
+         iyy="3.36" iyz="0.0"
+         izz="5.0" />
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <box size="0.6 0.4 0.18" />
+        <box size="0.8 0.6 0.18" />
       </geometry>
       <material name="green">
         <color rgba="0.1 0.8 0.1 1.0" />
@@ -32,9 +33,24 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <box size="0.6 0.4 0.18" />
+        <box size="0.8 0.6 0.18" />
       </geometry>
     </collision>
+    <!-- 雷达安装垫柱（高1cm：底盘顶面 z=0.09 → 雷达座 z=0.10），位置随雷达外移至前后边缘 -->
+    <visual>
+      <origin xyz="0.36 0 0.095" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.025" length="0.01" />
+      </geometry>
+      <material name="grey" />
+    </visual>
+    <visual>
+      <origin xyz="-0.36 0 0.095" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.025" length="0.01" />
+      </geometry>
+      <material name="grey" />
+    </visual>
   </link>
 
   <!-- ==================== IMU ==================== -->
@@ -62,8 +78,11 @@
   </joint>
 
   <!-- ==================== 3D Lidar 双雷达（前+后，Mid-360 仿真） ==================== -->
-  <!-- 前雷达：底盘前部中央，前倾10°(rpy.pitch=+0.1745，顶部向前) -->
-  <!--   → 下沿射线斜向前下方(-7°+10°倾斜 ≈ 等效-17°)，覆盖机器人正前方地面 -->
+  <!-- 雷达经1cm垫柱安装在底盘顶面（雷达座 z=0.10，世界高度0.25），并外移至前后边缘：
+       底座半径0.04，中心取±0.36 使外沿与底盘边缘(±0.4)对齐，
+       前后向俯角射线出射即越过底盘边缘；侧向>约2°的俯角射线会打在自家底盘上，
+       机身两侧近处存在小范围盲区 -->
+  <!-- 前雷达：底盘前边缘，前倾5°(rpy.pitch=+0.0873，顶部向前) -->
   <link name="front_lidar_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />
@@ -94,10 +113,10 @@
   <joint name="front_lidar_joint" type="fixed">
     <parent link="base_link" />
     <child link="front_lidar_link" />
-    <origin xyz="0.25 0 0.10" rpy="0 0.0873 0" />
+    <origin xyz="0.36 0 0.10" rpy="0 0.0873 0" />
   </joint>
 
-  <!-- 后雷达：底盘后部中央，朝后(yaw=π)+后倾10° → 覆盖机器人正后方地面 -->
+  <!-- 后雷达：底盘后边缘，朝后(yaw=π)+后倾5° → 覆盖机器人正后方 -->
   <link name="rear_lidar_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0" />
@@ -128,7 +147,7 @@
   <joint name="rear_lidar_joint" type="fixed">
     <parent link="base_link" />
     <child link="rear_lidar_link" />
-    <origin xyz="-0.25 0 0.10" rpy="0 0.0873 3.1416" />
+    <origin xyz="-0.36 0 0.10" rpy="0 0.0873 3.1416" />
   </joint>
 
   <!-- ==================== Front Steering Module ==================== -->
@@ -211,7 +230,7 @@
   <joint name="wheel_left_steering_joint" type="revolute">
     <parent link="base_link" />
     <child link="wheel_left_steering_link" />
-    <origin xyz="-0.15 0.26 -0.05" rpy="0 0 0" />
+    <origin xyz="-0.15 0.20 -0.05" rpy="0 0 0" />
     <axis xyz="0 0 1" />
     <limit lower="-1.5708" upper="1.5708" effort="10.0" velocity="5.0" />
   </joint>
@@ -270,7 +289,7 @@
   <joint name="wheel_right_steering_joint" type="revolute">
     <parent link="base_link" />
     <child link="wheel_right_steering_link" />
-    <origin xyz="-0.15 -0.26 -0.05" rpy="0 0 0" />
+    <origin xyz="-0.15 -0.20 -0.05" rpy="0 0 0" />
     <axis xyz="0 0 1" />
     <limit lower="-1.5708" upper="1.5708" effort="10.0" velocity="5.0" />
   </joint>

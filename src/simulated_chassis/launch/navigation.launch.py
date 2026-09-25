@@ -21,7 +21,7 @@ v2: 定位链路（cartographer + occupancy_grid）拆分到 localization.launch
     # 上位机地图管理模式（定位由 agv_nav_server 托管，切图/建图只切定位，nav2 不动）：
     ros2 launch simulated_chassis navigation.launch.py include_localization:=false
     ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
-        pbstream_file:=$PWD/maps/my_map.pbstream \
+        pbstream_file:=$PWD/maps/my_map/my_map.pbstream \
         robot_package:=simulated_chassis
 """
 

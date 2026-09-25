@@ -9,11 +9,11 @@ namespace three_wheel_controller
     ThreeWheelSteeringController::ThreeWheelSteeringController()
     {
         // 默认轮位配置：基于你的URDF坐标
-        // 前轮: (0.3, 0), 左后轮: (-0.15, 0.26), 右后轮: (-0.15, -0.26)
+        // 前轮: (0.3, 0), 左后轮: (-0.15, 0.20), 右后轮: (-0.15, -0.20)
         wheel_configs_ = {
             {"wheel_front_steering_joint", "wheel_front_wheel_joint", 0.3, 0.0, M_PI / 2.0},
-            {"wheel_left_steering_joint", "wheel_left_wheel_joint", -0.15, 0.26, M_PI / 2.0},
-            {"wheel_right_steering_joint", "wheel_right_wheel_joint", -0.15, -0.26, M_PI / 2.0}};
+            {"wheel_left_steering_joint", "wheel_left_wheel_joint", -0.15, 0.20, M_PI / 2.0},
+            {"wheel_right_steering_joint", "wheel_right_wheel_joint", -0.15, -0.20, M_PI / 2.0}};
     }
 
     controller_interface::InterfaceConfiguration

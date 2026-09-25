@@ -20,11 +20,11 @@ three_wheel_base_controller:
     wheel0.max_steering_angle: 1.5708  # 90°
 
     wheel1.x: -0.15
-    wheel1.y: 0.26
+    wheel1.y: 0.20
     wheel1.max_steering_angle: 1.5708
 
     wheel2.x: -0.15
-    wheel2.y: -0.26
+    wheel2.y: -0.20
     wheel2.max_steering_angle: 1.5708
 
     # 运动学参数

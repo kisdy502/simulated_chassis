@@ -45,11 +45,29 @@ def generate_launch_description():
         ],
         remappings=[
             # 双3D雷达：前→points2_1，后→points2_2（由 ros_gz_bridge 桥接并提供）
-            ('points2_1', '/points2_1'),
-            ('points2_2', '/points2_2'),
+            # ⚠️ 订阅滤波后话题：地面回波已被 pointcloud_ground_filter 滤除，
+            #    否则地面点会投到2D地图上成灰色噪点，并干扰3D匹配的z方向
+            ('points2_1', '/points2_1_filtered'),
+            ('points2_2', '/points2_2_filtered'),
             ('odom', '/odom'),  # 直接订阅控制器的 odom
             ('imu', '/imu'),
         ],
+    )
+
+    # ===== 点云地面滤除节点 =====
+    # 雷达距地仅0.25m，垂直下沿-10°(前后倾5°后约-15°)，1~3m内即打到地面。
+    # 在 base_footprint 系裁剪高度带，只留 [min_z, max_z] 的点给 Cartographer。
+    ground_filter_node = Node(
+        package='simulated_chassis',
+        executable='pointcloud_ground_filter',
+        name='pointcloud_ground_filter',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'target_frame': 'base_footprint',
+            'min_z': 0.10,   # 地面上方10cm以下丢弃（地面回波+自身底盘近场）
+            'max_z': 3.0,    # 天花板以上不参与建图
+        }],
     )
 
     # ===== 占据栅格地图发布节点（从3D点云投影到2D） =====
@@ -80,6 +98,7 @@ def generate_launch_description():
 
         *declared_arguments,
 
+        TimerAction(period=0.3, actions=[ground_filter_node]),
         TimerAction(period=1.0, actions=[cartographer_node]),
         TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
 
