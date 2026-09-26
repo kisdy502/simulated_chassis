@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  FastDDS 关闭共享内存(SHM)传输的 profile：本机通信全部走 UDP loopback。
+  用法（所有跑 ROS 的终端都要 export，建议写进 ~/.bashrc）：
+    export FASTRTPS_DEFAULT_PROFILES_FILE=$(pwd)/scripts/fastdds_no_shm.xml
+  代价：点云等大消息不再零拷贝，CPU 略增；换来的是彻底避开 SHM 端口/信号量
+  残留引发的 "Failed init_port"、图发现失灵等环境病。
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <transport_descriptors>
+        <transport_descriptor>
+            <transport_id>udp_only</transport_id>
+            <type>UDPv4</type>
+        </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="udp_only_participant" is_default_profile="true">
+        <rtps>
+            <userTransports>
+                <transport_id>udp_only</transport_id>
+            </userTransports>
+            <useBuiltinTransports>false</useBuiltinTransports>
+        </rtps>
+    </participant>
+</profiles>

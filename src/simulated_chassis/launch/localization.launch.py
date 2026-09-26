@@ -35,7 +35,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "configuration_basename",
-            default_value="localization_3d.lua",
+            default_value="localization_2d.lua",  # 默认 2D（水平扫描版）；3D 传 localization_3d.lua
             description="Cartographer 定位配置文件",
         ),
         DeclareLaunchArgument(
@@ -75,27 +75,12 @@ def generate_launch_description():
             "WARN",
         ],
         remappings=[
-            # ⚠️ 订阅滤波后话题：与建图链路一致，地面回波由 pointcloud_ground_filter 滤除，
-            #    否则地面点会干扰3D匹配的z方向（定位z漂移的来源之一）
-            ("points2_1", "/points2_1_filtered"),
-            ("points2_2", "/points2_2_filtered"),
+            # 2D 定位：与建图同源的水平 LaserScan（特征空间一致）
+            ("scan_1", "/scan_1"),
+            ("scan_2", "/scan_2"),
             ("odom", "/odom"),
             ("imu", "/imu"),
         ],
-    )
-
-    # ===== 点云地面滤除节点（与建图保持同一预处理，特征空间才一致） =====
-    ground_filter_node = Node(
-        package="simulated_chassis",
-        executable="pointcloud_ground_filter",
-        name="pointcloud_ground_filter",
-        output="screen",
-        parameters=[{
-            "use_sim_time": use_sim_time,
-            "target_frame": "base_footprint",
-            "min_z": 0.10,
-            "max_z": 3.0,
-        }],
     )
 
     # ===== 占据栅格地图发布 =====
@@ -124,8 +109,7 @@ def generate_launch_description():
         [
             LogInfo(msg=["Cartographer 3D Localization（独立重启单元，与 nav2 解耦）"]),
             *declared_arguments,
-            TimerAction(period=0.0, actions=[ground_filter_node]),
-            TimerAction(period=0.5, actions=[cartographer_node]),
+            TimerAction(period=0.0, actions=[cartographer_node]),
             TimerAction(period=1.5, actions=[occupancy_grid_node]),
         ]
     )

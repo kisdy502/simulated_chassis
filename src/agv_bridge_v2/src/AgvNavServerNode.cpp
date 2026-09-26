@@ -161,8 +161,9 @@ namespace agv_bridge
         }
         if (localization_configuration_basename_.empty())
         {
-            localization_configuration_basename_ =
-                robot_package_ == "jzt_robot" ? "localization_2d.lua" : "localization_3d.lua";
+            // 三舵轮仿真已切换 Cartographer 2D（水平扫描，无地面回波/无z漂移），
+            // 与 localization.launch.py 的默认配置保持一致；需要 3D 时显式传参覆盖。
+            localization_configuration_basename_ = "localization_2d.lua";
         }
 
         if (feedback_interval_ms_ <= 0)
@@ -897,11 +898,16 @@ namespace agv_bridge
                 return;
             }
 
-            // 2. pbstream -> pgm + yaml（三件套齐，get_map/list_maps 才能识别）
-            RCLCPP_INFO(this->get_logger(), "save_map(%s)：转换 pgm/yaml ...", name.c_str());
+            // 2. pgm + yaml（三件套齐，get_map/list_maps 才能识别）
+            //    改用 nav2_map_server 的 map_saver 从 /map 话题直接保存：
+            //    cartographer_pbstream_to_ros_map 在本机因 cairo 兼容问题必崩
+            //    （image.cc:55 Check failed: cairo_image_surface_get_format (-1 vs 0)，
+            //     实测 2MB 正常 2D pbstream 也崩），而 occupancy_grid_node 实时
+            //    投影的 /map 数据完好——截图即所得。必须在停 slam 之前执行。
+            RCLCPP_INFO(this->get_logger(), "save_map(%s)：从 /map 保存 pgm/yaml ...", name.c_str());
             if (!run_command_sync(
-                    {"ros2", "run", "cartographer_ros", "cartographer_pbstream_to_ros_map",
-                     "-pbstream_filename", pbstream_abs, "-map_filestem", stem},
+                    {"ros2", "run", "nav2_map_server", "map_saver_cli",
+                     "-f", stem, "--occ", "0.65", "--free", "0.25", "--fmt", "pgm"},
                     "/tmp/agv_map_export.log"))
             {
                 // 常见诱因：刚开建图就保存/放弃（无完整子图），pbstream_to_ros_map
