@@ -24,11 +24,64 @@ agv_rosbridge.launch.py —— rosbridge 架构下的 AGV 对接 launch
   python3 -c "import roslibpy; c=roslibpy.Ros(host='127.0.0.1', port=9090); c.run()"
 """
 
+import os
+
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+
+
+def _resolve_maps_dir(context):
+    """maps_dir 显式指定时用之；否则从 pbstream_file 推导绝对路径
+    （<...>/maps/<name>/<name>.pbstream -> <...>/maps）。
+    相对默认值 "maps" 会跟随启动时的 cwd，换目录启动会让 list_maps
+    扫到错误位置（地图管理/导入列表为空的根因）。"""
+    explicit = LaunchConfiguration("maps_dir").perform(context).strip()
+    if explicit and explicit != "maps":
+        return explicit
+    pb = LaunchConfiguration("pbstream_file").perform(context).strip()
+    if pb:
+        derived = os.path.dirname(os.path.dirname(os.path.abspath(pb)))
+        if derived:
+            return derived
+    return "maps"
+
+
+def _agv_nav_server_node(context):
+    use_sim_time = LaunchConfiguration("use_sim_time")
+    agv_id = LaunchConfiguration("agv_id")
+    back_up_max_heading_error_deg = LaunchConfiguration("back_up_max_heading_error_deg")
+    pbstream_file = LaunchConfiguration("pbstream_file")
+    robot_package = LaunchConfiguration("robot_package")
+    localization_launch_file = LaunchConfiguration("localization_launch_file")
+    slam_launch_file = LaunchConfiguration("slam_launch_file")
+    return [Node(
+        package="agv_bridge_v2",
+        executable="agv_nav_server",
+        name="agv_nav_server",
+        output="screen",
+        emulate_tty=True,
+        # 必须运行在根命名空间：NavigationManager 内部用相对名创建
+        # follow_path / spin / navigate_to_pose 客户端。
+        namespace="/",
+        parameters=[
+            {
+                "agv_id": agv_id,
+                "use_sim_time": use_sim_time,
+                "feedback_interval_ms": 400,
+                "battery_level": 100.0,
+                "enable_tf_broadcast": True,
+                "back_up_max_heading_error_deg": back_up_max_heading_error_deg,
+                "maps_dir": _resolve_maps_dir(context),
+                "pbstream_file": pbstream_file,
+                "robot_package": robot_package,
+                "localization_launch_file": localization_launch_file,
+                "slam_launch_file": slam_launch_file,
+            }
+        ],
+    )]
 
 
 def generate_launch_description():
@@ -81,7 +134,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "maps_dir",
             default_value="maps",
-            description="地图根目录（每张地图位于 <maps_dir>/<map_name>/，相对启动 cwd）",
+            description="地图根目录（每张地图位于 <maps_dir>/<map_name>/）；缺省自动取 pbstream_file 上两级目录，不随启动 cwd 变化",
         ),
         DeclareLaunchArgument(
             "pbstream_file",
@@ -143,31 +196,7 @@ def generate_launch_description():
     ]
 
     # ---------------- 1. AGV 瘦节点 ----------------
-    agv_nav_server = Node(
-        package="agv_bridge_v2",
-        executable="agv_nav_server",
-        name="agv_nav_server",
-        output="screen",
-        emulate_tty=True,
-        # 必须运行在根命名空间：NavigationManager 内部用相对名创建
-        # follow_path / spin / navigate_to_pose 客户端。
-        namespace="/",
-        parameters=[
-            {
-                "agv_id": agv_id,
-                "use_sim_time": use_sim_time,
-                "feedback_interval_ms": 400,
-                "battery_level": 100.0,
-                "enable_tf_broadcast": True,
-                "back_up_max_heading_error_deg": back_up_max_heading_error_deg,
-                "maps_dir": maps_dir,
-                "pbstream_file": pbstream_file,
-                "robot_package": robot_package,
-                "localization_launch_file": localization_launch_file,
-                "slam_launch_file": slam_launch_file,
-            }
-        ],
-    )
+    agv_nav_server = OpaqueFunction(function=_agv_nav_server_node)
 
     # ---------------- 2. rosbridge_websocket ----------------
     rosbridge = Node(

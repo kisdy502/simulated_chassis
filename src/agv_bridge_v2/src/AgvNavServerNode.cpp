@@ -904,9 +904,51 @@ namespace agv_bridge
                      "-pbstream_filename", pbstream_abs, "-map_filestem", stem},
                     "/tmp/agv_map_export.log"))
             {
+                // 常见诱因：刚开建图就保存/放弃（无完整子图），pbstream_to_ros_map
+                // 对零尺寸画布在 cairo 里直接 abort（exit 250），重试永远失败。
+                // 此时不能停在 MAPPING 卡死：停建图，回退进入建图前的地图恢复定位。
                 RCLCPP_ERROR(this->get_logger(),
-                             "save_map(%s)：pbstream 转 pgm/yaml 失败，详见 /tmp/agv_map_export.log"
-                             "（mode 保持 MAPPING，可重试）", name.c_str());
+                             "save_map(%s)：pbstream 转 pgm/yaml 失败（地图内容为空或转换器崩溃，"
+                             "详见 /tmp/agv_map_export.log），停建图并回退之前的地图", name.c_str());
+                stop_child_process(slam_pid_, "建图");
+
+                std::string prev_map;
+                {
+                    std::lock_guard<std::mutex> lock(mode_mutex_);
+                    prev_map = last_nav_map_name_;
+                    map_name_ = prev_map;
+                }
+                bool restored = false;
+                // start_managed_localization 内部含最长 300s 的等待，期间不能持有
+                // mode_mutex_（会卡住 1Hz 的 /agv/status 发布），先判断后调用。
+                if (!prev_map.empty() && prev_map != name)
+                {
+                    const std::string prev_pb = map_file_manager_->mapStem(prev_map) + ".pbstream";
+                    if (::access(prev_pb.c_str(), F_OK) == 0)
+                    {
+                        std::string err;
+                        restored = start_managed_localization(prev_pb, prev_map, nullptr, err);
+                        if (!restored)
+                        {
+                            RCLCPP_ERROR(this->get_logger(),
+                                         "save_map：回退旧图 %s 定位失败: %s", prev_map.c_str(), err.c_str());
+                        }
+                    }
+                    else
+                    {
+                        RCLCPP_WARN(this->get_logger(),
+                                    "save_map：旧图 %s 的 pbstream 不存在，仅停止建图", prev_map.c_str());
+                    }
+                }
+                {
+                    std::lock_guard<std::mutex> lock(mode_mutex_);
+                    mode_ = restored ? MODE_RELOCALIZING : MODE_NAVIGATION;
+                }
+                if (restored)
+                {
+                    RCLCPP_WARN(this->get_logger(),
+                                "save_map：已放弃本次建图，回退到地图 %s", prev_map.c_str());
+                }
                 transition_in_progress_.store(false);
                 return;
             }
@@ -961,6 +1003,11 @@ namespace agv_bridge
             std::lock_guard<std::mutex> lock(mode_mutex_);
             msg.mode = mode_;
             msg.map_name = map_name_;
+            // 记住最近一次稳定导航时的地图名，供 save_map 导出失败回退
+            if (mode_ == MODE_NAVIGATION && !map_name_.empty())
+            {
+                last_nav_map_name_ = map_name_;
+            }
         }
 
         {

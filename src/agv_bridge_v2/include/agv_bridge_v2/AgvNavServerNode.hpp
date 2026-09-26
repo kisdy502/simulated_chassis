@@ -227,6 +227,9 @@ namespace agv_bridge
         mutable std::mutex mode_mutex_;
         std::string mode_ = MODE_NAVIGATION;
         std::string map_name_;
+        // 进入建图前机器人所在的地图名（save_map 导出失败时回退用，
+        // 由 publish_status 在 NAVIGATION 态持续刷新）
+        std::string last_nav_map_name_;
 
         // ===== 地图 / 定位 / 建图子进程管理 =====
         std::unique_ptr<MapFileManager> map_file_manager_;
