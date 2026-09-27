@@ -7,6 +7,7 @@ from launch.actions import (
     RegisterEventHandler, SetEnvironmentVariable,
 )
 from launch.event_handlers import OnProcessStart
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, Command, EnvironmentVariable
 from launch_ros.actions import Node
 
@@ -17,6 +18,14 @@ def generate_launch_description():
 
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time", default_value="true", description="使用仿真时间"
+    )
+    # 键盘遥控默认关闭：prefix='xterm -e' 让 teleop 脱离 launch 的进程组，
+    # launch 退出（含 Ctrl+C 优雅退出）杀不掉它，每次跑仿真都会残留一个
+    # xterm+teleop 孤儿挂在 systemd 下（日常遥控已由 gamepad 替代）。
+    # 需要时 start_teleop:=true，用完记得关掉那个 xterm 窗口。
+    start_teleop_arg = DeclareLaunchArgument(
+        "start_teleop", default_value="false",
+        description="是否弹出 xterm 键盘遥控窗口（默认 false，用手柄）",
     )
     
     # 机器人名称（统一修改）
@@ -137,7 +146,8 @@ def generate_launch_description():
         package='teleop_twist_keyboard',
         executable='teleop_twist_keyboard',
         name='teleop_twistkeyboard',
-        prefix='xterm -e',  # 在独立终端中运行
+        prefix='xterm -e',  # 在独立终端中运行（launch 退出杀不掉，见 start_teleop_arg 注释）
+        condition=IfCondition(LaunchConfiguration('start_teleop')),
         remappings=[
             ('/cmd_vel', '/three_wheel_base_controller/cmd_vel'),  # 重映射
         ],
@@ -186,6 +196,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         use_sim_time_arg,
+        start_teleop_arg,
         set_plugin_path,
         set_resource_path,
         set_software_render,
