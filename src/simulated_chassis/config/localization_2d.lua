@@ -36,10 +36,18 @@ MAP_BUILDER.use_trajectory_builder_2d = true
 MAP_BUILDER.num_background_threads = 4
 
 TRAJECTORY_BUILDER_2D.min_range = 0.8
-TRAJECTORY_BUILDER_2D.max_range = 25.0
+-- 与 slam_2d_online.lua 保持同源：量程对齐传感器（0.2~30.0，inf 无回波
+-- 被 crop 丢弃）、inf 射线置 0（定位期不再用 free 射线擦既有障碍标记）、
+-- 前后雷达成对累积、hit/miss 与建图一致——定位子图与建图特征同构，
+-- 避免导航期地图被定位轨迹的默认参数二次"洗掉"。
+TRAJECTORY_BUILDER_2D.max_range = 30.0
+TRAJECTORY_BUILDER_2D.missing_data_ray_length = 0.
+TRAJECTORY_BUILDER_2D.num_accumulated_range_data = 2
 TRAJECTORY_BUILDER_2D.use_imu_data = false
 TRAJECTORY_BUILDER_2D.use_online_correlative_scan_matching = true
 TRAJECTORY_BUILDER_2D.submaps.num_range_data = 160      -- 定位下几乎不建新子图，防重影
+TRAJECTORY_BUILDER_2D.submaps.range_data_inserter.probability_grid_range_data_inserter.hit_probability = 0.70
+TRAJECTORY_BUILDER_2D.submaps.range_data_inserter.probability_grid_range_data_inserter.miss_probability = 0.45
 
 POSE_GRAPH.optimize_every_n_nodes = 60
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.4      -- 定位降低采样省 CPU
