@@ -16,7 +16,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo
+from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo, EmitEvent, RegisterEventHandler
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -111,5 +113,12 @@ def generate_launch_description():
             *declared_arguments,
             TimerAction(period=0.0, actions=[cartographer_node]),
             TimerAction(period=1.5, actions=[occupancy_grid_node]),
+            # cartographer 一死整组退出（否则 launch 会带着 occupancy_grid 苟活，
+            # 桥接的 wrapper 存活检测也看不见）。整组退出后由桥接的定位监督
+            # 自动重启（schedule_localization_auto_restart）。
+            RegisterEventHandler(OnProcessExit(
+                target_action=cartographer_node,
+                on_exit=[EmitEvent(event=Shutdown(reason="cartographer 退出，定位整组关闭"))],
+            )),
         ]
     )

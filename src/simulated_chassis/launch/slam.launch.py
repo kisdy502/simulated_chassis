@@ -8,7 +8,9 @@ ros2 launch simulated_chassis slam.launch.py
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo
+from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo, EmitEvent, RegisterEventHandler
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -83,6 +85,12 @@ def generate_launch_description():
 
         TimerAction(period=1.0, actions=[cartographer_node]),
         TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
+        # cartographer 一死整组退出：建图会话结束（半成品图本就无法恢复），
+        # 避免孤儿 occupancy_grid 继续发 /map 造成地图闪烁。
+        RegisterEventHandler(OnProcessExit(
+            target_action=cartographer_node,
+            on_exit=[EmitEvent(event=Shutdown(reason="cartographer 退出，建图整组关闭"))],
+        )),
 
         LogInfo(msg=['3D建图节点已启动，使用 navigation.launch.py 中持续运行的 RViz']),
         LogInfo(msg=['使用键盘控制机器人移动完成建图']),

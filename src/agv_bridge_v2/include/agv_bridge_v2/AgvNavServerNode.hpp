@@ -152,6 +152,9 @@ namespace agv_bridge
         void publish_status();
         void publish_feedback();
         void update_localization_monitor();
+
+        // 定位子进程死亡后按当前地图自动重启（监督兜底，防 cartographer 断言崩溃后瘫痪）
+        void schedule_localization_auto_restart();
         void broadcast_tf();
 
         // ===== 工具 =====

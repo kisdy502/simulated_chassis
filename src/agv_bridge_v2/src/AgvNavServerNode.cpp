@@ -1055,8 +1055,93 @@ namespace agv_bridge
         goal_handle->publish_feedback(feedback);
     }
 
+    /** 定位子进程死亡后的自动重启：按当前 map_name_ 重新拉起（复用 load_map 的
+     *  重启序列）；仅重试一次，避免崩溃风暴。建图中/无地图/有切换在途时跳过。 */
+    void AgvNavServerNode::schedule_localization_auto_restart()
+    {
+        std::string name;
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            if (mode_ == MODE_MAPPING || map_name_.empty())
+            {
+                RCLCPP_WARN(this->get_logger(),
+                            "自动重启跳过：当前 mode=%s map=%s（建图中或无地图）",
+                            mode_.c_str(), map_name_.c_str());
+                return;
+            }
+            name = map_name_;
+        }
+        if (!map_file_manager_ || !map_file_manager_->hasPbstream(name))
+        {
+            RCLCPP_ERROR(this->get_logger(), "自动重启跳过：地图 %s 无 pbstream", name.c_str());
+            return;
+        }
+        if (transition_in_progress_.exchange(true))
+        {
+            return; // 已有模式切换在途（可能是正常 load_map/save_map），不打扰
+        }
+        const std::string pbstream_abs = map_file_manager_->pbstreamPath(name);
+        if (transition_thread_.joinable())
+        {
+            transition_thread_.join();
+        }
+        transition_thread_ = std::thread([this, pbstream_abs, name]()
+        {
+            RCLCPP_WARN(this->get_logger(), "自动重启定位（地图 %s）...", name.c_str());
+            geometry_msgs::msg::Pose remembered_pose;
+            const bool has_pose = load_remembered_pose(name, remembered_pose);
+            std::string error;
+            {
+                std::lock_guard<std::mutex> lock(mode_mutex_);
+                mode_ = MODE_RELOCALIZING;
+            }
+            if (!start_managed_localization(
+                    pbstream_abs, name, has_pose ? &remembered_pose : nullptr, error))
+            {
+                RCLCPP_ERROR(this->get_logger(), "自动重启失败: %s，5s 后重试一次", error.c_str());
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+                if (!start_managed_localization(
+                        pbstream_abs, name, has_pose ? &remembered_pose : nullptr, error))
+                {
+                    RCLCPP_ERROR(this->get_logger(),
+                                 "自动重启二次失败: %s，放弃（需人工介入，mode=NAVIGATION）", error.c_str());
+                    std::lock_guard<std::mutex> lock(mode_mutex_);
+                    mode_ = MODE_NAVIGATION;
+                }
+            }
+            transition_in_progress_.store(false);
+            // 收敛后由 update_localization_monitor 把 RELOCALIZING 切回 NAVIGATION
+        });
+    }
+
     void AgvNavServerNode::update_localization_monitor()
     {
+        // ===== 定位子进程监督（1s 节拍） =====
+        // cartographer 在消息时序紊乱（"Detected jump back in time"）下可能断言崩溃
+        // （pose_extrapolator: odometry_delta_time==0）。外部恢复走 load_map 服务，
+        // 而服务调用在 DDS 层偶发丢包——桥接自己盯子进程，死了就地自动重启。
+        {
+            pid_t loc_pid = -1;
+            {
+                std::lock_guard<std::mutex> lock(proc_mutex_);
+                loc_pid = localization_pid_;
+            }
+            if (loc_pid > 0)
+            {
+                const pid_t r = ::waitpid(loc_pid, nullptr, WNOHANG);
+                if (r == loc_pid)
+                {
+                    {
+                        std::lock_guard<std::mutex> lock(proc_mutex_);
+                        localization_pid_ = -1; // 已收割，防止重复触发
+                    }
+                    RCLCPP_ERROR(this->get_logger(),
+                                 "定位进程(pid=%d)异常退出，尝试自动重启...", loc_pid);
+                    schedule_localization_auto_restart();
+                }
+            }
+        }
+
         if (!localization_monitor_)
         {
             return;
