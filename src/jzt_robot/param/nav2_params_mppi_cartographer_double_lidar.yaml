@@ -15,7 +15,10 @@ behavior_server:
       plugin: "nav2_behaviors/DriveOnHeading"
     wait:
       plugin: "nav2_behaviors/Wait"
-    global_frame: map
+    # ⚠️ 必须是 odom（nav2 官方默认）：碰撞检查位姿对 odom 系 local_costmap 做
+    # worldToMap。写成 map 时定位模式下 map→odom 平移大，位姿落在滚动窗口外
+    # → "Pose Goes Off Grid" → Spin（预旋转）首周期即失败。
+    global_frame: odom
     robot_base_frame: base_link
     transform_tolerance: 1.5
     use_sim_time: True
