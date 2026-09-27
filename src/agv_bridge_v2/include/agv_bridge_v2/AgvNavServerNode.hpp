@@ -270,6 +270,8 @@ namespace agv_bridge
         rclcpp::TimerBase::SharedPtr feedback_timer_;
         rclcpp::TimerBase::SharedPtr localization_timer_;
         rclcpp::TimerBase::SharedPtr tf_timer_;
+        // 心跳专用回调组：上位机所有闸门都依赖 /agv/status，任何慢回调都不能饿死它
+        rclcpp::CallbackGroup::SharedPtr heartbeat_group_;
 
         // ===== 业务组件（全部复用，未做修改） =====
         std::shared_ptr<agv_bridge::LocalizationMonitor> localization_monitor_;

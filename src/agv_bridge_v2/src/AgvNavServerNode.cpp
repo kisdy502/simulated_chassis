@@ -309,8 +309,12 @@ namespace agv_bridge
 
     void AgvNavServerNode::create_timers()
     {
+        // 心跳放独立回调组：默认互斥组一旦被慢回调（如 TF 缺帧时 10Hz 轮询的
+        // LocalizationMonitor）长期占用，上位机会因收不到 /agv/status 而整体拒绝服务
+        heartbeat_group_ = this->create_callback_group(
+            rclcpp::CallbackGroupType::MutuallyExclusive);
         status_timer_ = this->create_wall_timer(
-            1s, std::bind(&AgvNavServerNode::publish_status, this));
+            1s, std::bind(&AgvNavServerNode::publish_status, this), heartbeat_group_);
 
         feedback_timer_ = this->create_wall_timer(
             std::chrono::milliseconds(feedback_interval_ms_),

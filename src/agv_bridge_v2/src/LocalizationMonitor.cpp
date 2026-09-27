@@ -23,9 +23,14 @@ namespace agv_bridge
             throw std::invalid_argument("Parent node cannot be null");
         }
 
-        // 10Hz 定时器，持续监听 TF 更新位姿缓存
+        // 10Hz 定时器，持续监听 TF 更新位姿缓存。
+        // 必须放独立回调组：无定位时（map 帧不存在）该回调持续快速重试，
+        // 与默认互斥组共用会永久占用组槽位，饿死 /agv/status 心跳和所有 service。
+        timer_group_ = parent_node->create_callback_group(
+            rclcpp::CallbackGroupType::MutuallyExclusive);
         timer_ = parent_node->create_wall_timer(std::chrono::milliseconds(100),
-                                                std::bind(&LocalizationMonitor::timerCallback, this));
+                                                std::bind(&LocalizationMonitor::timerCallback, this),
+                                                timer_group_);
 
         RCLCPP_INFO(logger_,
                     "LocalizationMonitor initialized (Cartographer mode): TF stable threshold=%d",
@@ -36,9 +41,12 @@ namespace agv_bridge
     {
         try
         {
-            // 查找最新变换（时间戳设为 0 表示获取最新可用变换）
+            // 查找最新变换（时间戳设为 0 表示获取最新可用变换）。
+            // 超时必须为 0：10Hz 轮询本身就是重试节奏，在回调内等待会让单次
+            // 耗时超过定时器周期（仿真时钟下 0.1s 折合 140-200ms 墙钟），
+            // 回调背靠背执行，独占回调组饿死其他回调（无图启动建图死结的根因）
             auto transform = tf_buffer_.lookupTransform(
-                "map", "base_link", tf2::TimePointZero, tf2::durationFromSec(0.1));
+                "map", "base_link", tf2::TimePointZero, tf2::durationFromSec(0.0));
 
             geometry_msgs::msg::Pose pose;
             pose.position.x = transform.transform.translation.x;

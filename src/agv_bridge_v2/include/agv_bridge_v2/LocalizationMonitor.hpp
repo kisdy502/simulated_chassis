@@ -61,6 +61,9 @@ namespace agv_bridge
         tf2_ros::TransformListener tf_listener_;
 
         rclcpp::TimerBase::SharedPtr timer_;
+        // 独立回调组：TF 缺帧（无定位启动）时本回调会背靠背重试，若与节点
+        // 默认互斥组共用会饿死 status 心跳与全部 service 接口（2026-09-27 实锤）
+        rclcpp::CallbackGroup::SharedPtr timer_group_;
 
         geometry_msgs::msg::PoseStamped pose_stamped;
         double continuous_yaw_; // 累积的连续偏航角（弧度）
