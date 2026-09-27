@@ -917,52 +917,100 @@ namespace agv_bridge
             //     实测 2MB 正常 2D pbstream 也崩），而 occupancy_grid_node 实时
             //    投影的 /map 数据完好——截图即所得。必须在停 slam 之前执行。
             RCLCPP_INFO(this->get_logger(), "save_map(%s)：从 /map 保存 pgm/yaml ...", name.c_str());
-            if (!run_command_sync(
+            const auto export_grid = [this, stem]()
+            {
+                return run_command_sync(
                     {"ros2", "run", "nav2_map_server", "map_saver_cli",
                      "-f", stem, "--occ", "0.65", "--free", "0.25", "--fmt", "pgm"},
-                    "/tmp/agv_map_export.log"))
+                    "/tmp/agv_map_export.log");
+            };
+            bool grid_exported = export_grid();
+            if (!grid_exported)
             {
-                // 常见诱因：刚开建图就保存/放弃（无完整子图），pbstream_to_ros_map
-                // 对零尺寸画布在 cairo 里直接 abort（exit 250），重试永远失败。
-                // 此时不能停在 MAPPING 卡死：停建图，回退进入建图前的地图恢复定位。
+                // map_saver 内部是硬编码的 2s 订阅超时（humble CLI 无参数可调）：
+                // 冷启动 DDS 发现 1-2s + occupancy_grid ~1Hz 节拍，恰好卡窗口边缘，
+                // 间歇性失败（map2d_first 的 0 字节 pgm、map0928 首次导出失败同因，
+                // map2d_v2/map0926_2d 成功——纯竞态）。重试时发现缓存已热，基本必中；
+                // 真空地图（刚开建图就保存）3 次全失败，走下面的失败分支。
+                for (int attempt = 2; attempt <= 3 && !grid_exported; ++attempt)
+                {
+                    RCLCPP_WARN(this->get_logger(),
+                                "save_map(%s)：map_saver 第 %d 次未在 2s 窗口内拿到 /map 帧，重试...",
+                                name.c_str(), attempt);
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    grid_exported = export_grid();
+                }
+            }
+            if (!grid_exported)
+            {
+                // 常见诱因：刚开建图就保存/放弃（无完整子图），/map 上没有有效
+                // 栅格。此时不能停在 MAPPING 卡死：停建图，回退恢复定位。
                 RCLCPP_ERROR(this->get_logger(),
-                             "save_map(%s)：pbstream 转 pgm/yaml 失败（地图内容为空或转换器崩溃，"
-                             "详见 /tmp/agv_map_export.log），停建图并回退之前的地图", name.c_str());
+                             "save_map(%s)：3 次均未从 /map 拿到栅格（地图内容为空或链路异常，"
+                             "详见 /tmp/agv_map_export.log），停建图并回退", name.c_str());
                 stop_child_process(slam_pid_, "建图");
 
                 std::string prev_map;
                 {
                     std::lock_guard<std::mutex> lock(mode_mutex_);
                     prev_map = last_nav_map_name_;
+                }
+                // 回退目标：有旧图用旧图。无图会话（本次建的是第一张图）时改用
+                // 刚写成功的新图——pbstream 内容完好、仅 pgm/yaml 截图缺失，
+                // 直接定位到新图远优于回退到"无定位的 NAVIGATION"（导航全瘫）；
+                // 定位起来后 occupancy_grid 会重发 /map，再补一次导出补齐三件套。
+                const bool fallback_to_new = prev_map.empty() || prev_map == name;
+                const std::string restore_map = fallback_to_new ? name : prev_map;
+                const std::string restore_pb = fallback_to_new
+                                                   ? pbstream_abs
+                                                   : map_file_manager_->mapStem(prev_map) + ".pbstream";
+                if (!fallback_to_new)
+                {
+                    std::lock_guard<std::mutex> lock(mode_mutex_);
                     map_name_ = prev_map;
                 }
                 bool restored = false;
                 // start_managed_localization 内部含最长 300s 的等待，期间不能持有
                 // mode_mutex_（会卡住 1Hz 的 /agv/status 发布），先判断后调用。
-                if (!prev_map.empty() && prev_map != name)
+                if (::access(restore_pb.c_str(), F_OK) == 0)
                 {
-                    const std::string prev_pb = map_file_manager_->mapStem(prev_map) + ".pbstream";
-                    if (::access(prev_pb.c_str(), F_OK) == 0)
+                    std::string err;
+                    restored = start_managed_localization(restore_pb, restore_map, nullptr, err);
+                    if (!restored)
                     {
-                        std::string err;
-                        restored = start_managed_localization(prev_pb, prev_map, nullptr, err);
-                        if (!restored)
-                        {
-                            RCLCPP_ERROR(this->get_logger(),
-                                         "save_map：回退旧图 %s 定位失败: %s", prev_map.c_str(), err.c_str());
-                        }
+                        RCLCPP_ERROR(this->get_logger(),
+                                     "save_map：回退地图 %s 定位失败: %s", restore_map.c_str(), err.c_str());
+                    }
+                }
+                else if (!fallback_to_new)
+                {
+                    RCLCPP_WARN(this->get_logger(),
+                                "save_map：旧图 %s 的 pbstream 不存在，仅停止建图", prev_map.c_str());
+                }
+                {
+                    std::lock_guard<std::mutex> lock(mode_mutex_);
+                    if (fallback_to_new)
+                    {
+                        map_name_ = name;
+                    }
+                    mode_ = restored ? MODE_RELOCALIZING : MODE_NAVIGATION;
+                }
+                if (restored && fallback_to_new)
+                {
+                    if (export_grid())
+                    {
+                        RCLCPP_WARN(this->get_logger(),
+                                    "save_map：定位已在新图 %s 上恢复，pgm/yaml 已在 /map 重发后补齐",
+                                    name.c_str());
                     }
                     else
                     {
                         RCLCPP_WARN(this->get_logger(),
-                                    "save_map：旧图 %s 的 pbstream 不存在，仅停止建图", prev_map.c_str());
+                                    "save_map：新图 %s 定位已恢复，但 pgm/yaml 补导出仍失败"
+                                    "（不影响定位与导航，可手动跑 map_saver_cli 补）", name.c_str());
                     }
                 }
-                {
-                    std::lock_guard<std::mutex> lock(mode_mutex_);
-                    mode_ = restored ? MODE_RELOCALIZING : MODE_NAVIGATION;
-                }
-                if (restored)
+                else if (restored)
                 {
                     RCLCPP_WARN(this->get_logger(),
                                 "save_map：已放弃本次建图，回退到地图 %s", prev_map.c_str());
