@@ -51,8 +51,13 @@ TRAJECTORY_BUILDER_2D.submaps.num_range_data = 90
 -- 这是 3D 投影时代"打上就不消失"与 2D 行为差异的根源。提高命中概率、
 -- 降低清除概率，抑制"扫到的轮廓走远后又被擦掉"，同时保留动态障碍的
 -- 自愈能力（默认 hit=0.55 / miss=0.49）。
-TRAJECTORY_BUILDER_2D.submaps.range_data_inserter.hit_probability = 0.65
-TRAJECTORY_BUILDER_2D.submaps.range_data_inserter.miss_probability = 0.45
+-- 注意层级：必须写到 probability_grid_range_data_inserter 里（对照
+-- /opt/ros/humble/share/cartographer/configuration_files/trajectory_builder_2d.lua）。
+-- 写浅一层（直接挂在 range_data_inserter 下）时 Lua 会静默建出新键，
+-- cartographer 的 C++ 永不读取它，字典析构时 CHECK 崩溃：
+-- "Key 'miss_probability' was used the wrong number of times"（建图秒退的根因）。
+TRAJECTORY_BUILDER_2D.submaps.range_data_inserter.probability_grid_range_data_inserter.hit_probability = 0.65
+TRAJECTORY_BUILDER_2D.submaps.range_data_inserter.probability_grid_range_data_inserter.miss_probability = 0.45
 
 POSE_GRAPH.optimize_every_n_nodes = 35
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.65

@@ -1154,6 +1154,43 @@ namespace agv_bridge
             }
         }
 
+        // ===== 建图子进程监督（同 1s 节拍） =====
+        // 建图 launch 秒退（Lua 配置键层级写错、传感器话题缺失等）时若不回收，
+        // mode 会永远卡在 MAPPING：上位机闸门只认 mode 流转，卡死意味着
+        // 既无法重试 start_mapping 也无法导航。死了就地回退 NAVIGATION，
+        // 死因看 /tmp/agv_slam.log。保存/放弃建图走 stop_child_process，
+        // 它先把 pid 槽位置 -1 再发信号，正常停流不会与本监督双收割。
+        {
+            pid_t slam_pid = -1;
+            {
+                std::lock_guard<std::mutex> lock(proc_mutex_);
+                slam_pid = slam_pid_;
+            }
+            if (slam_pid > 0)
+            {
+                const pid_t r = ::waitpid(slam_pid, nullptr, WNOHANG);
+                if (r == slam_pid)
+                {
+                    {
+                        std::lock_guard<std::mutex> lock(proc_mutex_);
+                        slam_pid_ = -1; // 已收割，防止重复触发
+                    }
+                    {
+                        std::lock_guard<std::mutex> lock(mode_mutex_);
+                        if (mode_ == MODE_MAPPING)
+                        {
+                            mode_ = MODE_NAVIGATION;
+                        }
+                    }
+                    RCLCPP_ERROR(this->get_logger(),
+                                 "建图进程(pid=%d)异常退出，mode 已回退 NAVIGATION"
+                                 "（死因见 /tmp/agv_slam.log，常见为 Lua 配置键层级错误），"
+                                 "可重试 /agv/start_mapping",
+                                 slam_pid);
+                }
+            }
+        }
+
         if (!localization_monitor_)
         {
             return;
