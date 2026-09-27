@@ -47,6 +47,9 @@ namespace agv_bridge
         : Node("agv_nav_server", options)
     {
         initialize_parameters();
+        // 心跳话题必须最先 advertise（见头文件注释：rosbridge 订阅竞态），
+        // 后续 initialize_components 内 wait_for_action_server 会阻塞 15s+。
+        create_status_publishers();
         initialize_components();
         create_interfaces();
         create_timers();
@@ -218,6 +221,17 @@ namespace agv_bridge
         }
     }
 
+    void AgvNavServerNode::create_status_publishers()
+    {
+        // ---- topic: /agv/status (transient_local，新客户端一接入即可拿到最后一帧) ----
+        rclcpp::QoS status_qos(1);
+        status_qos.transient_local();
+        status_pub_ = this->create_publisher<AgvStatus>("/agv/status", status_qos);
+
+        // ---- topic: /agv/pose (map 系 PoseStamped，10Hz，上位机直读位姿专用) ----
+        pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/agv/pose", 10);
+    }
+
     void AgvNavServerNode::create_interfaces()
     {
         // 注意：NavigationManager 内部使用相对名创建 nav2 客户端（follow_path / spin /
@@ -276,13 +290,7 @@ namespace agv_bridge
             std::bind(&AgvNavServerNode::handle_relocalize, this,
                       std::placeholders::_1, std::placeholders::_2));
 
-        // ---- topic: /agv/status (transient_local，新客户端一接入即可拿到最后一帧) ----
-        rclcpp::QoS status_qos(1);
-        status_qos.transient_local();
-        status_pub_ = this->create_publisher<AgvStatus>("/agv/status", status_qos);
-
-        // ---- topic: /agv/pose (map 系 PoseStamped，10Hz，上位机直读位姿专用) ----
-        pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/agv/pose", 10);
+        // ---- topic: /agv/status、/agv/pose 已在 create_status_publishers() 提前创建 ----
 
         // ---- 可选：真实电池数据，无发布者时保持 battery_level 参数值 ----
         battery_sub_ = this->create_subscription<sensor_msgs::msg::BatteryState>(

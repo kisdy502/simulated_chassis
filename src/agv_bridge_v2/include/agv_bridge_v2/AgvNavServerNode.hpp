@@ -106,6 +106,11 @@ namespace agv_bridge
         // ===== 初始化 =====
         void initialize_parameters();
         void initialize_components();
+        // status/pose 心跳话题必须在任何阻塞初始化（wait_for_action_server 等）
+        // 之前 advertise：rosbridge 客户端连接即订阅，订阅时话题未 advertise 会
+        // "Cannot infer topic type" 失败且 rosbridge 不重试——上位机从此收不到
+        // status，模式闸门全部误判。
+        void create_status_publishers();
         void create_interfaces();
         void create_timers();
 
