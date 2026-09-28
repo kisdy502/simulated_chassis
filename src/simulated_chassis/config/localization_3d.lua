@@ -37,7 +37,7 @@ MAP_BUILDER.use_trajectory_builder_3d = true
 MAP_BUILDER.num_background_threads = 4
 
 -- ==== 3D轨迹构建器：与建图完全一致，保证点云特征空间吻合 ====
-TRAJECTORY_BUILDER_3D.min_range = 0.5
+TRAJECTORY_BUILDER_3D.min_range = 0.8                    -- 对齐建图与 xacro range.min
 TRAJECTORY_BUILDER_3D.max_range = 30.0
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08           -- 对齐建图（定位不需要更细）
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- ✅ 双雷达：累计2帧(前+后各1)
@@ -48,6 +48,7 @@ TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
 
 TRAJECTORY_BUILDER_3D.submaps.num_range_data = 160       -- ⭐ 极大值：定位模式下几乎不创建新子图，防止重影
+-- TRAJECTORY_BUILDER_3D.submaps.range_data_inserter.hit_probability = 0.65  -- 对齐建图特征空间
 
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0   -- 对齐建图
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2       -- 对齐建图

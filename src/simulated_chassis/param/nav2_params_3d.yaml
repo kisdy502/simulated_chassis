@@ -73,8 +73,8 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.12
+      yaw_goal_tolerance: 0.15
 
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
@@ -316,7 +316,7 @@ global_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 7.5
           obstacle_min_range: 0.0
-          min_obstacle_height: -0.5
+          min_obstacle_height: 0.05   # 对齐局部层：滤地面回波（低俯角ring打地弧线z≈0，箱底净高0.06m撞不到）
         rear_lidar:
           topic: /points2_2
           max_obstacle_height: 2.0
@@ -327,7 +327,7 @@ global_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 7.5
           obstacle_min_range: 0.0
-          min_obstacle_height: -0.5
+          min_obstacle_height: 0.05   # 对齐局部层：滤地面回波（低俯角ring打地弧线z≈0，箱底净高0.06m撞不到）
 
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"

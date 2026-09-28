@@ -26,8 +26,8 @@ def generate_launch_description():
     declared_arguments = [
         DeclareLaunchArgument(
             'configuration_basename',
-            default_value='slam_2d_online.lua',  # 默认 2D（水平扫描版）；需要 3D 时传 slam_3d_online.lua
-            description='Cartographer Lua配置文件（slam_2d_online / slam_3d_online）'
+            default_value='slam_3d_online.lua',  # 默认 3D（前后双雷达原始点云直连）；2D 水平扫描版传 slam_2d_online.lua
+            description='Cartographer Lua配置文件（slam_3d_online / slam_2d_online）'
         ),
     ]
 
@@ -46,10 +46,10 @@ def generate_launch_description():
             '--log-level', 'info',  # ✅ 添加调试日志
         ],
         remappings=[
-            # 2D 建图：直接消费 gazebo gpu_lidar 自带的水平 LaserScan
-            # （垂直中心波束，离地0.25m，无地面回波、无自身遮挡）
-            ('scan_1', '/scan_1'),
-            ('scan_2', '/scan_2'),
+            # 3D 建图：直接消费仿真 bridge 桥出的前后雷达原始 PointCloud2
+            # （/front_lidar 与 /rear_lidar 的 gpu_lidar 点云，无过滤节点）
+            ('points2_1', '/points2_1'),
+            ('points2_2', '/points2_2'),
             ('odom', '/odom'),
             ('imu', '/imu'),
         ],

@@ -37,7 +37,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "configuration_basename",
-            default_value="localization_2d.lua",  # 默认 2D（水平扫描版）；3D 传 localization_3d.lua
+            default_value="localization_3d.lua",  # 默认 3D（前后双雷达原始点云直连）；2D 水平扫描版传 localization_2d.lua
             description="Cartographer 定位配置文件",
         ),
         DeclareLaunchArgument(
@@ -77,9 +77,9 @@ def generate_launch_description():
             "WARN",
         ],
         remappings=[
-            # 2D 定位：与建图同源的水平 LaserScan（特征空间一致）
-            ("scan_1", "/scan_1"),
-            ("scan_2", "/scan_2"),
+            # 3D 定位：与建图同源的原始 PointCloud2（特征空间一致）
+            ("points2_1", "/points2_1"),
+            ("points2_2", "/points2_2"),
             ("odom", "/odom"),
             ("imu", "/imu"),
         ],

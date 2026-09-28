@@ -34,7 +34,7 @@ MAP_BUILDER.use_trajectory_builder_3d = true
 MAP_BUILDER.num_background_threads = 4
 
 -- ✅ 3D 轨迹构建器配置
-TRAJECTORY_BUILDER_3D.min_range = 0.5
+TRAJECTORY_BUILDER_3D.min_range = 0.8   -- 与 xacro range.min 对齐（近场自打点已在源头由FOV盲区+近裁剪面挡住，此处第二道闸）
 TRAJECTORY_BUILDER_3D.max_range = 24.0
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- ✅ 双雷达：每个雷达1帧，累计2帧后做一次扫描匹配
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
@@ -47,6 +47,9 @@ TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window =
 
 -- 子图帧数 110(比默认 160 小),子图偏小 → 更多回环候选,局部一致性仍足够
 TRAJECTORY_BUILDER_3D.submaps.num_range_data = 120
+-- 命中门槛 0.55→0.65：远处零星地面点多为单次命中，提门槛后不再显形；
+-- 墙体有双雷达成对累积(num_accumulated=2)多次命中，不受影响（2D 时代 hit=0.70 同思路验证过）
+--TRAJECTORY_BUILDER_3D.submaps.range_data_inserter.hit_probability = 0.65
 
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0 -- 平移权重
 TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2    -- 默认 400

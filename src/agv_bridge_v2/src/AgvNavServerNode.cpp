@@ -164,9 +164,9 @@ namespace agv_bridge
         }
         if (localization_configuration_basename_.empty())
         {
-            // 三舵轮仿真已切换 Cartographer 2D（水平扫描，无地面回波/无z漂移），
-            // 与 localization.launch.py 的默认配置保持一致；需要 3D 时显式传参覆盖。
-            localization_configuration_basename_ = "localization_2d.lua";
+            // 三舵轮仿真默认 Cartographer 3D（前后雷达原始点云直连，无滤波节点），
+            // 与 localization.launch.py 的默认配置保持一致；需要 2D 时显式传参覆盖。
+            localization_configuration_basename_ = "localization_3d.lua";
         }
 
         if (feedback_interval_ms_ <= 0)
@@ -1864,7 +1864,7 @@ namespace agv_bridge
 
     bool AgvNavServerNode::call_write_state(const std::string &pbstream_abs_path, std::string &error)
     {
-        if (!write_state_client_->wait_for_service(std::chrono::seconds(5)))
+        if (!write_state_client_->wait_for_service(std::chrono::seconds(10)))
         {
             error = "cartographer /write_state 服务不可用（建图节点未运行？）";
             return false;
@@ -1874,10 +1874,10 @@ namespace agv_bridge
         request->filename = pbstream_abs_path;
 
         auto future = write_state_client_->async_send_request(request);
-        const auto rc = future.wait_for(std::chrono::seconds(15));
+        const auto rc = future.wait_for(std::chrono::seconds(45));
         if (rc != std::future_status::ready)
         {
-            error = "/write_state 调用超时（15s）";
+            error = "/write_state 调用超时（45s）";
             return false;
         }
         // Humble 版 WriteState 响应不带结果字段：服务正常返回后以文件落盘为准
