@@ -921,7 +921,8 @@ namespace agv_bridge
             {
                 return run_command_sync(
                     {"ros2", "run", "nav2_map_server", "map_saver_cli",
-                     "-f", stem, "--occ", "0.65", "--free", "0.25", "--fmt", "pgm"},
+                    "-f", stem, "--occ", "0.65", "--free", "0.25", "--fmt", "pgm",
+                    "--ros-args", "-p", useSimTimeArg(use_sim_time_)},   
                     "/tmp/agv_map_export.log");
             };
             bool grid_exported = export_grid();

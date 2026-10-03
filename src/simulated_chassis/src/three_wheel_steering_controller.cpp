@@ -763,9 +763,9 @@ namespace three_wheel_controller
         std::fill(std::begin(odom_msg_.pose.covariance), std::end(odom_msg_.pose.covariance), 0.0);
         odom_msg_.pose.covariance[0] = 0.01;     // x
         odom_msg_.pose.covariance[7] = 0.01;     // y
-        odom_msg_.pose.covariance[14] = 99999.0; // z (不可观测)
-        odom_msg_.pose.covariance[21] = 99999.0; // roll
-        odom_msg_.pose.covariance[28] = 99999.0; // pitch
+        odom_msg_.pose.covariance[14] = 1.0; // z (不可观测)
+        odom_msg_.pose.covariance[21] = 1.0; // roll
+        odom_msg_.pose.covariance[28] = 1.0; // pitch
         odom_msg_.pose.covariance[35] = 0.02;    // yaw
 
         // Twist covariance

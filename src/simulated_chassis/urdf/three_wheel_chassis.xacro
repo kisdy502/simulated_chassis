@@ -111,7 +111,7 @@
   <joint name="front_lidar_joint" type="fixed">
     <parent link="base_link" />
     <child link="front_lidar_link" />
-    <origin xyz="0.36 0 0.10" rpy="0 0.0873 0" />
+    <origin xyz="0.36 0 0.10" rpy="0 0 0" />
   </joint>
 
   <!-- 后雷达：底盘后边缘，朝后(yaw=π)+后倾5° → 覆盖机器人正后方 -->
@@ -145,7 +145,7 @@
   <joint name="rear_lidar_joint" type="fixed">
     <parent link="base_link" />
     <child link="rear_lidar_link" />
-    <origin xyz="-0.36 0 0.10" rpy="0 0.0873 3.1416" />
+    <origin xyz="-0.36 0 0.10" rpy="0 0 3.1416" />
   </joint>
 
   <!-- ==================== Front Steering Module ==================== -->
@@ -365,16 +365,6 @@
   </gazebo>
 
   <!-- ==================== IMU Sensor ==================== -->
-  <!-- 工业级中高端 MEMS IMU 噪声模型（Xsens MTi-300/600 量级，100Hz）
-       Fortress(ign-sensors6) 各字段实测行为（最小仿真验证）：
-       - stddev：逐采样白噪声
-       - bias_mean/bias_stddev：上电常值零偏，启动时按 N(bias_mean,bias_stddev) 抽一次，
-         整个会话恒定（bias_mean 输出符号实测取反，对称配置不受影响）
-       - dynamic_bias_stddev + dynamic_bias_correlation_time：零偏随机游走
-         （Gauss-Markov 过程），生效——真机 SLAM 漂移的主因
-       - precision 仅 gaussian_quantized 类型有效，32 位输出量化可忽略，不配
-       旧配置问题：角速度完全没有零偏项（仿真心测不到陀螺零偏），且白噪声量级
-       偏大（0.005rad/s≈0.29°/s/采样，MTi-300 约 0.035°/s；加速度 5mg 也偏大 25 倍） -->
   <gazebo reference="imu_link">
     <sensor name="imu_sensor" type="imu">
       <always_on>true</always_on>
@@ -464,20 +454,6 @@
   </gazebo>
 
   <!-- ==================== 双 3D Lidar Sensor (Mid-360 仿真) ==================== -->
-  <!-- 垂直视场（传感器系），叠加安装5°下倾后的实际波束（传感器离地0.25m）：
-       前雷达 -10°~+45°(32线) → 世界 -15°~+40°，z特征主力；最低ring打地于0.93m，
-       前方0.93~2.9m的地面弧线仍会随子图烤进 /map（hit_probability=0.65只压远处
-       单次命中，压不住近距反复命中），建图后需检查 /map 前方是否显线。
-       后雷达 0°~+10°(32线) → 世界 -5°~+5°，辅助；最低ring打地在2.86m外。
-       ros_gz_bridge 的 LaserScan 取垂直中间行：后雷达中间行≈世界+0.16°近水平
-       （/scan_2 干净）；前雷达中间行≈世界+13.4°朝上——2D导航(nav2_params_2d.yaml)
-       下 /scan_1 只能看到约0.25+0.24·d米高度以上的障碍（0.5m高障碍≈1m内可见），
-       低矮障碍感知主要靠点云链路，是已知取舍。 range.min=0.5 近裁剪面：雷达装在±0.36边缘、270°FOV的正后方90°盲区恰好
-       罩住机体远半侧（后角0.82m/对向穹顶0.68m/甲板后缘0.76m全部在盲区不可见），
-       视场内自身结构最近只有甲板侧沿（≤0.43m），0.5 起 clip 即可保无自打点。
-       （旧记录"0.68~0.76m自打点带"与当前±0.36挂载+270°FOV几何矛盾，疑为旧
-        挂载时期遗留；改0.5后首次跑仿真应静置验证0.5~0.8m环带无 glued 点） -->
-
   <!-- 前雷达 -->
   <gazebo reference="front_lidar_link">
     <sensor name="front_lidar_sensor" type="gpu_lidar">
@@ -498,13 +474,13 @@
           </horizontal>
           <vertical>
             <samples>32</samples>
-            <min_angle>-0.1745</min_angle>
-            <max_angle>0.7854</max_angle>
+            <min_angle>-0.4363</min_angle>            <!-- -25° -->
+            <max_angle>0.3491</max_angle>            <!-- +20° -->
           </vertical>
         </scan>
         <range>
-          <min>0.8</min>
-          <max>30.0</max>
+          <min>0.55</min>
+          <max>45.0</max>
           <resolution>0.01</resolution>
         </range>
         <noise>
@@ -537,22 +513,15 @@
             <min_angle>-2.3562</min_angle>
             <max_angle>2.3562</max_angle>
           </horizontal>
-          <!-- 0°~+10°（传感器系）→ 世界 -5°~+5°，辅助定位补特征，两个约束：
-           ① ros_gz_bridge 的 LaserScan 取垂直中间行(32线第16行≈+5.16°传感器系
-              ≈世界+0.16°近水平) → /scan_2 无地面回波；
-           ② 最低ring世界-5°打地在2.86m外，避开0.93~2.9m近距反复命中区——
-              该区地面弧线会随定位子图烤进 /map，经 static_layer 长期被当成障碍。
-              （曾试过与前雷达相同的[-10°,+45°]：中间行朝下1.67°打地8.6m一整圈，
-               近距弧线密集烤图，是"后雷达方向一条横线障碍"的直接来源） -->
           <vertical>
             <samples>32</samples>
-            <min_angle>-0.1745</min_angle>
-            <max_angle>0.7854</max_angle>
+            <min_angle>-0.4363</min_angle>            <!-- -25° -->
+            <max_angle>0.3491</max_angle>            <!-- +20° -->
           </vertical>
         </scan>
         <range>
-          <min>0.8</min>
-          <max>30.0</max>
+          <min>0.55</min>
+          <max>45.0</max>
           <resolution>0.01</resolution>
         </range>
         <noise>
