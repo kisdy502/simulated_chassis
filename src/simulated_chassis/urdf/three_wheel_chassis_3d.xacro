@@ -458,7 +458,7 @@
   <gazebo reference="front_lidar_link">
     <sensor name="front_lidar_sensor" type="gpu_lidar">
       <always_on>true</always_on>
-      <update_rate>15</update_rate>
+      <update_rate>10</update_rate>
       <visualize>true</visualize>
       <topic>/front_lidar/point_cloud</topic>
       <ignition_frame_id>front_lidar_link</ignition_frame_id>
@@ -499,7 +499,7 @@
   <gazebo reference="rear_lidar_link">
     <sensor name="rear_lidar_sensor" type="gpu_lidar">
       <always_on>true</always_on>
-      <update_rate>15</update_rate>
+      <update_rate>10</update_rate>
       <visualize>true</visualize>
       <topic>/rear_lidar/point_cloud</topic>
       <ignition_frame_id>rear_lidar_link</ignition_frame_id>
@@ -514,7 +514,7 @@
             <max_angle>2.3562</max_angle>
           </horizontal>
           <vertical>
-            <samples>32</samples>
+            <samples>16</samples>                       <!-- 16线：降负载 -->
             <min_angle>-0.4363</min_angle>            <!-- -25° -->
             <max_angle>0.3491</max_angle>            <!-- +20° -->
           </vertical>

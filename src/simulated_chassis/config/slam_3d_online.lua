@@ -6,9 +6,9 @@ options = {
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "map",
   tracking_frame = "base_link",
-  published_frame = "base_footprint",
+  published_frame = "odom",
   odom_frame = "odom",
-  provide_odom_frame = true,
+  provide_odom_frame = false,
   publish_frame_projected_to_2d = true,  -- ✅ 发布tf时强制投影到z=0/roll=0/pitch=0，前端local SLAM的z漂移不传导到map→odom
   use_odometry = true,
   use_nav_sat = false,
