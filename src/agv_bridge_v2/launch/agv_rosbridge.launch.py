@@ -72,7 +72,9 @@ def _agv_nav_server_node(context):
                 "use_sim_time": use_sim_time,
                 "feedback_interval_ms": 400,
                 "battery_level": 100.0,
-                "enable_tf_broadcast": True,
+                # map->AGV001/base_link 冗余TF已关闭:上位机读位姿走 /agv/pose 话题,
+                # 这条TF只污染tf树(与map->odom无关但碍眼,排查TF时是噪音)
+                "enable_tf_broadcast": False,
                 "back_up_max_heading_error_deg": back_up_max_heading_error_deg,
                 "maps_dir": _resolve_maps_dir(context),
                 "pbstream_file": pbstream_file,
