@@ -39,10 +39,10 @@ def generate_launch_description():
     pkg_share = get_package_share_directory('simulated_chassis')
 
     # ===== 文件路径 =====
-    # 2D 双激光版：costmap 消费 /scan_1 /scan_2，local costmap 无 static/voxel 层。
-    # 若需回退 3D 点云方案，改为 'nav2_params_3d.yaml'。
-    nav2_params_file = os.path.join(pkg_share, 'param', 'nav2_params_2d.yaml')
-    default_pbstream = os.path.join(pkg_share, 'maps', 'my_map_2d.pbstream')
+    # 3D 双激光版：costmap 消费 /points2_1 /points2_2 投影点云。
+    # 若需切回 2D 扫描方案，改为 'nav2_params_2d.yaml'。
+    nav2_params_file = os.path.join(pkg_share, 'param', 'nav2_params_3d.yaml')
+    default_pbstream = os.path.join(pkg_share, 'maps', 'my_map_3d.pbstream')
 
     # ===== 启动参数 =====
     declared_arguments = [
@@ -53,7 +53,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'configuration_basename',
-            default_value='localization_2d_lidar.lua',
+            default_value='localization_3d.lua',
             description='Cartographer 定位配置文件'
         ),
         DeclareLaunchArgument(

@@ -31,10 +31,10 @@ def generate_launch_description():
     # 机器人名称（统一修改）
     robot_name = 'three_wheel_agv'
 
-    # 本包默认机器人 = 2D 雷达版（左前/右后斜对角、底盘三角切角低位安装）。
-    # 3D 仿真时：本行改为 three_wheel_chassis_3d.xacro，
-    # 并把下方 bridge 的 arguments/remappings 换成 3D 版（见 bridge 处注释）。
-    xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis_2d.xacro")
+    # 本包默认机器人 = 3D 雷达版（前后双 Mid-360 仿真 gpu_lidar）。
+    # 2D 仿真时：本行改为 three_wheel_chassis_2d.xacro，
+    # 并把下方 bridge 的 arguments/remappings 换成 2D 版（见 bridge 处注释）。
+    xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis_3d.xacro")
     world_path = os.path.join(pkg_share, "world", "world_m.sdf")
     robot_description = {
         "robot_description": Command(["xacro ", xacro_path])
@@ -104,28 +104,27 @@ def generate_launch_description():
         ],
     )
 
-    # ===== 传感器话题桥接（2D 雷达版） =====
-    # gpu_lidar 单垂直波束，基础话题即 LaserScan，无点云链路；
-    # Cartographer/Nav2 只消费 /scan_1 /scan_2。
-    # 3D 仿真时换成：
+    # ===== 传感器话题桥接（3D 雷达版） =====
+    # 双 gpu_lidar：基础话题 /xxx/point_cloud 发 LaserScan（RViz 轻量显示 + 上位机），
+    # 子话题 /xxx/point_cloud/points 发 PointCloudPacked 点云，
+    # 桥接后重命名，Cartographer 3D 消费 /points2_1 /points2_2。
+    # 2D 仿真时换成：
     #   arguments=[
-    #       '/front_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
-    #       '/rear_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
-    #       '/front_lidar/point_cloud@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
-    #       '/rear_lidar/point_cloud@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+    #       '/front_lidar/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+    #       '/rear_lidar/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
     #       '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
     #       '/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
     #   ],
-    #   并在 remappings 中追加：
-    #       ('/front_lidar/point_cloud/points', '/points2_1'),
-    #       ('/rear_lidar/point_cloud/points', '/points2_2'),
-    #       同时两条 LaserScan 的 remap 源改为 '/front_lidar/point_cloud'、'/rear_lidar/point_cloud'。
+    #   并把 remappings 中两条 LaserScan 的 remap 源改为
+    #   ('/front_lidar/scan', '/scan_1')、('/rear_lidar/scan', '/scan_2')。
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
-            '/front_lidar/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
-            '/rear_lidar/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+            '/front_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
+            '/rear_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
+            '/front_lidar/point_cloud@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+            '/rear_lidar/point_cloud@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
             '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
             '/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
         ],
@@ -137,8 +136,10 @@ def generate_launch_description():
             # 桥接会造成 TF 双发布者打架（Ignition 真值 vs 控制器轮式里程计），
             # TF 在两个值间跳动 → 遥控时机器人来回抖动的根因。
             ('/world/test_world/clock', '/clock'),
-            ('/front_lidar/scan', '/scan_1'),
-            ('/rear_lidar/scan', '/scan_2'),
+            ('/front_lidar/point_cloud/points', '/points2_1'),
+            ('/rear_lidar/point_cloud/points', '/points2_2'),
+            ('/front_lidar/point_cloud', '/scan_1'),
+            ('/rear_lidar/point_cloud', '/scan_2'),
         ],
         output='screen'
     )
