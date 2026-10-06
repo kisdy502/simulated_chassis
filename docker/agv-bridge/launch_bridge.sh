@@ -9,14 +9,23 @@ export AGV_ID=${AGV_ID:-"AGV001"}
 export WEBSOCKET_PORT=${WEBSOCKET_PORT:-9090}
 export USE_SIM_TIME=${USE_SIM_TIME:-true}
 export BACK_UP_MAX_HEADING_ERROR_DEG=${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}
+export MAPS_DIR=${MAPS_DIR:-/ros2_ws/maps}
+export PBSTREAM_FILE=${PBSTREAM_FILE:-}
+export ROBOT_PACKAGE=${ROBOT_PACKAGE:-simulated_chassis}
 
 echo "Starting AGV Nav Server + rosbridge"
 echo "  AGV_ID: $AGV_ID"
 echo "  rosbridge Port: $WEBSOCKET_PORT"
+echo "  Robot package: $ROBOT_PACKAGE"
+echo "  Maps dir: $MAPS_DIR"
+echo "  Initial map: ${PBSTREAM_FILE:-<none>}"
 echo "  上位机接入? ws://<host>:$WEBSOCKET_PORT"
 
 exec ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
     agv_id:=$AGV_ID \
     port:=$WEBSOCKET_PORT \
     use_sim_time:=$USE_SIM_TIME \
-    back_up_max_heading_error_deg:=$BACK_UP_MAX_HEADING_ERROR_DEG
+    back_up_max_heading_error_deg:=$BACK_UP_MAX_HEADING_ERROR_DEG \
+    maps_dir:=$MAPS_DIR \
+    pbstream_file:=$PBSTREAM_FILE \
+    robot_package:=$ROBOT_PACKAGE

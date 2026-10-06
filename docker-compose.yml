@@ -10,21 +10,17 @@ services:
     restart: unless-stopped
     environment:
       - DISPLAY=${DISPLAY:-:0}
-      - ROBOT_TYPE=${ROBOT_TYPE:-diff_drive}
+      - ROBOT_TYPE=${ROBOT_TYPE:-omni_3wd}
       - MODE=${MODE:-simulation}
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-      - GAZEBO_GUI=${GAZEBO_GUI:-false}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - simulation_data:/root/.gazebo
       - ./maps:/ros2_ws/maps
-    ports:
-      - "11345:11345"  # Gazebo仿真端口
     networks:
       - agv_network
     ipc: host
-    pid: host
 
   # ==================== AGV Bridge节点 ====================
   
@@ -40,6 +36,9 @@ services:
       - USE_SIM_TIME=${USE_SIM_TIME:-true}
       # 倒车朝向偏差阈值（度）：倒车绝不自动旋转，超阈值直接失败
       - BACK_UP_MAX_HEADING_ERROR_DEG=${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}
+      - MAPS_DIR=/ros2_ws/maps
+      - PBSTREAM_FILE=${PBSTREAM_FILE:-/ros2_ws/maps/my_map/my_map.pbstream}
+      - ROBOT_PACKAGE=simulated_chassis
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-9090}
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
@@ -52,13 +51,15 @@ services:
     depends_on:
       robot-simulation:
         condition: service_started
+      nav2-server:
+        condition: service_started
     networks:
       - agv_network
     ipc: host
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # ==================== 导航/建图（二选一）====================
+  # ==================== 导航 ====================
   
   nav2-server:
     image: simulated-robot:latest
@@ -66,35 +67,13 @@ services:
     restart: unless-stopped
     environment:
       - DISPLAY=${DISPLAY:-:0}
-      - ROBOT_TYPE=${ROBOT_TYPE:-diff_drive}
+      - ROBOT_TYPE=${ROBOT_TYPE:-omni_3wd}
       - MODE=navigation
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-      - PBSTREAM_FILE=/ros2_ws/maps/my_map.pbstream
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ./maps:/ros2_ws/maps
-      - simulation_data:/root/.gazebo
-    command: ["/launch_robot.sh"]
-    depends_on:
-      robot-simulation:
-        condition: service_started
-    networks:
-      - agv_network
-    ipc: host
-    profiles:
-      - navigation
-
-  cartographer:
-    image: simulated-robot:latest
-    container_name: cartographer_slam
-    restart: unless-stopped
-    environment:
-      - DISPLAY=${DISPLAY:-:0}
-      - ROBOT_TYPE=${ROBOT_TYPE:-diff_drive}
-      - MODE=slam
-      - ROS_DOMAIN_ID=0
-      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      # Nav2 本身不启动定位（include_localization=false），保留该值仅供日志/手工切换。
+      - PBSTREAM_FILE=${PBSTREAM_FILE:-/ros2_ws/maps/my_map/my_map.pbstream}
+      - START_RVIZ=${START_RVIZ:-false}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./maps:/ros2_ws/maps
@@ -105,8 +84,6 @@ services:
     networks:
       - agv_network
     ipc: host
-    profiles:
-      - slam
 
 # ==================== 网络配置 ====================
 networks:

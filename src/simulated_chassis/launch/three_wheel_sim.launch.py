@@ -8,7 +8,7 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessStart
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, Command, EnvironmentVariable
+from launch.substitutions import LaunchConfiguration, EnvironmentVariable, Command
 from launch_ros.actions import Node
 
 
@@ -27,11 +27,14 @@ def generate_launch_description():
         "start_teleop", default_value="false",
         description="是否弹出 xterm 键盘遥控窗口（默认 false，用手柄）",
     )
-    
+
     # 机器人名称（统一修改）
     robot_name = 'three_wheel_agv'
 
-    xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis.xacro")
+    # 本包默认机器人 = 2D 雷达版（左前/右后斜对角、底盘三角切角低位安装）。
+    # 3D 仿真时：本行改为 three_wheel_chassis_3d.xacro，
+    # 并把下方 bridge 的 arguments/remappings 换成 3D 版（见 bridge 处注释）。
+    xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis_2d.xacro")
     world_path = os.path.join(pkg_share, "world", "world_m.sdf")
     robot_description = {
         "robot_description": Command(["xacro ", xacro_path])
@@ -46,17 +49,21 @@ def generate_launch_description():
             {"use_sim_time": LaunchConfiguration("use_sim_time")},
         ],
     )
-    
+
     set_plugin_path = SetEnvironmentVariable(
         "IGN_GAZEBO_SYSTEM_PLUGIN_PATH",
         "/opt/ros/humble/lib"
     )
 
-    # 让 Gazebo Fortress 能找到本包的本地模型（如 triangular_prism）
+    # Gazebo 将 URDF 中的 package://simulated_chassis/... 转换成
+    # model://simulated_chassis/...，因此搜索根必须包含 pkg_share 的父目录；
+    # pkg_share/models 则继续供 world 中的 model://triangular_prism 使用。
     set_resource_path = SetEnvironmentVariable(
         "IGN_GAZEBO_RESOURCE_PATH",
         [
             EnvironmentVariable("IGN_GAZEBO_RESOURCE_PATH", default_value=""),
+            ":",
+            os.path.dirname(pkg_share),
             ":",
             os.path.join(pkg_share, "models"),
         ],
@@ -65,7 +72,7 @@ def generate_launch_description():
     set_software_render = SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1")
 
     ign_gazebo = ExecuteProcess(
-        cmd=["ign", "gazebo", "-r","-s", world_path],
+        cmd=["ign", "gazebo", "-r", "-s", world_path],
         output="screen",
     )
 
@@ -96,35 +103,46 @@ def generate_launch_description():
                  arguments=["three_wheel_base_controller", "--controller-manager", "/controller_manager"]),
         ],
     )
-    
+
+    # ===== 传感器话题桥接（2D 雷达版） =====
+    # gpu_lidar 单垂直波束，基础话题即 LaserScan，无点云链路；
+    # Cartographer/Nav2 只消费 /scan_1 /scan_2。
+    # 3D 仿真时换成：
+    #   arguments=[
+    #       '/front_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
+    #       '/rear_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
+    #       '/front_lidar/point_cloud@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+    #       '/rear_lidar/point_cloud@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+    #       '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
+    #       '/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
+    #   ],
+    #   并在 remappings 中追加：
+    #       ('/front_lidar/point_cloud/points', '/points2_1'),
+    #       ('/rear_lidar/point_cloud/points', '/points2_2'),
+    #       同时两条 LaserScan 的 remap 源改为 '/front_lidar/point_cloud'、'/rear_lidar/point_cloud'。
     bridge = Node(
-        package='ros_gz_bridge',  # 改包名
+        package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
-            # 双3D雷达点云（前+后），Ignition 在 <topic>/points 子话题发 PointCloudPacked
-            '/front_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
-            '/rear_lidar/point_cloud/points@sensor_msgs/msg/PointCloud2@ignition.msgs.PointCloudPacked',
-            # 2D LaserScan（RViz 轻量显示 + 上位机使用），gpu_lidar 在基础话题发 LaserScan
-            '/front_lidar/point_cloud@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
-            '/rear_lidar/point_cloud@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+            '/front_lidar/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+            '/rear_lidar/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
             '/imu@sensor_msgs/msg/Imu@ignition.msgs.IMU',
             '/world/test_world/clock@rosgraph_msgs/msg/Clock@ignition.msgs.Clock',
         ],
         parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
         remappings=[
             (f'/model/{robot_name}/odometry', '/odom'),
-            (f'/model/{robot_name}/tf', '/tf'),
-            ('/world/test_world/clock', '/clock'),  # ✅ 重映射到 /clock
-            # Ignition 的 /xxx/points 桥接到 ROS 后，重命名为 Cartographer 期望的话题
-            ('/front_lidar/point_cloud/points', '/points2_1'),
-            ('/rear_lidar/point_cloud/points', '/points2_2'),
-            # 2D LaserScan 重映射
-            ('/front_lidar/point_cloud', '/scan_1'),
-            ('/rear_lidar/point_cloud', '/scan_2'),
+            # 注意：不桥接 /model/{name}/tf → /tf！odom→base_footprint TF 由
+            # 三舵轮控制器发布（publish_tf: true，three_wheel_controllers.yaml）。
+            # 桥接会造成 TF 双发布者打架（Ignition 真值 vs 控制器轮式里程计），
+            # TF 在两个值间跳动 → 遥控时机器人来回抖动的根因。
+            ('/world/test_world/clock', '/clock'),
+            ('/front_lidar/scan', '/scan_1'),
+            ('/rear_lidar/scan', '/scan_2'),
         ],
         output='screen'
     )
-    
+
     teleop = Node(
         package='teleop_twist_keyboard',
         executable='teleop_twist_keyboard',
@@ -137,7 +155,7 @@ def generate_launch_description():
 
         output='screen',  # 输出会显示在启动launch的终端中
     )
-    
+
     # joy 手柄驱动
     joy_node = Node(
         package='joy',
@@ -163,8 +181,9 @@ def generate_launch_description():
             'watchdog_timeout': 0.8,   # 摇杆断连0.8秒后停车，松手主动发停不会被误杀
         }]
     )
-    
-    # 里程计中继：控制器发布 /three_wheel_base_controller/odom，转发到 /odom
+
+    # 历史兼容节点（当前不启动）：控制器已直接发布标准 /odom，
+    # /three_wheel_base_controller/odom 已无发布者，不再需要二次转发。
     odom_relay_node = Node(
         package="simulated_chassis",
         executable="odom_relay_node",
@@ -172,7 +191,7 @@ def generate_launch_description():
         parameters=[
             {'input_topic': '/three_wheel_base_controller/odom'},
             {'output_topic': '/odom'},
-            {'publish_tf': False},  # TF 由控制器 enable_odom_tf 发布
+            {'publish_tf': False},  # 避免重复；odom TF 由 Cartographer provide_odom_frame 发布
             {"use_sim_time": LaunchConfiguration("use_sim_time")},
         ],
     )
@@ -191,5 +210,5 @@ def generate_launch_description():
         teleop, ##用游戏手柄替代键盘
         joy_node,
         gamepad_teleop_node,
-        odom_relay_node,
+        # odom_relay_node,  # 控制器已直接发布 /odom
     ])

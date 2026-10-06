@@ -26,8 +26,8 @@ def generate_launch_description():
     declared_arguments = [
         DeclareLaunchArgument(
             'configuration_basename',
-            default_value='slam_3d_online.lua',  # 默认 3D（前后双雷达原始点云直连）；2D 水平扫描版传 slam_2d_online.lua
-            description='Cartographer Lua配置文件（slam_3d_online / slam_2d_online）'
+            default_value='slam_2d_lidar_online.lua',  # 默认 2D 雷达版；3D 点云版传 slam_3d_online.lua
+            description='Cartographer Lua配置文件（默认 slam_2d_lidar_online；3D 传 slam_3d_online）'
         ),
     ]
 

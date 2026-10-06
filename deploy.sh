@@ -15,9 +15,9 @@ usage() {
     echo ""
     echo "Commands:"
     echo "  build       - Build all Docker images"
-    echo "  up          - Start core services (robot + bridge)"
-    echo "  up-nav      - Start with Nav2 navigation"
-    echo "  up-slam     - Start with Cartographer SLAM"
+    echo "  up          - Start robot + Nav2 + bridge"
+    echo "  up-nav      - Alias of up"
+    echo "  up-slam     - Start the stack and switch bridge to mapping mode"
     echo "  down        - Stop and remove containers"
     echo "  restart     - Restart services"
     echo "  logs        - View logs [service_name]"
@@ -28,16 +28,16 @@ usage() {
     echo ""
     echo "Examples:"
     echo "  $0 build              # Build images"
-    echo "  $0 up                 # Robot + Bridge"
-    echo "  $0 up-slam            # Robot + Bridge + SLAM"
+    echo "  $0 up                 # Robot + Nav2 + Bridge"
+    echo "  $0 up-slam            # Start stack and enter mapping mode"
     echo "  $0 explore 0.3 0.5    # Start exploration"
     echo "  $0 save-map my_map    # Save map as my_map"
-    echo "  $0 logs -f agv-bridge # Follow bridge logs"
+    echo "  $0 logs agv-bridge    # Follow bridge logs"
 }
 
 build_images() {
-    echo -e "${GREEN}Building ROS2 base image (for nav2/slam)...${NC}"
-    docker compose build nav2-server cartographer || true
+    echo -e "${GREEN}Building ROS2 base image...${NC}"
+    docker build -f docker/ros2-base/Dockerfile -t ros2-base:latest .
     
     echo -e "${GREEN}Building simulated robot image...${NC}"
     docker compose build robot-simulation
@@ -45,6 +45,9 @@ build_images() {
     echo -e "${GREEN}Building AGV bridge image...${NC}"
     docker compose build agv-bridge
     
+    echo -e "${GREEN}Validating Compose configuration...${NC}"
+    docker compose config --quiet
+
     echo -e "${GREEN}All images built successfully!${NC}"
 }
 
@@ -54,21 +57,48 @@ start_services() {
     case "$mode" in
         nav)
             echo -e "${GREEN}Starting: Robot + Bridge + Navigation${NC}"
-            docker compose --profile navigation up -d --force-recreate
+            docker compose up -d --force-recreate robot-simulation nav2-server agv-bridge
             ;;
         slam)
-            echo -e "${GREEN}Starting: Robot + Bridge + SLAM${NC}"
-            docker compose --profile slam up -d --force-recreate
+            echo -e "${GREEN}Starting: Robot + Navigation + Bridge${NC}"
+            docker compose up -d --force-recreate robot-simulation nav2-server agv-bridge
             ;;
         *)
-            echo -e "${GREEN}Starting: Robot + Bridge${NC}"
-            docker compose up -d robot-simulation agv-bridge
+            echo -e "${GREEN}Starting: Robot + Navigation + Bridge${NC}"
+            docker compose up -d robot-simulation nav2-server agv-bridge
             ;;
     esac
 
     echo -e "${GREEN}Services started. Checking status...${NC}"
     sleep 3
     docker compose ps
+
+    if [ "$mode" = "slam" ]; then
+        start_mapping
+    fi
+}
+
+wait_for_agv_service() {
+    local service_name=$1
+    local attempts=${2:-45}
+
+    for ((i = 1; i <= attempts; i++)); do
+        if docker exec agv_bridge bash -lc \
+            "source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && ros2 service list | grep -Fxq '$service_name'"; then
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo -e "${RED}Timed out waiting for ROS2 service: ${service_name}${NC}"
+    return 1
+}
+
+start_mapping() {
+    echo -e "${GREEN}Waiting for bridge mapping service...${NC}"
+    wait_for_agv_service "/agv/start_mapping"
+    docker exec agv_bridge bash -lc \
+        "source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && ros2 service call /agv/start_mapping agv_bridge_v2_interfaces/srv/StartMapping '{}'"
 }
 
 stop_services() {
@@ -115,21 +145,15 @@ cleanup() {
 
 save_map() {
     local map_name=${1:-"slam_map"}
-    echo -e "${GREEN}Saving Cartographer state as: ${map_name}${NC}"
+    echo -e "${GREEN}Saving map through AGV bridge as: ${map_name}${NC}"
 
-    docker exec cartographer_slam bash -c "
-        source /opt/ros/humble/setup.bash
-        source /ros2_ws/install/setup.bash
-        export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-        ros2 service call /write_state cartographer_ros_msgs/srv/WriteState \"{filename: '/ros2_ws/maps/${map_name}.pbstream'}\"
-    "
+    wait_for_agv_service "/agv/save_map"
+    docker exec agv_bridge bash -lc \
+        "source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && ros2 service call /agv/save_map agv_bridge_v2_interfaces/srv/SaveMap \"{map_name: '${map_name}'}\""
 
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}Map saved to ./maps/${map_name}.pbstream${NC}"
-        ls -la ./maps/
-        echo ""
-        echo -e "${YELLOW}提示: 使用离线建图将pbstream转换为地图:${NC}"
-        echo "  ./deploy.sh up-slam-offline bag:=<bag_file> pbstream:=./maps/${map_name}.pbstream"
+        echo -e "${GREEN}Map request completed. Files should be under ./maps/${map_name}/${map_name}.*${NC}"
+        ls -la "./maps/${map_name}" 2>/dev/null || true
     else
         echo -e "${RED}Failed to save map${NC}"
     fi
@@ -181,7 +205,7 @@ explore() {
                     ;;
             esac
         done
-    ' "$@"
+    ' _ "$1" "$2"
 }
 
 case "$1" in

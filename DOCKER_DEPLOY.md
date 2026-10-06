@@ -1,152 +1,137 @@
-# AGV机器人仿真系统 Docker部署
+# 三舵轮仿真机器人 Docker 部署
 
-## 架构说明
+当前 Docker 栈按三舵轮机器人 `omni_3wd` 配置，包含三个常驻容器：
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Docker Network (172.28.0.0/16)            │
-│                                                             │
-│  ┌──────────────┐  ┌─────────────────┐                     │
-│  │ agv-bridge   │◄─┤ robot-simulation │                     │
-│  │ :9090 (WS)   │  │ :11345 (Gazebo)  │                     │
-│  │              │  │                  │                     │
-│  │ ROS2 Bridge  │  │ Gazebo + 模型    │                     │
-│  └──────┬───────┘  └────────┬─────────┘                     │
-│         │                    │                              │
-│         ▼                    ▼ (二选一)                      │
-│   ┌───────────────────────────────────┐                    │
-│   │     host.docker.internal          │                    │
-│   │  ┌────────────┐ ┌──────────────┐  │                    │
-│   │  │Spring Boot  │ │ Redis/MQTT   │  │  ← 上位机项目部署  │
-│   │  │ :22777      │ │              │  │                    │
-│   │  └────────────┘ └──────────────┘  │                    │
-│   └───────────────────────────────────┘                    │
-│                                                              │
-│   可选服务（profile启动）:                                   │
-│   ┌─────────────────┐  ┌─────────────────┐                 │
-│   │  nav2-server    │  │  cartographer   │                 │
-│   │  (导航)         │  │  (SLAM建图)     │                 │
-│   └─────────────────┘  └─────────────────┘                 │
-└─────────────────────────────────────────────────────────────┘
-```
+| 服务 | 职责 |
+|---|---|
+| `robot-simulation` | Gazebo Fortress、机器人模型、控制器、雷达和里程计 |
+| `nav2-server` | Nav2 导航；不重复启动 Cartographer 定位 |
+| `agv-bridge` | rosbridge WebSocket、AGV 业务服务、定位/建图进程管理 |
 
-## 快速开始
+Cartographer 不再作为第四个常驻容器运行。`agv-bridge` 根据当前模式动态启动
+`simulated_chassis/localization.launch.py` 或 `slam.launch.py`，避免同一 ROS domain
+出现两个 Cartographer 节点。
 
-### 1. 环境准备
+## 环境要求
 
-```bash
-# 安装Docker
-sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2
-sudo usermod -aG docker $USER
-# 重新登录生效
+- Windows 11 + Docker Desktop（Linux containers）或 Ubuntu 22.04 Docker
+- 建议至少 16 GB 内存；首次基础镜像构建会下载 ROS 2、Nav2、Gazebo 等依赖
+- Windows 上从 Git Bash/WSL 执行 `deploy.sh`，或使用下文的 PowerShell 命令
+
+## 配置
+
+默认 `.env` 已适配当前工程：
+
+```dotenv
+ROBOT_TYPE=omni_3wd
+PBSTREAM_FILE=/ros2_ws/maps/my_map/my_map.pbstream
+WEBSOCKET_PORT=9090
+START_RVIZ=false
 ```
 
-### 2. 配置
+地图目录契约为：
 
-```bash
-# 编辑.env文件，修改上位机连接地址等配置
-vim .env
+```text
+maps/<地图名>/<地图名>.pbstream
+maps/<地图名>/<地图名>.pgm
+maps/<地图名>/<地图名>.yaml
 ```
 
-**关键配置项：**
-```bash
-ROBOT_TYPE=diff_drive        # diff_drive(差速) 或 omni_3wd(三舵轮)
-AGV_ID=AGV001               # 机器人ID
-SPRINGBOOT_HOST=host.docker.internal  # 上位机地址
-SPRINGBOOT_PORT=22777       # 上位机端口
-```
+## 构建
 
-### 3. 构建镜像
+Git Bash/WSL：
 
 ```bash
 ./deploy.sh build
 ```
 
-### 4. 启动服务
+PowerShell：
+
+```powershell
+docker build -f docker/ros2-base/Dockerfile -t ros2-base:latest .
+docker compose build robot-simulation agv-bridge
+docker compose config --quiet
+```
+
+业务代码变化通常只需重新执行第二行；只有基础依赖变化时才需要重建
+`ros2-base:latest`。
+
+## 启动
+
+Git Bash/WSL：
 
 ```bash
-# 基础模式：仿真 + Bridge
 ./deploy.sh up
+```
 
-# 导航模式：仿真 + Bridge + Nav2导航
-./deploy.sh up-nav
+PowerShell：
 
-# 建图模式：仿真 + Bridge + Cartographer SLAM
+```powershell
+docker compose up -d --force-recreate robot-simulation nav2-server agv-bridge
+docker compose ps
+```
+
+上位机连接：`ws://localhost:9090`。
+
+默认是无界面部署，Gazebo 只启动仿真服务端。`START_RVIZ=true` 可在已正确配置
+X11 的 Linux 环境中启动 RViz；Windows 日常联调建议保持关闭，在宿主机/WSL
+单独运行 RViz。当前 `three_wheel_sim.launch.py` 没有 Gazebo GUI 开关，因此旧的
+`GAZEBO_GUI` 环境变量已移除，避免造成“设为 true 就会弹窗”的误解。
+
+## 建图、保存地图和重定位
+
+进入建图模式：
+
+```bash
 ./deploy.sh up-slam
 ```
 
-## 服务说明
+该命令先启动三个常驻容器，再调用 `/agv/start_mapping`。建图过程中可由上位机向
+`/cmd_vel` 发布速度控制机器人探索。
 
-| 服务 | 说明 | Profile |
-|------|------|---------|
-| robot-simulation | Gazebo机器人仿真 | 默认 |
-| agv-bridge | ROS2↔HTTP/WebSocket桥接 | 默认 |
-| nav2-server | Nav2导航服务器 | navigation |
-| cartographer | Cartographer SLAM建图 | slam |
-
-## 常用命令
+保存地图并自动切回定位：
 
 ```bash
-./deploy.sh status                # 查看状态
-./deploy.sh logs -f agv-bridge    # 跟踪Bridge日志
-./deploy.sh restart               # 重启
-./deploy.sh down                  # 停止
-./deploy.sh clean                 # 清理所有资源
+./deploy.sh save-map map_001
 ```
 
-## 上位机对接说明
+上位机通过 rosbridge 调用时：
 
-本项目的Bridge节点通过环境变量连接上位机，需在上位机的docker-compose.yml中：
-
-```yaml
-# 上位机compose中添加网络配置
-services:
-  springboot-app:
-    networks:
-      - agv_network  # 与机器人同一网络，或使用host网络
-
-networks:
-  agv_network:
-    external: true
-    name: agv_robot_agv_network
+```json
+{"op":"call_service","service":"/agv/start_mapping","args":{}}
+{"op":"call_service","service":"/agv/save_map","args":{"map_name":"map_001"}}
+{"op":"call_service","service":"/agv/relocalize","args":{"map_name":"my_map","x":0.0,"y":0.0,"yaw":0.0}}
 ```
 
-**或者使用host网络模式**（推荐简化方案）：
-- 本项目compose使用 `extra_hosts: host.docker.internal:host-gateway`
-- Bridge通过 `host.docker.internal` 访问宿主机上的上位机服务
-- 上位机直接监听宿主机端口即可
+地图切换和重定位还可使用 `/agv/list_maps`、`/agv/load_map`。实际服务字段应以
+`src/agv_bridge_v2_interfaces/srv/` 中的定义为准。
 
-## 开发调试
+## 验证与排障
 
 ```bash
-# 进入容器
-docker exec -it robot_simulation bash
-docker exec -it agv_bridge bash
+docker compose ps
+docker compose logs --tail 200 robot-simulation
+docker compose logs --tail 200 nav2-server
+docker compose logs --tail 200 agv-bridge
 
-# 查看ROS2话题
-ros2 topic list
-ros2 topic echo /scan --window 10
+docker exec agv_bridge bash -lc \
+  "source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && ros2 service list | grep /agv"
 
-# 手动发布目标点
-ros2 topic pub /goal_pose geometry_msgs/PoseStamped "{header: {frame_id: 'map'}, pose: {position: {x: 1.0, y: 2.0}}}"
+docker exec robot_simulation bash -lc \
+  "source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && ros2 topic list"
 ```
 
-## 目录结构
+关键话题应包括 `/odom`、`/scan_1`、`/scan_2`、`/joint_states`；关键服务应包括
+`/agv/start_mapping`、`/agv/save_map`、`/agv/load_map`、`/agv/relocalize`。
 
+常用维护命令：
+
+```bash
+./deploy.sh status
+./deploy.sh logs agv-bridge
+./deploy.sh restart
+./deploy.sh down
 ```
-simulated_chassis/
-├── docker/
-│   ├── ros2-base/           # ROS2基础镜像 (Humble+Nav2+Carto)
-│   ├── simulated-robot/     # 机器人仿真镜像
-│   └── agv-bridge/          # Bridge节点镜像
-├── src/
-│   ├── jzt_robot/           # 2D差速底盘
-│   ├── simulated_chassis/   # 3D三舵轮底盘
-│   └── agv_bridge_v2/       # Bridge节点源码
-├── maps/                    # 地图文件
-├── nav2_params/             # Nav2参数
-├── carto_config/            # Cartographer配置
-├── docker-compose.yml
-├── .env
-└── deploy.sh
-```
+
+如果 9090 被 WSL 中旧的 rosbridge 占用，先停止旧进程或在 `.env` 修改
+`WEBSOCKET_PORT`，并让上位机使用相同端口。

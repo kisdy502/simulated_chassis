@@ -42,6 +42,6 @@ three_wheel_base_controller:
     alignment_full_speed_angle: 0.174533     # 10°，所有舵轮进入此误差后才允许驱动
     creep_wheel_speed: 0.5                   # rad/s，舵轮未对齐期间的蠕动轮速（滚动中舵轮才能克服地面摩擦转向；0=完全停车，会死锁）
     reverse_switch_hysteresis: 0.0872665     # 5°，防止正反转在临界点抖动
-    publish_tf: false
+    publish_tf: true
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"

@@ -17,7 +17,7 @@ HTTP 通信代码，只暴露标准 ROS 2 接口，由 `rosbridge_server` 对外
 上位机同时通过 rosbridge 直接访问仿真侧的标准话题（白名单在 launch 中配置）：
 
 - 上报（subscribe）：`/odom`、`/tf`、`/tf_static`、`/map`、`/plan`、`/local_plan`、`/joint_states`
-- 下发（publish）：`/cmd_vel`、`/initialpose`、`/goal_pose`
+- 下发（publish）：`/cmd_vel`、`/goal_pose`（重定位走 `/agv/relocalize` 服务）
 
 ⚠️ **不开放**：`/points2_1`、`/points2_2`（双 3D 雷达点云，JSON 编码数 MB/帧）、
 `/imu`（>100Hz）、`/clock`。本仿真栈**没有** `/scan` 和 `/amcl_pose`

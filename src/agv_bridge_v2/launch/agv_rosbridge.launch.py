@@ -260,4 +260,37 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription(args + [agv_nav_server, rosbridge, rosapi])
+    # 常驻地图保存节点：提前建立 /map 订阅，避免 map_saver_cli
+    # 每次冷启动时 DDS 发现占用 Humble 默认 2s 等待窗口。
+    map_saver = Node(
+        package="nav2_map_server",
+        executable="map_saver_server",
+        name="map_saver",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "save_map_timeout": 10.0,
+            "free_thresh_default": 0.25,
+            "occupied_thresh_default": 0.65,
+        }],
+    )
+
+    map_saver_lifecycle_manager = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_map_saver",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "autostart": True,
+            "node_names": ["map_saver"],
+        }],
+    )
+
+    return LaunchDescription(args + [
+        agv_nav_server,
+        map_saver,
+        map_saver_lifecycle_manager,
+        rosbridge,
+        rosapi,
+    ])

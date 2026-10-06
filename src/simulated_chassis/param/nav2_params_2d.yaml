@@ -67,6 +67,7 @@ smoother_server:
 # 控制器服务器 - MPPI（三舵轮 = OmniDrive）
 controller_server:
   ros__parameters:
+    use_sim_time: True
     controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001 # 三舵轮支持侧向，阈值调小
@@ -113,6 +114,10 @@ controller_server:
       gamma: 0.02
 
       # ✅ 三舵轮：使用 OmniDrive
+      # TF 时间容差：odom→base 由控制器 100Hz 发布，map→odom 由 Cartographer ~15Hz 发布，
+      # 两者存在最大 ~67ms 时间差；容差 0.5s 允许 MPPI 在路径时间戳略超前时
+      # 回退到最新可用 TF 而不是报 extrapolation into the future
+      transform_tolerance: 0.5
       motion_model: "Omni" # 从 DiffDrive 改为 OmniDrive
 
       visualize: false
@@ -436,6 +441,7 @@ bt_navigator_rclcpp_node:
 
 velocity_smoother:
   ros__parameters:
+    use_sim_time: True
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"

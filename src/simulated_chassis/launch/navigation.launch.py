@@ -42,7 +42,7 @@ def generate_launch_description():
     # 2D 双激光版：costmap 消费 /scan_1 /scan_2，local costmap 无 static/voxel 层。
     # 若需回退 3D 点云方案，改为 'nav2_params_3d.yaml'。
     nav2_params_file = os.path.join(pkg_share, 'param', 'nav2_params_2d.yaml')
-    default_pbstream = os.path.join(pkg_share, 'maps', 'my_map_optimized.pbstream')
+    default_pbstream = os.path.join(pkg_share, 'maps', 'my_map_2d.pbstream')
 
     # ===== 启动参数 =====
     declared_arguments = [
@@ -53,7 +53,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'configuration_basename',
-            default_value='localization_3d.lua',
+            default_value='localization_2d_lidar.lua',
             description='Cartographer 定位配置文件'
         ),
         DeclareLaunchArgument(
@@ -129,10 +129,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        LogInfo(msg=['==========================================']),
-        LogInfo(msg=['Nav2 导航模式启动（3D定位）']),
-        LogInfo(msg=['==========================================']),
-
         *declared_arguments,
 
         # 按顺序启动（给各节点留出启动时间）
@@ -142,6 +138,4 @@ def generate_launch_description():
         TimerAction(period=5.5, actions=[rviz_node]),
 
         LogInfo(msg=['导航节点已启动']),
-        LogInfo(msg=['在 RViz 中设置 2D Goal 启动自主导航']),
-        LogInfo(msg=['手柄可随时接管控制']),
     ])

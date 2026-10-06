@@ -2,8 +2,9 @@
 source /opt/ros/humble/setup.bash
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-ROBOT_TYPE=${ROBOT_TYPE:-"diff_drive"}
+ROBOT_TYPE=${ROBOT_TYPE:-"omni_3wd"}
 MODE=${MODE:-simulation}
+START_RVIZ=${START_RVIZ:-false}
 
 echo "=========================================="
 echo "Robot: $ROBOT_TYPE"
@@ -34,9 +35,9 @@ case "$MODE" in
         PBSTREAM=${PBSTREAM_FILE:-""}
         if [ "$ROBOT_TYPE" = "omni_3wd" ]; then
             if [ -n "$PBSTREAM" ]; then
-                ros2 launch simulated_chassis navigation.launch.py pbstream_file:="$PBSTREAM"
+                ros2 launch simulated_chassis navigation.launch.py pbstream_file:="$PBSTREAM" include_localization:=false start_rviz:="$START_RVIZ"
             else
-                ros2 launch simulated_chassis navigation.launch.py
+                ros2 launch simulated_chassis navigation.launch.py include_localization:=false start_rviz:="$START_RVIZ"
             fi
         else
             if [ -n "$PBSTREAM" ]; then

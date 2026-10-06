@@ -47,6 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-ign-ros2-control \
     ros-humble-diff-drive-controller \
     ros-humble-joint-state-broadcaster \
+    ros-humble-joy \
     ros-humble-robot-state-publisher \
     ros-humble-xacro \
     ros-humble-behaviortree-cpp-v3 \
@@ -83,7 +84,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rosdep init || true && rosdep update
 
 ENV ROS_DOMAIN_ID=0
-ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
 COPY docker/ros2-base/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

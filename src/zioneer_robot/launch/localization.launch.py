@@ -78,6 +78,9 @@ def generate_launch_description():
     )
 
     # ===== 占据栅格地图发布 =====
+    # resolution 等选项是 cartographer_occupancy_grid_node 的 gflags，
+    # 不能放进 ROS parameters；纯定位时只发布 pbstream 中的冻结子图，
+    # 避免活动定位子图混入 /map 后产生重影和地图尺寸抖动。
     occupancy_grid_node = Node(
         package='cartographer_ros',
         executable='cartographer_occupancy_grid_node',
@@ -85,9 +88,13 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'use_sim_time': use_sim_time,
-            'resolution': 0.05,
-            'publish_period_sec': 1.0,
         }],
+        arguments=[
+            '-resolution', '0.05',
+            '-publish_period_sec', '1.0',
+            '-include_frozen_submaps=true',
+            '-include_unfrozen_submaps=false',
+        ],
     )
 
     return LaunchDescription([

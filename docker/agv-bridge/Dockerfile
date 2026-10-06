@@ -12,12 +12,15 @@ WORKDIR /ros2_ws/src
 
 COPY src/agv_bridge_v2/ ./agv_bridge_v2/
 COPY src/agv_bridge_v2_interfaces/ ./agv_bridge_v2_interfaces/
+# agv_nav_server 会在运行时拉起 simulated_chassis 的定位/建图 launch，
+# 因此 bridge 镜像必须包含该包，不能只编译 bridge 自身。
+COPY src/simulated_chassis/ ./simulated_chassis/
 
 WORKDIR /ros2_ws
 
 # 先编译接口包（agv_bridge_v2 依赖它生成 action/srv/msg）
 RUN source /opt/ros/humble/setup.bash \
-    && colcon build --packages-up-to agv_bridge_v2 \
+    && colcon build --packages-up-to agv_bridge_v2 simulated_chassis \
         --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
     && rm -rf build log
 

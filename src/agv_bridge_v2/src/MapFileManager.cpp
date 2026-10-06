@@ -477,21 +477,30 @@ namespace agv_bridge
             int8_t *dst = &grid.data[static_cast<size_t>(out_row) * width];
             for (int col = 0; col < width; ++col)
             {
-                const double p = meta.negate != 0
-                                     ? static_cast<double>(src[col]) / 255.0
-                                     : (255.0 - static_cast<double>(src[col])) / 255.0;
-                if (p > meta.occupied_thresh)
+                const int pgm = src[col];
+                if (pgm >= 203 && pgm <= 207)
                 {
-                    dst[col] = 100;
-                }
-                else if (p < meta.free_thresh)
-                {
-                    dst[col] = 0;
-                }
-                else
-                {
+                    // map_saver 的未知色 205（scale/trinary 一致）：恢复为 -1
                     dst[col] = -1;
+                    continue;
                 }
+                // 线性恢复占据概率（0~100）：配合保存侧 scale 模式，中间概率不丢失，
+                // 上位机导航模式的地图才能保留建图时的灰度渐变（trinary 会把
+                // 中间带折进 0/100/-1，观感从渐变突变纯二值）。对旧 trinary pgm
+                // 同样成立（其本身无中间值，线性读回结果不变）。
+                const double p = meta.negate != 0
+                                     ? static_cast<double>(pgm) / 255.0
+                                     : (255.0 - static_cast<double>(pgm)) / 255.0;
+                int occ = static_cast<int>(p * 100.0 + 0.5);
+                if (occ < 0)
+                {
+                    occ = 0;
+                }
+                if (occ > 100)
+                {
+                    occ = 100;
+                }
+                dst[col] = static_cast<int8_t>(occ);
             }
         }
         return true;

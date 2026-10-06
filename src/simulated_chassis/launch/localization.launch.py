@@ -27,7 +27,7 @@ def generate_launch_description():
     pkg_share = get_package_share_directory("simulated_chassis")
 
     cartographer_config_dir = os.path.join(pkg_share, "config")
-    default_pbstream = os.path.join(pkg_share, "maps", "my_map_optimized.pbstream")
+    default_pbstream = os.path.join(pkg_share, "maps", "my_map_2d.pbstream")
 
     declared_arguments = [
         DeclareLaunchArgument(
@@ -37,7 +37,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "configuration_basename",
-            default_value="localization_3d.lua",  # 默认 3D（前后双雷达原始点云直连）；2D 水平扫描版传 localization_2d.lua
+            default_value="localization_2d_lidar.lua",  # 默认 2D 雷达版；3D 点云版传 localization_3d.lua
             description="Cartographer 定位配置文件",
         ),
         DeclareLaunchArgument(
@@ -88,22 +88,19 @@ def generate_launch_description():
     # ===== 占据栅格地图发布 =====
     # 注意：源码核实 cartographer_occupancy_grid_node 只接受 5 个 flag
     # (resolution/publish_period_sec/include_frozen_submaps/include_unfrozen_submaps/
-    #  occupancy_grid_topic)，min_z/max_z/z_voxel_size/trajectory_id 均无效，已移除。
     occupancy_grid_node = Node(
         package="cartographer_ros",
         executable="cartographer_occupancy_grid_node",
         name="occupancy_grid_node",
         output="screen",
-        parameters=[
-            {
-                "use_sim_time": use_sim_time,
-                "resolution": 0.05,
-                "publish_period_sec": 1.0,
-                # 纯定位：只显示 pbstream 中冻结的地图
-                "include_frozen_submaps": True,
-                # 不把定位过程中产生的活动 submap 画进 /map
-                "include_unfrozen_submaps": False,
-            }
+        parameters=[{
+            "use_sim_time": use_sim_time,
+        }],
+        arguments=[
+            "-resolution", "0.05",
+            "-publish_period_sec", "1.0",
+            "-include_frozen_submaps=true",
+            "-include_unfrozen_submaps=false",
         ],
     )
 

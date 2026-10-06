@@ -8,6 +8,58 @@ ros2 launch simulated_chassis three_wheel_sim.launch.py
 ros2 launch simulated_chassis three_wheel_sim.launch.py world:=world_octagon.sdf
 
 
+## 2D 雷达版（当前默认机器人）
+
+本包默认机器人 = 2D 雷达版三舵轮（three_wheel_chassis_2d.xacro）：复刻真机
+"底盘三角切角 + 雷达低位角装"，左前/右后斜对角各一个 2D 雷达（水平 210°/421 点/
+15Hz/量程 0.10~25m）。雷达外沿与 0.8x0.6m 底盘边界齐平，扫描面离地 0.105m，
+朝外 45°/-135°；双雷达 FOV 并集仍为全向 360°，支架和车体均位于盲区内。
+真实机器人出厂即固定一种雷达，仿真同样把所有 launch 默认值固定为 2D——
+上层（bridge/前端）零参数，启动即 2D 机器人在跑。
+
+# 1. 仿真（默认加载 2D 机器人 xacro）
+ros2 launch simulated_chassis three_wheel_sim.launch.py
+
+# 2. 导航（默认 2D 定位 lua；nav2 消费 /scan_1 /scan_2）
+ros2 launch simulated_chassis navigation.launch.py include_localization:=false
+
+# 3. bridge（托管定位/建图自动用 2D 配置，无需额外参数）
+ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
+    robot_package:=simulated_chassis pbstream_file:=<2D版地图>.pbstream
+
+# 在线建图（默认 slam_2d_lidar_online.lua；上位机 /agv/start_mapping 同效）
+ros2 launch simulated_chassis slam.launch.py
+ros2 service call /write_state cartographer_ros_msgs/srv/WriteState "{filename: 'my_map_2d.pbstream'}"
+
+# 录包（2D 版录 LaserScan，不录 points2）
+ros2 bag record -o my_bag_2d /scan_1 /scan_2 /odom /imu /tf /tf_static /clock
+
+# 离线建图（默认 slam_2d_lidar_offline.lua + 2D 机器人 xacro）
+ros2 launch simulated_chassis slam_offline.launch.py \
+    bag_filenames:=my_bag_2d save_state_filename:=my_map_2d.pbstream
+
+# 导航/定位（不走 bridge 时同样默认 2D 配置）
+ros2 launch simulated_chassis navigation.launch.py pbstream_file:=/path/to/my_map_2d.pbstream
+
+## 切换 3D 仿真（改 launch 文件，不常做）
+
+仿真机器人与离线建图的 xacro 已固定为 2D 版，需要 3D 时手动改文件：
+1. three_wheel_sim.launch.py：xacro 行改为 three_wheel_chassis_3d.xacro，
+   并按文件内注释把 bridge 参数集换成 3D 版（补 PointCloud2 桥接）
+2. slam_offline.launch.py：xacro 行改为 three_wheel_chassis_3d.xacro
+3. 建图/导航配置仍可命令行传参：
+ros2 launch simulated_chassis slam.launch.py configuration_basename:=slam_3d_online.lua
+ros2 launch simulated_chassis slam_offline.launch.py \
+    configuration_basename:=slam_3d_offline.lua bag_filenames:=<bag> save_state_filename:=<pbstream>
+ros2 launch simulated_chassis navigation.launch.py \
+    configuration_basename:=localization_3d.lua pbstream_file:=<3D版地图>.pbstream
+
+bridge 托管链路默认 2D：AgvNavServerNode 的 /start_trajectory 默认 lua 已改为
+localization_2d_lidar.lua（与 simulated_chassis 各 launch 默认一致）。
+3D 会话请走手动 navigation.launch.py 方式，不要经 bridge 托管定位。
+
+注意：2D 扫描面（0.105m）与 3D（0.25m）特征高度不同，两版地图不可混用。
+
 ## 在线建图
 source install/setup.bash
 ros2 launch simulated_chassis slam.launch.py

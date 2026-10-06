@@ -164,9 +164,10 @@ namespace agv_bridge
         }
         if (localization_configuration_basename_.empty())
         {
-            // 三舵轮仿真默认 Cartographer 3D（前后雷达原始点云直连，无滤波节点），
-            // 与 localization.launch.py 的默认配置保持一致；需要 2D 时显式传参覆盖。
-            localization_configuration_basename_ = "localization_3d.lua";
+            // 三舵轮仿真默认 2D 雷达版（斜对角低位角装，消费 /scan_1 /scan_2），
+            // 与 simulated_chassis 的 localization.launch.py 默认配置保持一致；
+            // 3D 点云版或其他机器人包显式传本参数覆盖。
+            localization_configuration_basename_ = "localization_2d_lidar.lua";
         }
 
         if (feedback_interval_ms_ <= 0)
@@ -211,6 +212,8 @@ namespace agv_bridge
             "/start_trajectory", rmw_qos_profile_services_default, cartographer_client_group_);
         trajectory_states_client_ = this->create_client<cartographer_ros_msgs::srv::GetTrajectoryStates>(
             "/get_trajectory_states", rmw_qos_profile_services_default, cartographer_client_group_);
+        save_map_client_ = this->create_client<nav2_msgs::srv::SaveMap>(
+            "/map_saver/save_map", rmw_qos_profile_services_default, cartographer_client_group_);
 
         if (pbstream_file_.empty())
         {
@@ -910,45 +913,24 @@ namespace agv_bridge
                 return;
             }
 
-            // 2. pgm + yaml（三件套齐，get_map/list_maps 才能识别）
-            //    改用 nav2_map_server 的 map_saver 从 /map 话题直接保存：
-            //    cartographer_pbstream_to_ros_map 在本机因 cairo 兼容问题必崩
-            //    （image.cc:55 Check failed: cairo_image_surface_get_format (-1 vs 0)，
-            //     实测 2MB 正常 2D pbstream 也崩），而 occupancy_grid_node 实时
-            //    投影的 /map 数据完好——截图即所得。必须在停 slam 之前执行。
+            // 2. pgm + yaml（三件套齐，get_map/list_maps 才能识别）。
+            //    通过常驻 map_saver_server 的 service 保存，避免每次启动
+            //    map_saver_cli 时 DDS 发现 + 2s 订阅超时导致的间歇失败。
+            //    /map 由 occupancy_grid_node 在建图期间发布，必须在停 slam 前保存。
             RCLCPP_INFO(this->get_logger(), "save_map(%s)：从 /map 保存 pgm/yaml ...", name.c_str());
-            const auto export_grid = [this, stem]()
+            const auto export_grid = [this, stem](std::string &export_error)
             {
-                return run_command_sync(
-                    {"ros2", "run", "nav2_map_server", "map_saver_cli",
-                    "-f", stem, "--occ", "0.65", "--free", "0.25", "--fmt", "pgm",
-                    "--ros-args", "-p", useSimTimeArg(use_sim_time_)},   
-                    "/tmp/agv_map_export.log");
+                return call_save_map(stem, export_error);
             };
-            bool grid_exported = export_grid();
-            if (!grid_exported)
-            {
-                // map_saver 内部是硬编码的 2s 订阅超时（humble CLI 无参数可调）：
-                // 冷启动 DDS 发现 1-2s + occupancy_grid ~1Hz 节拍，恰好卡窗口边缘，
-                // 间歇性失败（map2d_first 的 0 字节 pgm、map0928 首次导出失败同因，
-                // map2d_v2/map0926_2d 成功——纯竞态）。重试时发现缓存已热，基本必中；
-                // 真空地图（刚开建图就保存）3 次全失败，走下面的失败分支。
-                for (int attempt = 2; attempt <= 3 && !grid_exported; ++attempt)
-                {
-                    RCLCPP_WARN(this->get_logger(),
-                                "save_map(%s)：map_saver 第 %d 次未在 2s 窗口内拿到 /map 帧，重试...",
-                                name.c_str(), attempt);
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
-                    grid_exported = export_grid();
-                }
-            }
+            std::string export_error;
+            const bool grid_exported = export_grid(export_error);
             if (!grid_exported)
             {
                 // 常见诱因：刚开建图就保存/放弃（无完整子图），/map 上没有有效
                 // 栅格。此时不能停在 MAPPING 卡死：停建图，回退恢复定位。
                 RCLCPP_ERROR(this->get_logger(),
-                             "save_map(%s)：3 次均未从 /map 拿到栅格（地图内容为空或链路异常，"
-                             "详见 /tmp/agv_map_export.log），停建图并回退", name.c_str());
+                             "save_map(%s)：从 /map 保存栅格失败: %s，停建图并回退",
+                             name.c_str(), export_error.c_str());
                 stop_child_process(slam_pid_, "建图");
 
                 std::string prev_map;
@@ -998,7 +980,8 @@ namespace agv_bridge
                 }
                 if (restored && fallback_to_new)
                 {
-                    if (export_grid())
+                    std::string retry_error;
+                    if (export_grid(retry_error))
                     {
                         RCLCPP_WARN(this->get_logger(),
                                     "save_map：定位已在新图 %s 上恢复，pgm/yaml 已在 /map 重发后补齐",
@@ -1008,7 +991,7 @@ namespace agv_bridge
                     {
                         RCLCPP_WARN(this->get_logger(),
                                     "save_map：新图 %s 定位已恢复，但 pgm/yaml 补导出仍失败"
-                                    "（不影响定位与导航，可手动跑 map_saver_cli 补）", name.c_str());
+                                    "（%s）", name.c_str(), retry_error.c_str());
                     }
                 }
                 else if (restored)
@@ -1630,55 +1613,6 @@ namespace agv_bridge
         ::waitpid(pid, nullptr, 0);
     }
 
-    bool AgvNavServerNode::run_command_sync(const std::vector<std::string> &args, const char *log_path)
-    {
-        const pid_t pid = ::fork();
-        if (pid < 0)
-        {
-            RCLCPP_ERROR(this->get_logger(), "fork 失败: %s", std::strerror(errno));
-            return false;
-        }
-        if (pid == 0)
-        {
-            ::setpgid(0, 0);
-            const int fd = ::open(log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            if (fd >= 0)
-            {
-                ::dup2(fd, STDOUT_FILENO);
-                ::dup2(fd, STDERR_FILENO);
-                if (fd > STDERR_FILENO)
-                {
-                    ::close(fd);
-                }
-            }
-            std::vector<char *> argv;
-            argv.reserve(args.size() + 1);
-            for (const auto &arg : args)
-            {
-                argv.push_back(const_cast<char *>(arg.c_str()));
-            }
-            argv.push_back(nullptr);
-            ::execvp(argv[0], argv.data());
-            ::_exit(127);
-        }
-
-        int status = 0;
-        ::waitpid(pid, &status, 0);
-        const bool ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
-        if (!ok)
-        {
-            const int exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-            std::string cmdline;
-            for (const auto &arg : args)
-            {
-                cmdline += arg + " ";
-            }
-            RCLCPP_ERROR(this->get_logger(), "命令执行失败(exit=%d): %s（详见 %s）",
-                         exit_code, cmdline.c_str(), log_path);
-        }
-        return ok;
-    }
-
     bool AgvNavServerNode::start_managed_localization(
         const std::string &pbstream_abs_path,
         const std::string &map_name,
@@ -1888,6 +1822,49 @@ namespace agv_bridge
         if (::stat(pbstream_abs_path.c_str(), &st) != 0 || st.st_size <= 0)
         {
             error = "/write_state 已返回但 pbstream 未落盘: " + pbstream_abs_path;
+            return false;
+        }
+        return true;
+    }
+
+    bool AgvNavServerNode::call_save_map(const std::string &stem, std::string &error)
+    {
+        if (!save_map_client_->wait_for_service(std::chrono::seconds(10)))
+        {
+            error = "/map_saver/save_map 服务 10 秒内不可用";
+            return false;
+        }
+
+        auto request = std::make_shared<nav2_msgs::srv::SaveMap::Request>();
+        request->map_topic = "/map";
+        request->map_url = stem;
+        request->image_format = "pgm";
+        // scale 模式：占据概率线性映射灰度，中间概率不丢失；
+        // loadGrid 侧配套线性读回（trinary 会把中间带折进二值，地图观感突变）
+        request->map_mode = "scale";
+        request->free_thresh = 0.25F;
+        request->occupied_thresh = 0.65F;
+
+        auto future = save_map_client_->async_send_request(request);
+        if (future.wait_for(std::chrono::seconds(15)) != std::future_status::ready)
+        {
+            error = "/map_saver/save_map 调用超时（15 秒）";
+            return false;
+        }
+        if (!future.get()->result)
+        {
+            error = "map_saver_server 报告保存失败（/map 可能还没有有效栅格）";
+            return false;
+        }
+
+        const std::string pgm = stem + ".pgm";
+        const std::string yaml = stem + ".yaml";
+        struct stat pgm_stat {};
+        struct stat yaml_stat {};
+        if (::stat(pgm.c_str(), &pgm_stat) != 0 || pgm_stat.st_size <= 0 ||
+            ::stat(yaml.c_str(), &yaml_stat) != 0 || yaml_stat.st_size <= 0)
+        {
+            error = "map_saver_server 返回成功，但 pgm/yaml 文件不存在或为空";
             return false;
         }
         return true;

@@ -76,9 +76,12 @@ flowchart LR
 ```json
 {"op":"subscribe","id":"sub_status","topic":"/agv/status",
  "type":"agv_bridge_v2_interfaces/msg/AgvStatus","throttle_rate":1000,"queue_length":1}
+{"op":"subscribe","id":"sub_pose","topic":"/agv/pose",
+ "type":"geometry_msgs/msg/PoseStamped","throttle_rate":0,"queue_length":1}
 ```
 
 - `throttle_rate`：最小发送间隔（毫秒），0 = 不限流
+- `/agv/pose` 由 bridge 以 10Hz 发布最新 TF；前端不限流、队列只留最新一帧
 - `type` 可省略（rosbridge 自动从 ROS 图推断），但显式写上更稳
 - 之后 rosbridge 持续推 `{"op":"publish","topic":"/agv/status","msg":{...}}`
 
@@ -155,7 +158,7 @@ flowchart LR
 bridge 未加工、rosbridge 直接透传的标准话题：
 
 - 上报（subscribe）：`/odom`、`/tf`、`/tf_static`、`/map`、`/plan`、`/local_plan`、`/joint_states`
-- 下发（publish）：`/cmd_vel`（由 cmd_vel_relay 转发到底盘控制器）、`/initialpose`、`/goal_pose`
+- 下发（publish）：`/cmd_vel`（由 cmd_vel_relay 转发到底盘控制器）、`/goal_pose`；重定位走 `/agv/relocalize` 服务
 
 ### 3.3 旧私有协议 → rosbridge 命令映射（迁移参考）
 
@@ -165,7 +168,7 @@ bridge 未加工、rosbridge 直接透传的标准话题：
 | WS `{"type":"heartbeat"}` | 无需 | `websocket_ping_interval=5s` |
 | WS `{"type":"move_to", ...}` | `send_action_goal` | `/agv/follow_edge` |
 | WS `{"type":"stop_move"}` | `cancel_action_goal` | `/agv/follow_edge` |
-| WS `{"type":"set_initial_pose"}` | `publish` | `/initialpose` |
+| WS `{"type":"set_initial_pose"}` | `call_service` | `/agv/relocalize`（map_name/x/y/yaw） |
 | WS `{"type":"velocity_command"}` | `publish` | `/cmd_vel` |
 | WS `{"type":"agv_control"}` | `call_service` | `/agv/set_control` |
 | WS `{"type":"query_status"}` | `subscribe` | `/agv/status` |
@@ -375,23 +378,26 @@ RViz「2D Goal Pose」发的标准话题，nav2 行为树直接接单，**适合
 ```
 
 - 三舵轮底盘（simulated_chassis）支持 `linear.y` 侧移；jzt / zioneers 差速底盘只有 `x` 与 `angular.z` 有效
-- 以 ~10Hz 持续发布，**停止时要发一次全零**（底盘有 0.5s 无输入自停保护，但显式清零更稳）
+- 按住按钮时以 10Hz 持续发布，松开、页面失焦或 WS 断开时立即发一次全零
+- 底盘有 0.5s 无输入自停保护，但显式清零更稳
 
-### 5.5 重定位 —— `/initialpose`
+### 5.5 重定位 —— `/agv/relocalize` 服务
 
-对应 RViz「2D Pose Estimate」，Cartographer 纯定位模式下用于纠正定位。
-注意类型是 **PoseWithCovarianceStamped**（36 维协方差）：
+> 旧方案（往 `/initialpose` 话题 publish PoseWithCovarianceStamped）已废弃：
+> Cartographer 纯定位模式不消费该话题，发了也无效。现改为调用 bridge 的重定位服务。
+
+上位机 REST：`POST /api/v1/robot/initial-pose`，body `{x, y, theta, map_name?}`（theta 为弧度）。
+后端转为 rosbridge 服务调用（`map_name` 缺省取机器人当前地图 `/agv/status.map_name`）：
 
 ```json
-{"op":"publish","topic":"/initialpose","msg":{
-  "header":{"stamp":"now","frame_id":"map"},
-  "pose":{"pose":{"position":{"x":1.0,"y":2.0,"z":0.0},"orientation":{"x":0.0,"y":0.0,"z":0.0,"w":1.0}},
-          "covariance":[0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0,
-                        0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.0685]}}}
+{"op":"call_service","service":"/agv/relocalize","args":{
+  "map_name":"map1006Pro","x":-2.2196,"y":-1.6213,"yaw":-2.583}}
 ```
 
-> 协议规定缺失字段自动填默认值，`header.stamp` 写 `"now"` 会由服务端自动填当前 ROS 时间；
-> 协方差只需 x、y、yaw 对角线三个值，其余 0（yaw 方差别给 0）。
+响应：`{"success":true,"message":"...","map_name":"..."}`。
+服务语义（同步，可达数十秒）：停当前定位进程 → 加载该图 pbstream → 以指定
+x/y/yaw 调 `/start_trajectory` → 重建 map→odom→base。完成状态看
+`/agv/status.mode`：RELOCALIZING → NAVIGATION。
 
 ---
 
@@ -523,7 +529,8 @@ ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node \
 然后把 `/scan` 加进 launch 的上报白名单（`topics_sub_glob`）。上位机侧：
 
 ```json
-{"op":"subscribe","id":"sub_scan","topic":"/scan","type":"sensor_msgs/msg/LaserScan","throttle_rate":100}
+{"op":"subscribe","id":"sub_scan_1","topic":"/scan_1","type":"sensor_msgs/msg/LaserScan","throttle_rate":200,"queue_length":1}
+{"op":"subscribe","id":"sub_scan_2","topic":"/scan_2","type":"sensor_msgs/msg/LaserScan","throttle_rate":200,"queue_length":1}
 ```
 
 ```json
@@ -610,7 +617,7 @@ public class RosbridgeClient extends WebSocketClient {
 |---|---|
 | 心跳 | rosbridge 已配 5s ping / 15s 超时；断线指数退避重连，**重连后必须重新 subscribe/advertise** |
 | 线程 | WS 回调在库线程，处理完立刻丢给业务线程池/事件总线，别在回调里做重活 |
-| 转发给浏览器 | 位姿 10Hz 可降到 5Hz 推送；`/map` 只在变化或前端首次接入时推；`/scan` 100ms 足够 |
+| 转发给浏览器 | `/agv/pose` 保持10Hz、`throttle_rate:0`；`/map` 只在变化或首次接入时推；`/scan_1`/`scan_2` 用 `throttle_rate:200`（5Hz） |
 | 对账 | 每条移动指令生成 `command_id`(uuid) 存库，`action_result` 回来按它更新任务状态 |
 | 门控 | `pose_initialized=false` 时前端置灰导航按钮（后端也拦截一道） |
 | 并发任务 | `/agv/follow_edge` 同时只允许一个 goal，已有任务时新 goal 会被 REJECT，收到 REJECT 要提示前端 |
