@@ -9,11 +9,16 @@ options = {
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "map",
   tracking_frame = "base_link",
-  -- Cartographer 负责发布 map -> odom -> base_footprint。
-  -- 控制器和 odom_relay 都只发布 /odom 消息，不发布 odom TF。
+  -- TF 拆分方案：控制器发布 odom→base_footprint（three_wheel_controllers.yaml publish_tf:true）；
+  -- carto 不直发 TF（publish_to_tf=false），改发 /tracked_pose，
+  -- 由 launch 中的 tracked_pose_tf_node 同时刻重锚定发布 map→odom
+  -- （直发会有外推位姿与旧时刻odom锚定的双重计数抖动，关外推则低频步进卡顿）。
   published_frame = "odom",
   odom_frame = "odom",
   provide_odom_frame = false,
+  use_pose_extrapolator = true,
+  publish_to_tf = false,
+  publish_tracked_pose = true,
   publish_frame_projected_to_2d = true,
   use_odometry = true,
   use_nav_sat = false,

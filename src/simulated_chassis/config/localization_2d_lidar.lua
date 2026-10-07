@@ -15,6 +15,12 @@ options = {
   published_frame = "odom",
   odom_frame = "odom",
   provide_odom_frame = false,
+  -- ✅ 同 3D 方案（配套 tracked_pose_tf_node）：carto 发 /tracked_pose，
+  --    由 launch 中的节点同时刻查 odom→base 重锚定发布 map→odom
+  --    （直发会双重计数抖动，关外推则低频步进卡顿）。
+  use_pose_extrapolator = true,
+  publish_to_tf = false,
+  publish_tracked_pose = true,
   publish_frame_projected_to_2d = true,
   use_odometry = true,
   use_nav_sat = false,

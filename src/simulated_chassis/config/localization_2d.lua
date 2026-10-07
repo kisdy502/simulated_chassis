@@ -10,9 +10,16 @@ options = {
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "map",
   tracking_frame = "base_link",
-  published_frame = "base_footprint",
+  published_frame = "odom",
   odom_frame = "odom",
-  provide_odom_frame = true,
+  provide_odom_frame = false,
+  -- ✅ TF 拆分方案（配套 tracked_pose_tf_node）：carto 不直发 TF，改发 /tracked_pose，
+  --    由 launch 中的 tracked_pose_tf_node 同时刻重锚定发布 map→odom。
+  --    （改前 provide_odom_frame=true 时 carto 也发 odom→base_footprint，
+  --      与控制器 publish_tf:true 形成 TF 双权威冲突；拆分直发又有外推双重计数抖动）
+  use_pose_extrapolator = true,
+  publish_to_tf = false,
+  publish_tracked_pose = true,
   publish_frame_projected_to_2d = true,
   use_odometry = true,
   use_nav_sat = false,
