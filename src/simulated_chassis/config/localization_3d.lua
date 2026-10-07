@@ -14,6 +14,12 @@ options = {
   odom_frame = "odom",
   provide_odom_frame = false,
   publish_frame_projected_to_2d = true,                 -- 定位投影到2D，给Nav2用
+  -- ✅ 与建图同方案（配套 tracked_pose_tf_node）：carto 不直接发 map→odom
+  --    （直发时外推位姿与旧时刻odom锚定不一致，与 odom→base 组合会双重计数→抖动；
+  --     关外推又只有~10Hz步进→卡顿）。/tracked_pose 高频平滑，由本节点同时刻重锚定。
+  use_pose_extrapolator = true,
+  publish_to_tf = false,
+  publish_tracked_pose = true,
   use_odometry = true,
   use_nav_sat = false,
   use_landmarks = false,

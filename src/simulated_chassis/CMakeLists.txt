@@ -99,6 +99,19 @@ ament_target_dependencies(cmd_vel_relay_node
   geometry_msgs
 )
 
+# Tracked Pose TF Node（cartographer /tracked_pose → map→odom 同时刻重锚定）
+add_executable(tracked_pose_tf_node
+  src/tracked_pose_tf_node.cpp
+)
+
+ament_target_dependencies(tracked_pose_tf_node
+  rclcpp
+  geometry_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+)
+
 # Pointcloud Ground Filter Node（进 Cartographer 前滤除地面回波）
 add_executable(pointcloud_ground_filter
   src/pointcloud_ground_filter.cpp
@@ -114,7 +127,7 @@ ament_target_dependencies(pointcloud_ground_filter
 target_link_libraries(pointcloud_ground_filter Eigen3::Eigen)
 
 
-install(TARGETS odom_relay_node gamepad_teleop_node cmd_vel_relay_node pointcloud_ground_filter
+install(TARGETS odom_relay_node gamepad_teleop_node cmd_vel_relay_node pointcloud_ground_filter tracked_pose_tf_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

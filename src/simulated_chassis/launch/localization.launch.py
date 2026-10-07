@@ -85,6 +85,21 @@ def generate_launch_description():
         ],
     )
 
+    # ===== map→odom 重锚定节点 =====
+    # 与建图同方案：cartographer 发 /tracked_pose，本节点同时刻查 odom→base 重锚定发布 map→odom。
+    tracked_pose_tf_node = Node(
+        package="simulated_chassis",
+        executable="tracked_pose_tf_node",
+        name="tracked_pose_tf_node",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "map_frame": "map",
+            "odom_frame": "odom",
+            "tracking_frame": "base_link",
+        }],
+    )
+
     # ===== 占据栅格地图发布 =====
     # 注意：源码核实 cartographer_occupancy_grid_node 只接受 5 个 flag
     # (resolution/publish_period_sec/include_frozen_submaps/include_unfrozen_submaps/
@@ -108,7 +123,7 @@ def generate_launch_description():
         [
             LogInfo(msg=["Cartographer 3D Localization（独立重启单元，与 nav2 解耦）"]),
             *declared_arguments,
-            TimerAction(period=0.0, actions=[cartographer_node]),
+            TimerAction(period=0.0, actions=[cartographer_node, tracked_pose_tf_node]),
             TimerAction(period=1.5, actions=[occupancy_grid_node]),
             # cartographer 一死整组退出（否则 launch 会带着 occupancy_grid 苟活，
             # 桥接的 wrapper 存活检测也看不见）。整组退出后由桥接的定位监督

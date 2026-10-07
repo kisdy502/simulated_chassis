@@ -55,6 +55,22 @@ def generate_launch_description():
         ],
     )
 
+    # ===== map→odom 重锚定节点 =====
+    # cartographer 关闭直发 TF（publish_to_tf=false），改发 /tracked_pose（高频外推位姿）；
+    # 本节点在同一时间戳查 odom→base 后发布 map→odom，避免双重计数抖动与低频步进卡顿。
+    tracked_pose_tf_node = Node(
+        package='simulated_chassis',
+        executable='tracked_pose_tf_node',
+        name='tracked_pose_tf_node',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'map_frame': 'map',
+            'odom_frame': 'odom',
+            'tracking_frame': 'base_link',
+        }],
+    )
+
     # ===== 占据栅格地图发布节点（从3D点云投影到2D） =====
     cartographer_occupancy_grid_node = Node(
         package='cartographer_ros',
@@ -83,7 +99,7 @@ def generate_launch_description():
 
         *declared_arguments,
 
-        TimerAction(period=1.0, actions=[cartographer_node]),
+        TimerAction(period=1.0, actions=[cartographer_node, tracked_pose_tf_node]),
         TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
         # cartographer 一死整组退出：建图会话结束（半成品图本就无法恢复），
         # 避免孤儿 occupancy_grid 继续发 /map 造成地图闪烁。

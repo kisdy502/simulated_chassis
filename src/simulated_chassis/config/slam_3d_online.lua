@@ -10,6 +10,15 @@ options = {
   odom_frame = "odom",
   provide_odom_frame = false,
   publish_frame_projected_to_2d = true,  -- ✅ 发布tf时强制投影到z=0/roll=0/pitch=0，前端local SLAM的z漂移不传导到map→odom
+  -- ✅ TF 发布方案（配套 tracked_pose_tf_node，解决两种抖动）：
+  -- 1) 外推开+carto直发map→odom：值=外推到now的SLAM位姿∘t_slam旧时刻odom位姿⁻¹，锚定时刻不一致，
+  --    与控制器 odom→base 组合会把 t_slam→now 的运动计两次 → 前进-回退锯齿抖动；
+  -- 2) 外推关：map→odom 只随 local SLAM 结果(约10Hz+计算延迟)步进 → RViz 机器人卡顿。
+  -- 方案：外推只用于 /tracked_pose（高频平滑、z已投影），carto 不发 TF（publish_to_tf=false），
+  --       由 tracked_pose_tf_node 在同一时间戳查 odom→base 重锚定发布 map→odom，平滑且自洽。
+  use_pose_extrapolator = true,
+  publish_to_tf = false,
+  publish_tracked_pose = true,
   use_odometry = true,
   use_nav_sat = false,
   use_landmarks = false,
