@@ -167,7 +167,7 @@ namespace agv_bridge
             // 三舵轮仿真默认 2D 雷达版（斜对角低位角装，消费 /scan_1 /scan_2），
             // 与 simulated_chassis 的 localization.launch.py 默认配置保持一致；
             // 3D 点云版或其他机器人包显式传本参数覆盖。
-            localization_configuration_basename_ = "localization_2d_lidar.lua";
+            localization_configuration_basename_ = "localization_3d.lua";
         }
 
         if (feedback_interval_ms_ <= 0)

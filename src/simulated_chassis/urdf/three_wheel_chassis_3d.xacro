@@ -472,7 +472,7 @@
         <frame_id>front_lidar_link</frame_id>
         <scan>
           <horizontal>
-            <samples>360</samples>
+            <samples>270</samples>
             <resolution>1</resolution>
             <min_angle>-2.35619</min_angle>
             <max_angle>2.35619</max_angle>
@@ -487,7 +487,7 @@
           </vertical>
         </scan>
         <range>
-          <min>0.3</min>
+          <min>0.5</min>
           <max>30.0</max>
           <resolution>0.01</resolution>
         </range>
@@ -516,7 +516,7 @@
         <frame_id>rear_lidar_link</frame_id>
         <scan>
           <horizontal>
-            <samples>360</samples>
+            <samples>270</samples>
             <resolution>1</resolution>
             <min_angle>-2.35619</min_angle>
             <max_angle>2.35619</max_angle>
@@ -529,7 +529,7 @@
           </vertical>
         </scan>
         <range>
-          <min>0.3</min>
+          <min>0.5</min>
           <max>30.0</max>
           <resolution>0.01</resolution>
         </range>

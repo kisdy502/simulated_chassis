@@ -44,8 +44,8 @@ MAP_BUILDER.use_trajectory_builder_3d = true
 MAP_BUILDER.num_background_threads = 4
 
 -- ==== 3D轨迹构建器：与建图完全一致，保证点云特征空间吻合 ====
-TRAJECTORY_BUILDER_3D.min_range = 0.55
-TRAJECTORY_BUILDER_3D.max_range = 35.0
+TRAJECTORY_BUILDER_3D.min_range = 0.5
+TRAJECTORY_BUILDER_3D.max_range = 25.0
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08           -- 对齐建图（定位不需要更细）
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- ✅ 双雷达：累计2帧(前+后各1)
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180

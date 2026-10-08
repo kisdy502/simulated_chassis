@@ -45,29 +45,28 @@ MAP_BUILDER.use_trajectory_builder_3d = true
 MAP_BUILDER.num_background_threads = 4
 
 -- ✅ 3D 轨迹构建器配置
-TRAJECTORY_BUILDER_3D.min_range = 0.55
-TRAJECTORY_BUILDER_3D.max_range = 35.0
+TRAJECTORY_BUILDER_3D.min_range = 0.5
+TRAJECTORY_BUILDER_3D.max_range = 25.0
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- ✅ 双雷达：每个雷达1帧，累计2帧后做一次扫描匹配
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 120
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.10       -- 10cm 体素滤波
 
 -- 3D 前端开启在线相关扫描匹配(OCSM)：库房重复结构下 Ceres 孤军匹配会滑向错误平行墙
-TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = true
+TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.15
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(5.0)
 
 TRAJECTORY_BUILDER_3D.submaps.num_range_data = 120
 TRAJECTORY_BUILDER_3D.submaps.range_data_inserter.hit_probability = 0.55
-TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 10.0
-TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2
+TRAJECTORY_BUILDER_3D.ceres_scan_matcher.translation_weight = 5.0 -- 平移权重
+TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2    -- 默认 400
 
--- 小步快跑：优化频率高、每次落地的约束少，map->odom 单步跳变从米级降到厘米级
-POSE_GRAPH.optimize_every_n_nodes = 40
-POSE_GRAPH.constraint_builder.sampling_ratio = 0.65
-POSE_GRAPH.constraint_builder.min_score = 0.55
+POSE_GRAPH.optimize_every_n_nodes = 90
+POSE_GRAPH.constraint_builder.sampling_ratio = 0.45   -- 0.5→0.65,多评估候选回环对
+POSE_GRAPH.constraint_builder.min_score = 0.60        -- 0.65→0.60,回收边界回环(3D 默认 0.55)
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
-POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2
-POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4
+POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2  -- 默认 110
+POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000（恢复官方默认）
 POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
 

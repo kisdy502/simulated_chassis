@@ -29,18 +29,6 @@ def generate_launch_description():
     cartographer_config_dir = os.path.join(pkg_share, "config")
     default_pbstream = os.path.join(pkg_share, "maps", "my_map_3d.pbstream")
 
-    # 默认地图不存在时大声失败，而不是拉起 cartographer 秒退后留下一个
-    # 没有 map->odom 的 nav2（BT 收单后永久阻塞 = RViz 点目标"无响应"无报错）。
-    # 显式传 pbstream_file:= 时不做此检查（路径错误由 cartographer 自身 FATAL 报出）。
-    if not os.path.isfile(default_pbstream):
-        raise RuntimeError(
-            "默认地图不存在: %s\n"
-            "  1) 显式指定: ros2 launch simulated_chassis navigation.launch.py "
-            "pbstream_file:=/abs/path/map.pbstream\n"
-            "  2) 或把新建的 3D 地图拷贝为该默认名（src/simulated_chassis/maps/ 后重新 build）"
-            % default_pbstream
-        )
-
     declared_arguments = [
         DeclareLaunchArgument(
             "pbstream_file",

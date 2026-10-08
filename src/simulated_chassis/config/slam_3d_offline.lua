@@ -34,9 +34,9 @@ MAP_BUILDER.use_trajectory_builder_3d = true
 
 -- min/max_range 与在线一致：剔除机器人本体反射 + 避开远端雷达噪声放大区
 TRAJECTORY_BUILDER_3D.min_range = 0.5
-TRAJECTORY_BUILDER_3D.max_range = 30.0
+TRAJECTORY_BUILDER_3D.max_range = 25.0
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- ✅ 双雷达：累计2帧(前+后各1)
-TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
+TRAJECTORY_BUILDER_3D.rotational_histogram_size = 120
 -- 比在线(0.08)略细，但不能像原0.03那样把噪声点当特征用
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.06
 
