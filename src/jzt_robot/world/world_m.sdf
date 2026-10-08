@@ -23,12 +23,13 @@
       <static>true</static>
       <link name='link'>
         <collision name='collision'>
-          <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>36.75 31.8</size>
-            </plane>
-          </geometry>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <!-- 36.75→43：右墙外拐8°后顶点外凸到20.53m，地板加宽覆盖五边形凸角 -->
+            <size>43 31.8</size>
+          </plane>
+        </geometry>
           <surface>
             <friction>
               <ode />
@@ -41,7 +42,7 @@
           <geometry>
             <plane>
               <normal>0 0 1</normal>
-              <size>36.75 31.8</size>
+              <size>43 31.8</size>
             </plane>
           </geometry>
           <material>
@@ -103,11 +104,22 @@
           <material><ambient>0.5 0.4 0.5 1</ambient><diffuse>0.5 0.4 0.5 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>
-      <link name='width_right'>
-        <pose>18.3 -0.5 1.5 0 0 0</pose>
-        <collision name='c'><geometry><box><size>0.15 31.8 3</size></box></geometry>
+      <!-- 原整面右墙(x=18.3)拆成两截、各外拐8°，与上下墙围成五边形：
+           破坏长方形对称性，建图/调试时可从点云形态直接辨别+x朝向。
+           顶点(20.534,-0.5)，两截各长16.06(15.9/cos8°)，角点(18.3,±)不变。 -->
+      <link name='width_right_north'>
+        <pose>19.417 7.45 1.5 0 0 0.1396</pose>
+        <collision name='c'><geometry><box><size>0.15 16.06 3</size></box></geometry>
           <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
-        <visual name='v'><geometry><box><size>0.15 31.8 3</size></box></geometry>
+        <visual name='v'><geometry><box><size>0.15 16.06 3</size></box></geometry>
+          <material><ambient>0.45 0.45 0.5 1</ambient><diffuse>0.45 0.45 0.5 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='width_right_south'>
+        <pose>19.417 -8.45 1.5 0 0 -0.1396</pose>
+        <collision name='c'><geometry><box><size>0.15 16.06 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>0.15 16.06 3</size></box></geometry>
           <material><ambient>0.45 0.45 0.5 1</ambient><diffuse>0.45 0.45 0.5 1</diffuse></material></visual>
         <enable_wind>false</enable_wind>
       </link>

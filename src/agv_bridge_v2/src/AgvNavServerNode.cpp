@@ -1653,19 +1653,40 @@ namespace agv_bridge
             stop_child_process(localization_pid_, "定位");
             return false;
         }
-        auto states_future = trajectory_states_client_->async_send_request(
-            std::make_shared<cartographer_ros_msgs::srv::GetTrajectoryStates::Request>());
         // 服务名称会在 pbstream 完全加载前就出现。大地图加载期间 Cartographer
         // 暂时不能处理请求，因此这里不能使用普通 service 的 5 秒短超时。
         // 实测 arm64 上大地图 load_state 全局优化可超过 150s（2026-09-26 复测
         // 01:35 会话正好 150s 被杀），进一步放宽到 300s；上位机任务截止需 >= 360s。
-        if (states_future.wait_for(std::chrono::seconds(300)) != std::future_status::ready)
+        // 切换时 DDS 图可能仍保留刚停止的建图服务。首次请求可能发往旧
+        // endpoint，不能只等同一个 future 300 秒；只读查询可安全重试。
+        cartographer_ros_msgs::srv::GetTrajectoryStates::Response::SharedPtr states_response;
+        const auto states_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(300);
+        RCLCPP_INFO(this->get_logger(), "地图 %s：等待加载完成并查询轨迹状态（最多 300 秒）",
+                    map_name.c_str());
+        while (rclcpp::ok() && std::chrono::steady_clock::now() < states_deadline)
+        {
+            auto states_future = trajectory_states_client_->async_send_request(
+                std::make_shared<cartographer_ros_msgs::srv::GetTrajectoryStates::Request>());
+            const auto remaining = states_deadline - std::chrono::steady_clock::now();
+            const auto wait_time = std::min(remaining,
+                std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::seconds(5)));
+            if (states_future.wait_for(wait_time) == std::future_status::ready)
+            {
+                states_response = states_future.get();
+                break;
+            }
+            trajectory_states_client_->remove_pending_request(states_future);
+            RCLCPP_WARN(this->get_logger(),
+                        "地图 %s：轨迹状态查询未响应，重试（地图可能仍在加载或 DDS 服务正在切换）",
+                        map_name.c_str());
+        }
+        if (!states_response)
         {
             error = "读取轨迹状态超时（300 秒，pbstream 可能仍在加载或 Cartographer 已异常）";
             stop_child_process(localization_pid_, "定位");
             return false;
         }
-        const auto states = states_future.get()->trajectory_states;
+        const auto states = states_response->trajectory_states;
         for (size_t i = 0; i < states.trajectory_id.size() && i < states.trajectory_state.size(); ++i)
         {
             if (states.trajectory_state[i] ==
