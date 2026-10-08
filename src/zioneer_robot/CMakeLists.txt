@@ -12,6 +12,7 @@ find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
 # Odom Relay Node
 add_executable(odom_relay_node
@@ -64,7 +65,10 @@ ament_target_dependencies(pointcloud_footprint_filter_node
   tf2_ros
 )
 
-install(TARGETS odom_relay_node cmd_vel_relay_node twist_to_stamped_relay gamepad_teleop_node pointcloud_footprint_filter_node
+add_executable(tracked_pose_tf_node src/tracked_pose_tf_node.cpp)
+ament_target_dependencies(tracked_pose_tf_node rclcpp geometry_msgs tf2 tf2_ros tf2_geometry_msgs)
+
+install(TARGETS tracked_pose_tf_node odom_relay_node cmd_vel_relay_node twist_to_stamped_relay gamepad_teleop_node pointcloud_footprint_filter_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

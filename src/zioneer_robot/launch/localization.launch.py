@@ -3,7 +3,7 @@
 Cartographer 3D 纯定位（可独立重启的最小单元）
 适用于：差速底盘 + 双3D雷达
 
-只包含定位链路：cartographer_node + occupancy_grid_node。
+只包含定位链路：cartographer_node + tracked_pose_tf_node + occupancy_grid_node。
 与 nav2 解耦 —— 上位机 /agv/load_map 切换地图时，agv_nav_server 只杀掉并重拉
 这一组节点，nav2 全栈（控制器/规划器/代价地图）不重启。
 
@@ -16,8 +16,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo
+from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo, RegisterEventHandler, EmitEvent
 from launch.substitutions import LaunchConfiguration
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch_ros.actions import Node
 
 
@@ -77,6 +79,15 @@ def generate_launch_description():
         ],
     )
 
+    tracked_pose_tf_node = Node(
+        package='zioneer_robot',
+        executable='tracked_pose_tf_node',
+        name='tracked_pose_tf_node',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time, 'map_frame': 'map',
+                     'odom_frame': 'odom', 'tracking_frame': 'base_link'}],
+    )
+
     # ===== 占据栅格地图发布 =====
     occupancy_grid_node = Node(
         package='cartographer_ros',
@@ -93,6 +104,10 @@ def generate_launch_description():
     return LaunchDescription([
         LogInfo(msg=['Cartographer 3D Localization（独立重启单元，与 nav2 解耦）']),
         *declared_arguments,
-        TimerAction(period=0.0, actions=[cartographer_node]),
+        RegisterEventHandler(OnProcessExit(
+            target_action=cartographer_node,
+            on_exit=[EmitEvent(event=Shutdown(reason="Cartographer exited"))],
+        )),
+        TimerAction(period=0.0, actions=[cartographer_node, tracked_pose_tf_node]),
         TimerAction(period=1.5, actions=[occupancy_grid_node]),
     ])

@@ -10,11 +10,15 @@ options = {
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "map",
   tracking_frame = "base_link",
-  -- 分工模式：差速控制器发 odom->base_footprint TF，cartographer 只发 map->odom。
+  -- 分工模式：差速控制器发 odom->base_footprint TF，tracked_pose_tf_node 发 map->odom。
   published_frame = "odom",
   odom_frame = "odom",
   provide_odom_frame = false,
   publish_frame_projected_to_2d = true,                  -- 定位投影到2D，给Nav2用
+  -- tracked_pose_tf_node 同时刻重锚定 map→odom，控制器发布 odom→base_footprint。
+  use_pose_extrapolator = true,
+  publish_to_tf = false,
+  publish_tracked_pose = true,
   use_odometry = true,
   use_nav_sat = false,
   use_landmarks = false,
@@ -24,7 +28,7 @@ options = {
   num_point_clouds = 2,
   lookup_transform_timeout_sec = 0.3,                    -- 定位稍宽容（仿真TF可能延迟）
   submap_publish_period_sec = 0.3,
-  pose_publish_period_sec = 5e-3,
+  pose_publish_period_sec = 20e-3,
   trajectory_publish_period_sec = 30e-3,
   rangefinder_sampling_ratio = 1.,
   odometry_sampling_ratio = 1.,

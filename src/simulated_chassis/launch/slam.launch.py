@@ -46,6 +46,8 @@ def generate_launch_description():
             '--log-level', 'info',  # ✅ 添加调试日志
         ],
         remappings=[
+            ('scan_1', '/scan_1'),
+            ('scan_2', '/scan_2'),
             # 3D 建图：直接消费仿真 bridge 桥出的前后雷达原始 PointCloud2
             # （/front_lidar 与 /rear_lidar 的 gpu_lidar 点云，无过滤节点）
             ('points2_1', '/points2_1'),

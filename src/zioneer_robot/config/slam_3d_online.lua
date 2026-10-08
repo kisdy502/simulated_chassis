@@ -7,11 +7,15 @@ options = {
   map_frame = "map",
   tracking_frame = "base_link",
   -- 分工模式（最终形态）：差速控制器发 odom->base_footprint TF(100Hz)+/odom，
-  -- cartographer 只发 map->odom(50Hz)。
+  -- tracked_pose_tf_node 发 map->odom(50Hz)。
   published_frame = "odom",
   odom_frame = "odom",
   provide_odom_frame = false,
   publish_frame_projected_to_2d = true,  -- ✅ 发布tf时强制投影到z=0/roll=0/pitch=0，前端local SLAM的z漂移不传导到map→odom
+  -- tracked_pose_tf_node 同时刻重锚定 map→odom，控制器发布 odom→base_footprint。
+  use_pose_extrapolator = true,
+  publish_to_tf = false,
+  publish_tracked_pose = true,
   use_odometry = true,
   use_nav_sat = false,
   use_landmarks = false,

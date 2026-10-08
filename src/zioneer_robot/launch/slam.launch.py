@@ -8,8 +8,10 @@ ros2 launch zioneer_robot slam.launch.py
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo
+from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo, RegisterEventHandler, EmitEvent
 from launch.substitutions import LaunchConfiguration
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch_ros.actions import Node
 
 
@@ -49,6 +51,15 @@ def generate_launch_description():
         ],
     )
 
+    tracked_pose_tf_node = Node(
+        package='zioneer_robot',
+        executable='tracked_pose_tf_node',
+        name='tracked_pose_tf_node',
+        output='screen',
+        parameters=[{'use_sim_time': True, 'map_frame': 'map',
+                     'odom_frame': 'odom', 'tracking_frame': 'base_link'}],
+    )
+
     # ===== 占据栅格地图发布节点（从3D点云投影到2D） =====
     cartographer_occupancy_grid_node = Node(
         package='cartographer_ros',
@@ -68,8 +79,12 @@ def generate_launch_description():
         LogInfo(msg=['==========================================']),
 
         *declared_arguments,
+        RegisterEventHandler(OnProcessExit(
+            target_action=cartographer_node,
+            on_exit=[EmitEvent(event=Shutdown(reason="Cartographer exited"))],
+        )),
 
-        TimerAction(period=1.0, actions=[cartographer_node]),
+        TimerAction(period=1.0, actions=[cartographer_node, tracked_pose_tf_node]),
         TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
 
         LogInfo(msg=['3D建图节点已启动，使用 navigation.launch.py 中持续运行的 RViz']),

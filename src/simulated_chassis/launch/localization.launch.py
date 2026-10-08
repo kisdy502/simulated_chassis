@@ -77,6 +77,8 @@ def generate_launch_description():
             "WARN",
         ],
         remappings=[
+            ('scan_1', '/scan_1'),
+            ('scan_2', '/scan_2'),
             # 3D 定位：与建图同源的原始 PointCloud2（特征空间一致）
             ("points2_1", "/points2_1"),
             ("points2_2", "/points2_2"),
