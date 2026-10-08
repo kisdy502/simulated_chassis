@@ -517,7 +517,7 @@ namespace agv_bridge
                     moveToMessage.x, moveToMessage.y, moveToMessage.theta * 180 / M_PI,
                     robot_yaw * 180 / M_PI, target_yaw * 180 / M_PI, angle_diff * 180 / M_PI);
 
-        if (std::abs(angle_diff) > M_PI / 4) // 角度差太小时候，旋转会导致nav2 出错
+        if (std::abs(angle_diff) > 20.0 * M_PI / 180.0) // 超过20°先预旋转，小角度由路径控制器修正
         {
             // 保存导航信息，旋转完成后继续
             if (!sendSpinCommand(angle_diff))
@@ -662,7 +662,7 @@ namespace agv_bridge
 
         RCLCPP_INFO(logger_, "贝塞尔曲线起点切线方向: %.2f°, 当前朝向: %.2f°, 角度差: %.2f°",
                     target_raw * 180 / M_PI, robot_yaw * 180 / M_PI, angle_diff * 180 / M_PI);
-        if (std::abs(angle_diff) > M_PI / 4)
+        if (std::abs(angle_diff) > 20.0 * M_PI / 180.0)
         {
             if (!sendSpinCommand(angle_diff)) // 旋转到切线方向
             {
