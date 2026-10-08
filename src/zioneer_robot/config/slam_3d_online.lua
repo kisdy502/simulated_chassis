@@ -6,9 +6,11 @@ options = {
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "map",
   tracking_frame = "base_link",
-  published_frame = "base_footprint",
+  -- 分工模式（最终形态）：差速控制器发 odom->base_footprint TF(100Hz)+/odom，
+  -- cartographer 只发 map->odom(50Hz)。
+  published_frame = "odom",
   odom_frame = "odom",
-  provide_odom_frame = true,
+  provide_odom_frame = false,
   publish_frame_projected_to_2d = true,  -- ✅ 发布tf时强制投影到z=0/roll=0/pitch=0，前端local SLAM的z漂移不传导到map→odom
   use_odometry = true,
   use_nav_sat = false,
@@ -19,7 +21,7 @@ options = {
   num_point_clouds = 2,                   -- ✅ 双3D雷达(前+后)
   lookup_transform_timeout_sec = 0.2,
   submap_publish_period_sec = 0.3,
-  pose_publish_period_sec = 5e-3,
+  pose_publish_period_sec = 20e-3,
   trajectory_publish_period_sec = 30e-3,
   rangefinder_sampling_ratio = 1.,
   odometry_sampling_ratio = 1.,
@@ -53,7 +55,7 @@ TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2    -- 默认 400
 
 POSE_GRAPH.optimize_every_n_nodes = 40
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.65   -- 0.5→0.65,多评估候选回环对
-POSE_GRAPH.constraint_builder.min_score = 0.55        -- 0.65→0.60,回收边界回环(3D 默认 0.55)
+POSE_GRAPH.constraint_builder.min_score = 0.65        -- 库房重复结构下 0.55 会收错闭环（与 simulated_chassis 同门槛）
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.70
 POSE_GRAPH.optimization_problem.acceleration_weight = 1.1e2  -- 默认 110
 POSE_GRAPH.optimization_problem.rotation_weight = 1.6e4      -- 默认 16000（恢复官方默认）

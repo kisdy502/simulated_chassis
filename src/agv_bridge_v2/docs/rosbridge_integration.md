@@ -76,9 +76,12 @@ flowchart LR
 ```json
 {"op":"subscribe","id":"sub_status","topic":"/agv/status",
  "type":"agv_bridge_v2_interfaces/msg/AgvStatus","throttle_rate":1000,"queue_length":1}
+{"op":"subscribe","id":"sub_pose","topic":"/agv/pose",
+ "type":"geometry_msgs/msg/PoseStamped","throttle_rate":0,"queue_length":1}
 ```
 
 - `throttle_rate`：最小发送间隔（毫秒），0 = 不限流
+- `/agv/pose` 由 bridge 以 10Hz 发布最新 TF；前端不限流、队列只留最新一帧
 - `type` 可省略（rosbridge 自动从 ROS 图推断），但显式写上更稳
 - 之后 rosbridge 持续推 `{"op":"publish","topic":"/agv/status","msg":{...}}`
 
@@ -375,7 +378,8 @@ RViz「2D Goal Pose」发的标准话题，nav2 行为树直接接单，**适合
 ```
 
 - 三舵轮底盘（simulated_chassis）支持 `linear.y` 侧移；jzt / zioneers 差速底盘只有 `x` 与 `angular.z` 有效
-- 以 ~10Hz 持续发布，**停止时要发一次全零**（底盘有 0.5s 无输入自停保护，但显式清零更稳）
+- 按住按钮时以 10Hz 持续发布，松开、页面失焦或 WS 断开时立即发一次全零
+- 底盘有 0.5s 无输入自停保护，但显式清零更稳
 
 ### 5.5 重定位 —— `/initialpose`
 
@@ -523,7 +527,8 @@ ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node \
 然后把 `/scan` 加进 launch 的上报白名单（`topics_sub_glob`）。上位机侧：
 
 ```json
-{"op":"subscribe","id":"sub_scan","topic":"/scan","type":"sensor_msgs/msg/LaserScan","throttle_rate":100}
+{"op":"subscribe","id":"sub_scan_1","topic":"/scan_1","type":"sensor_msgs/msg/LaserScan","throttle_rate":200,"queue_length":1}
+{"op":"subscribe","id":"sub_scan_2","topic":"/scan_2","type":"sensor_msgs/msg/LaserScan","throttle_rate":200,"queue_length":1}
 ```
 
 ```json
@@ -610,7 +615,7 @@ public class RosbridgeClient extends WebSocketClient {
 |---|---|
 | 心跳 | rosbridge 已配 5s ping / 15s 超时；断线指数退避重连，**重连后必须重新 subscribe/advertise** |
 | 线程 | WS 回调在库线程，处理完立刻丢给业务线程池/事件总线，别在回调里做重活 |
-| 转发给浏览器 | 位姿 10Hz 可降到 5Hz 推送；`/map` 只在变化或前端首次接入时推；`/scan` 100ms 足够 |
+| 转发给浏览器 | `/agv/pose` 保持10Hz、`throttle_rate:0`；`/map` 只在变化或首次接入时推；`/scan_1`/`scan_2` 用 `throttle_rate:200`（5Hz） |
 | 对账 | 每条移动指令生成 `command_id`(uuid) 存库，`action_result` 回来按它更新任务状态 |
 | 门控 | `pose_initialized=false` 时前端置灰导航按钮（后端也拦截一道） |
 | 并发任务 | `/agv/follow_edge` 同时只允许一个 goal，已有任务时新 goal 会被 REJECT，收到 REJECT 要提示前端 |

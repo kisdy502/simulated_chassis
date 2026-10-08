@@ -27,7 +27,19 @@ def generate_launch_description():
     pkg_share = get_package_share_directory("simulated_chassis")
 
     cartographer_config_dir = os.path.join(pkg_share, "config")
-    default_pbstream = os.path.join(pkg_share, "maps", "my_map_optimized.pbstream")
+    default_pbstream = os.path.join(pkg_share, "maps", "my_map_3d.pbstream")
+
+    # 默认地图不存在时大声失败，而不是拉起 cartographer 秒退后留下一个
+    # 没有 map->odom 的 nav2（BT 收单后永久阻塞 = RViz 点目标"无响应"无报错）。
+    # 显式传 pbstream_file:= 时不做此检查（路径错误由 cartographer 自身 FATAL 报出）。
+    if not os.path.isfile(default_pbstream):
+        raise RuntimeError(
+            "默认地图不存在: %s\n"
+            "  1) 显式指定: ros2 launch simulated_chassis navigation.launch.py "
+            "pbstream_file:=/abs/path/map.pbstream\n"
+            "  2) 或把新建的 3D 地图拷贝为该默认名（src/simulated_chassis/maps/ 后重新 build）"
+            % default_pbstream
+        )
 
     declared_arguments = [
         DeclareLaunchArgument(
@@ -37,7 +49,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "configuration_basename",
-            default_value="localization_3d.lua",  # 默认 3D（前后双雷达原始点云直连）；2D 水平扫描版传 localization_2d.lua
+            default_value="localization_3d.lua",  # 默认 3D 点云版；2D 雷达版传 localization_2d_lidar.lua
             description="Cartographer 定位配置文件",
         ),
         DeclareLaunchArgument(
@@ -85,6 +97,21 @@ def generate_launch_description():
         ],
     )
 
+    # ===== map→odom 重锚定节点 =====
+    # 与建图同方案：cartographer 发 /tracked_pose，本节点同时刻查 odom→base 重锚定发布 map→odom。
+    tracked_pose_tf_node = Node(
+        package="simulated_chassis",
+        executable="tracked_pose_tf_node",
+        name="tracked_pose_tf_node",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "map_frame": "map",
+            "odom_frame": "odom",
+            "tracking_frame": "base_link",
+        }],
+    )
+
     # ===== 占据栅格地图发布 =====
     # 注意：源码核实 cartographer_occupancy_grid_node 只接受 5 个 flag
     # (resolution/publish_period_sec/include_frozen_submaps/include_unfrozen_submaps/
@@ -98,7 +125,9 @@ def generate_launch_description():
             {
                 "use_sim_time": use_sim_time,
                 "resolution": 0.05,
-                "publish_period_sec": 1.0,
+                # 1s→5s：定位模式地图基本不变，1Hz×500KB 全量重发纯耗带宽/CPU
+                # （nav2 静态层 TRANSIENT_LOCAL 拿一次即可，不受影响）
+                "publish_period_sec": 5.0,
                 # 纯定位：只显示 pbstream 中冻结的地图
                 "include_frozen_submaps": True,
                 # 不把定位过程中产生的活动 submap 画进 /map
@@ -111,7 +140,7 @@ def generate_launch_description():
         [
             LogInfo(msg=["Cartographer 3D Localization（独立重启单元，与 nav2 解耦）"]),
             *declared_arguments,
-            TimerAction(period=0.0, actions=[cartographer_node]),
+            TimerAction(period=0.0, actions=[cartographer_node, tracked_pose_tf_node]),
             TimerAction(period=1.5, actions=[occupancy_grid_node]),
             # cartographer 一死整组退出（否则 launch 会带着 occupancy_grid 苟活，
             # 桥接的 wrapper 存活检测也看不见）。整组退出后由桥接的定位监督

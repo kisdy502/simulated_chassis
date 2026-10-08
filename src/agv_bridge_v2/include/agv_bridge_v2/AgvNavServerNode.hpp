@@ -21,6 +21,7 @@
 #include "cartographer_ros_msgs/srv/write_state.hpp"
 #include "cartographer_ros_msgs/srv/start_trajectory.hpp"
 #include "cartographer_ros_msgs/srv/get_trajectory_states.hpp"
+#include "nav2_msgs/srv/save_map.hpp"
 
 #include "agv_bridge_v2/NavigationManager.hpp"
 #include "agv_bridge_v2/LocalizationMonitor.hpp"
@@ -188,11 +189,11 @@ namespace agv_bridge
         /// @brief 停止 spawn_ros_launch 拉起的子进程（SIGINT 优雅退出，超时 SIGKILL 整组）
         void stop_child_process(pid_t &pid_slot, const char *what);
 
-        /// @brief 同步执行外部命令（fork/exec + wait），成功返回 true
-        bool run_command_sync(const std::vector<std::string> &args, const char *log_path);
-
         /// @brief 调 cartographer /write_state 保存 pbstream（超时 15s）
         bool call_write_state(const std::string &pbstream_abs_path, std::string &error);
+
+        /// @brief 调用常驻 map_saver_server 从 /map 保存 pgm/yaml，并校验文件。
+        bool call_save_map(const std::string &stem, std::string &error);
 
         /// @brief 拉起只加载冻结地图的 Cartographer，并通过 /start_trajectory 启动定位。
         bool start_managed_localization(
@@ -251,6 +252,7 @@ namespace agv_bridge
         rclcpp::Client<cartographer_ros_msgs::srv::WriteState>::SharedPtr write_state_client_;
         rclcpp::Client<cartographer_ros_msgs::srv::StartTrajectory>::SharedPtr start_trajectory_client_;
         rclcpp::Client<cartographer_ros_msgs::srv::GetTrajectoryStates>::SharedPtr trajectory_states_client_;
+        rclcpp::Client<nav2_msgs::srv::SaveMap>::SharedPtr save_map_client_;
 
         // ===== ROS 组件 =====
         rclcpp_action::Server<FollowEdge>::SharedPtr follow_edge_server_;

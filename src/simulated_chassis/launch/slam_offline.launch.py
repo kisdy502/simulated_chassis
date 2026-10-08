@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-Cartographer 3D 离线建图启动文件
+Cartographer 离线建图启动文件（3D 雷达版机器人）
 ros2 launch simulated_chassis slam_offline.launch.py
+
+2D 离线建图：把下方 xacro_path 改为 three_wheel_chassis_2d.xacro，
+并传 configuration_basename:=slam_2d_lidar_offline.lua（bag 须为 2D 机器人录制）。
 """
 
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, SetEnvironmentVariable
-from launch.substitutions import LaunchConfiguration, Command, PathJoinSubstitution
+from launch.actions import DeclareLaunchArgument, LogInfo
+from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
-from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
@@ -18,14 +20,18 @@ def generate_launch_description():
     pkg_share = get_package_share_directory(pkg_name)
 
     config_dir = os.path.join(pkg_share, 'config')
-    xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis.xacro")
+
+    # 机器人 xacro 固定为 3D 雷达版；2D 离线建图改为 three_wheel_chassis_2d.xacro
+    # （cartographer_offline_node 从 robot_description 自建 TF 树，两版雷达
+    #   frame 名不同，必须与录制 bag 的机器人版本一致）
+    xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis_3d.xacro")
 
     # 启动参数
     declared_arguments = [
         DeclareLaunchArgument(
             'configuration_basename',
             default_value='slam_3d_offline.lua',
-            description='Cartographer 3D 离线配置文件'
+            description='离线建图配置（默认 slam_3d_offline；2D 雷达版传 slam_2d_lidar_offline）'
         ),
         DeclareLaunchArgument(
             'bag_filenames',
@@ -59,7 +65,7 @@ def generate_launch_description():
         }],
         arguments=[
             '-configuration_directory', config_dir,
-            '-configuration_basenames', LaunchConfiguration('configuration_basename'),  # ✅ 改这里
+            '-configuration_basenames', LaunchConfiguration('configuration_basename'),
             '-bag_filenames', LaunchConfiguration('bag_filenames'),
             '-save_state_filename', LaunchConfiguration('save_state_filename'),
             '--ros-args',
@@ -75,7 +81,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         LogInfo(msg=['==========================================']),
-        LogInfo(msg=['Cartographer 3D 离线建图模式']),
+        LogInfo(msg=['Cartographer 2D 雷达版离线建图模式']),
         LogInfo(msg=['从 bag 文件全速处理，生成精细地图']),
         LogInfo(msg=['==========================================']),
 

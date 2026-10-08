@@ -31,6 +31,24 @@
         </inertial>
     </link>
 
+    <!-- 雷达安装垫柱（高1cm：底盘顶面 z=0.06 -> 雷达座 z=0.07），位置随雷达外移至前后边缘 -->
+    <visual>
+        <origin xyz="0.28 0 0.065" rpy="0 0 0" />
+        <geometry>
+            <cylinder radius="0.025" length="0.01" />
+        </geometry>
+        <material name="mount_pad">
+            <color rgba="0.3 0.3 0.3 1.0" />
+        </material>
+    </visual>
+    <visual>
+        <origin xyz="-0.28 0 0.065" rpy="0 0 0" />
+        <geometry>
+            <cylinder radius="0.025" length="0.01" />
+        </geometry>
+        <material name="mount_pad" />
+    </visual>
+
     <gazebo reference="base_link">
         <material>Gazebo/Orange</material>
     </gazebo>
@@ -62,7 +80,8 @@
     <joint name="front_lidar_joint" type="fixed">
         <parent link="base_link" />
         <child link="front_lidar_link" />
-        <origin xyz="0.28 0 0.20" rpy="0 0 0" />
+        <!-- 1cm 垫柱安装：雷达座 z=0.07（世界高 0.22），不倾斜 -->
+        <origin xyz="0.28 0 0.07" rpy="0 0 0" />
     </joint>
 
     <!-- ==================== 后3D雷达 (Mid-360 仿真) ==================== -->
@@ -91,7 +110,8 @@
     <joint name="rear_lidar_joint" type="fixed">
         <parent link="base_link" />
         <child link="rear_lidar_link" />
-        <origin xyz="-0.28 0 0.20" rpy="0 0 3.1416" />
+        <!-- 1cm 垫柱安装：雷达座 z=0.07（世界高 0.22），朝后 yaw=π，不倾斜 -->
+        <origin xyz="-0.28 0 0.07" rpy="0 0 3.1416" />
     </joint>
 
     <!-- ==================== IMU ==================== -->

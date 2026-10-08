@@ -26,8 +26,8 @@ def generate_launch_description():
     declared_arguments = [
         DeclareLaunchArgument(
             'configuration_basename',
-            default_value='slam_3d_online.lua',  # 默认 3D（前后双雷达原始点云直连）；2D 水平扫描版传 slam_2d_online.lua
-            description='Cartographer Lua配置文件（slam_3d_online / slam_2d_online）'
+            default_value='slam_3d_online.lua',  # 默认 3D 点云版；2D 雷达版传 slam_2d_lidar_online.lua
+            description='Cartographer Lua配置文件（默认 slam_3d_online；2D 传 slam_2d_lidar_online）'
         ),
     ]
 
@@ -55,6 +55,22 @@ def generate_launch_description():
         ],
     )
 
+    # ===== map→odom 重锚定节点 =====
+    # cartographer 关闭直发 TF（publish_to_tf=false），改发 /tracked_pose（高频外推位姿）；
+    # 本节点在同一时间戳查 odom→base 后发布 map→odom，避免双重计数抖动与低频步进卡顿。
+    tracked_pose_tf_node = Node(
+        package='simulated_chassis',
+        executable='tracked_pose_tf_node',
+        name='tracked_pose_tf_node',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'map_frame': 'map',
+            'odom_frame': 'odom',
+            'tracking_frame': 'base_link',
+        }],
+    )
+
     # ===== 占据栅格地图发布节点（从3D点云投影到2D） =====
     cartographer_occupancy_grid_node = Node(
         package='cartographer_ros',
@@ -64,7 +80,8 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}],
         arguments=[
             '-resolution', '0.05',
-            '-publish_period_sec', '1.0',
+            # 1s→5s：建图中 5s 刷新对 RViz 足够，websocket/带宽省 80%
+            '-publish_period_sec', '5.0',
             # ⚠️ 源码核对：cartographer_ros/cartographer_ros/occupancy_grid_node_main.cc
             #    中 DEFINE_ 的全部 flag 只有 5 个：resolution / publish_period_sec /
             #    include_frozen_submaps / include_unfrozen_submaps / occupancy_grid_topic。
@@ -83,7 +100,7 @@ def generate_launch_description():
 
         *declared_arguments,
 
-        TimerAction(period=1.0, actions=[cartographer_node]),
+        TimerAction(period=1.0, actions=[cartographer_node, tracked_pose_tf_node]),
         TimerAction(period=2.0, actions=[cartographer_occupancy_grid_node]),
         # cartographer 一死整组退出：建图会话结束（半成品图本就无法恢复），
         # 避免孤儿 occupancy_grid 继续发 /map 造成地图闪烁。

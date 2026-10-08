@@ -1,5 +1,14 @@
+# gz_ros2_control 位置控制 P 增益（舵角误差->关节速度指令的折算系数，默认 0.1）。
+# 提高后小误差段舵角收敛更快，缩短对齐门关闭时长；对 odom 无影响（odom 读位置不读指令）。
+/**:
+  ros__parameters:
+    position_proportional_gain: 0.3
+
 controller_manager:
   ros__parameters:
+    # 控制器 update()、/odom 与 odom->base_footprint 必须全部使用 Gazebo 的
+    # /clock。显式声明，避免不同 gz_ros2_control 版本是否自动注入该参数的差异。
+    use_sim_time: true
     update_rate: 100
 
     joint_state_broadcaster:
@@ -14,6 +23,7 @@ joint_state_broadcaster:
 
 three_wheel_base_controller:
   ros__parameters:
+    use_sim_time: true
     # 轮位配置（与URDF一致）
     wheel0.x: 0.3
     wheel0.y: 0.0
@@ -40,8 +50,8 @@ three_wheel_base_controller:
     enable_reverse_optimization: true
     steering_hold_velocity_threshold: 0.01  # m/s，低速时保持当前舵角
     alignment_full_speed_angle: 0.174533     # 10°，所有舵轮进入此误差后才允许驱动
-    creep_wheel_speed: 0.5                   # rad/s，舵轮未对齐期间的蠕动轮速（滚动中舵轮才能克服地面摩擦转向；0=完全停车，会死锁）
+    creep_wheel_speed: 0.0                   # rad/s，严格先摆舵再驱动；排除转向期轮胎侧滑造成的虚假里程计
     reverse_switch_hysteresis: 0.0872665     # 5°，防止正反转在临界点抖动
-    publish_tf: false
+    publish_tf: true
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"

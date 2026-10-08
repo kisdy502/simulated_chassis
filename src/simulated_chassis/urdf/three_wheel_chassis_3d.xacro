@@ -1,6 +1,11 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="three_wheel_agv">
 
+  <!-- 全局材质定义：垫柱/转向节引用的 grey 之前未定义，触发 urdf_parser 警告 -->
+  <material name="grey">
+    <color rgba="0.5 0.5 0.5 1.0" />
+  </material>
+
   <!-- ==================== Base Footprint ==================== -->
   <link name="base_footprint">
   </link>
@@ -171,7 +176,7 @@
     <child link="wheel_front_steering_link" />
     <origin xyz="0.3 0.0 -0.05" rpy="0 0 0" />
     <axis xyz="0 0 1" />
-    <limit lower="-1.5708" upper="1.5708" effort="10.0" velocity="5.0" />
+    <limit lower="-1.5708" upper="1.5708" effort="100.0" velocity="5.0" />
   </joint>
 
   <link name="wheel_front_wheel_link">
@@ -226,7 +231,7 @@
     <child link="wheel_left_steering_link" />
     <origin xyz="-0.15 0.20 -0.05" rpy="0 0 0" />
     <axis xyz="0 0 1" />
-    <limit lower="-1.5708" upper="1.5708" effort="10.0" velocity="5.0" />
+    <limit lower="-1.5708" upper="1.5708" effort="100.0" velocity="5.0" />
   </joint>
 
   <link name="wheel_left_wheel_link">
@@ -281,7 +286,7 @@
     <child link="wheel_right_steering_link" />
     <origin xyz="-0.15 -0.20 -0.05" rpy="0 0 0" />
     <axis xyz="0 0 1" />
-    <limit lower="-1.5708" upper="1.5708" effort="10.0" velocity="5.0" />
+    <limit lower="-1.5708" upper="1.5708" effort="100.0" velocity="5.0" />
   </joint>
 
   <link name="wheel_right_wheel_link">
@@ -467,29 +472,32 @@
         <frame_id>front_lidar_link</frame_id>
         <scan>
           <horizontal>
-            <samples>270</samples>
+            <samples>360</samples>
             <resolution>1</resolution>
-            <min_angle>-2.3562</min_angle>
-            <max_angle>2.3562</max_angle>
+            <min_angle>-2.35619</min_angle>
+            <max_angle>2.35619</max_angle>
           </horizontal>
+          <!-- 对齐 zioneer 差速版：下沿 -10°。原 -25° 俯角射线会打在自己底盘前边缘
+               （雷达在边缘内 4cm、甲板仅低 1cm，≥14° 俯角即自打），眼前出现幻影障碍
+               导致导航减速。-10° 时打中甲板需 ≥27°，几何上不可能自打。 -->
           <vertical>
-            <samples>32</samples>
-            <min_angle>-0.4363</min_angle>            <!-- -25° -->
-            <max_angle>0.3491</max_angle>            <!-- +20° -->
+            <samples>16</samples>
+            <min_angle>-0.1745</min_angle>            <!-- -10° -->
+            <max_angle>0.349</max_angle>              <!-- +20° -->
           </vertical>
         </scan>
         <range>
-          <min>0.55</min>
-          <max>45.0</max>
+          <min>0.3</min>
+          <max>30.0</max>
           <resolution>0.01</resolution>
         </range>
         <noise>
           <type>gaussian</type>
           <mean>0.0</mean>
           <bias_mean>0.0</bias_mean>
-          <bias_stddev>0.005</bias_stddev>
+          <bias_stddev>0.0005</bias_stddev>
           <precision>0.01</precision>
-          <stddev>0.010</stddev>
+          <stddev>0.002</stddev>
         </noise>
       </lidar>
     </sensor>
@@ -508,29 +516,30 @@
         <frame_id>rear_lidar_link</frame_id>
         <scan>
           <horizontal>
-            <samples>270</samples>
+            <samples>360</samples>
             <resolution>1</resolution>
-            <min_angle>-2.3562</min_angle>
-            <max_angle>2.3562</max_angle>
+            <min_angle>-2.35619</min_angle>
+            <max_angle>2.35619</max_angle>
           </horizontal>
+          <!-- 对齐 zioneer 差速版：下沿 -10°，杜绝俯角射线自打底盘边缘 -->
           <vertical>
-            <samples>32</samples>
-            <min_angle>-0.4363</min_angle>            <!-- -25° -->
-            <max_angle>0.3491</max_angle>            <!-- +20° -->
+            <samples>16</samples>
+            <min_angle>-0.1745</min_angle>            <!-- -10° -->
+            <max_angle>0.349</max_angle>              <!-- +20° -->
           </vertical>
         </scan>
         <range>
-          <min>0.55</min>
-          <max>45.0</max>
+          <min>0.3</min>
+          <max>30.0</max>
           <resolution>0.01</resolution>
         </range>
         <noise>
           <type>gaussian</type>
           <mean>0.0</mean>
           <bias_mean>0.0</bias_mean>
-          <bias_stddev>0.005</bias_stddev>
+          <bias_stddev>0.0005</bias_stddev>
           <precision>0.01</precision>
-          <stddev>0.010</stddev>
+          <stddev>0.002</stddev>
         </noise>
       </lidar>
     </sensor>

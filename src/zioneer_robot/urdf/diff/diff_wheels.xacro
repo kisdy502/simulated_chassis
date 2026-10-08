@@ -116,10 +116,13 @@
         </joint>
     </xacro:macro>
 
-    <!-- 四个脚轮：z=-0.1205，底部低于地面0.5mm预紧，防止机器人两点支撑翘起1.1° -->
-    <xacro:caster_wheel prefix="caster_front_right" x="0.24" y="0.14" z="-0.1205" />
-    <xacro:caster_wheel prefix="caster_front_left"  x="0.24" y="-0.14" z="-0.1205" />
-    <xacro:caster_wheel prefix="caster_rear_right"  x="-0.24" y="0.14" z="-0.1205" />
-    <xacro:caster_wheel prefix="caster_rear_left"   x="-0.24" y="-0.14" z="-0.1205" />
+    <!-- 四个防倾垫（fixed 实心圆柱，非滚轮）：底面抬到轮底平面上方 2.5mm，
+         动力轮承重、垫悬空；只有车身倾斜 >0.55°(2.5mm/0.26m) 时垫才触地防翻。
+         注意方向：垫绝不能低于轮底，否则整车压在垫上、动力轮悬空空转
+         （实测 3.33 rad/s 空转零位移、激光无近障，即此因）。 -->
+    <xacro:caster_wheel prefix="caster_front_right" x="0.24" y="0.14" z="-0.1175" />
+    <xacro:caster_wheel prefix="caster_front_left"  x="0.24" y="-0.14" z="-0.1175" />
+    <xacro:caster_wheel prefix="caster_rear_right"  x="-0.24" y="0.14" z="-0.1175" />
+    <xacro:caster_wheel prefix="caster_rear_left"   x="-0.24" y="-0.14" z="-0.1175" />
 
 </robot>

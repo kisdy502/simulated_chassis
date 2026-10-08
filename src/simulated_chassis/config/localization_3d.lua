@@ -10,10 +10,17 @@ options = {
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "map",
   tracking_frame = "base_link",
-  published_frame = "base_footprint",
+  -- 分工模式：控制器发 odom->base_footprint TF，cartographer 只发 map->odom。
+  published_frame = "odom",
   odom_frame = "odom",
-  provide_odom_frame = true,
+  provide_odom_frame = false,
   publish_frame_projected_to_2d = true,                  -- 定位投影到2D，给Nav2用
+  -- ✅ 与建图同方案（配套 tracked_pose_tf_node）：carto 不直接发 map→odom
+  --    （直发时外推位姿与旧时刻odom锚定不一致，与 odom→base 组合会双重计数→抖动；
+  --     关外推又只有~10Hz步进→卡顿）。/tracked_pose 高频平滑，由本节点同时刻重锚定。
+  use_pose_extrapolator = true,
+  publish_to_tf = false,
+  publish_tracked_pose = true,
   use_odometry = true,
   use_nav_sat = false,
   use_landmarks = false,
@@ -23,7 +30,7 @@ options = {
   num_point_clouds = 2,
   lookup_transform_timeout_sec = 0.3,                    -- 定位稍宽容（仿真TF可能延迟）
   submap_publish_period_sec = 0.3,
-  pose_publish_period_sec = 5e-3,
+  pose_publish_period_sec = 20e-3,
   trajectory_publish_period_sec = 30e-3,
   rangefinder_sampling_ratio = 1.,
   odometry_sampling_ratio = 1.,
@@ -37,13 +44,14 @@ MAP_BUILDER.use_trajectory_builder_3d = true
 MAP_BUILDER.num_background_threads = 4
 
 -- ==== 3D轨迹构建器：与建图完全一致，保证点云特征空间吻合 ====
-TRAJECTORY_BUILDER_3D.min_range = 0.55                    -- 对齐建图与 xacro range.min
+TRAJECTORY_BUILDER_3D.min_range = 0.55
 TRAJECTORY_BUILDER_3D.max_range = 35.0
 TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08           -- 对齐建图（定位不需要更细）
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- ✅ 双雷达：累计2帧(前+后各1)
 TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
 
-TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
+-- 3D 前端开启 OCSM 兜底（与建图一致）
+TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = true
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.2
 TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
 

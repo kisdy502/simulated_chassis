@@ -36,8 +36,14 @@ diff_drive_controller:
     angular.z.max_acceleration: 2.0
     angular.z.min_acceleration: -2.0
 
-    publish_rate: 50.0
+    publish_rate: 100.0
     publish_limited_velocity: true
-    open_loop: true
-    enable_odom_tf: false
-    cmd_vel_timeout: 0.5
+    # 里程计用轮子实测（position_feedback 默认开）：open_loop 积分指令速度，
+    # 键盘断流/加减速延迟全变成 odom 系统误差，位姿图 1e5 硬约束下与激光
+    # 打架 -> map->odom 1.8m 级振荡（实测 5 次相同跳变签名）。
+    open_loop: false
+    # 分工模式：本控制器发 odom->base_footprint TF(100Hz)，cartographer 只发 map->odom
+    enable_odom_tf: true
+    # 键盘/遥控节点在高负载下发布线程会被饿出 0.5~1.7s 断流，
+    # 0.5s 超时会让控制器反复刹车（原地抖动、无净位移）。放宽到 1.5s。
+    cmd_vel_timeout: 1.5

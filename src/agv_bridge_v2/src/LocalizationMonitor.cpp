@@ -124,10 +124,11 @@ namespace agv_bridge
     {
         try
         {
-            // 每 15 秒打印一次完整 TF 树
+            // 完整 TF 树仅在 DEBUG 级别输出（14 行/次太刷屏；排障时
+            // ros2 run ... --ros-args --log-level debug 再看）
             std::string tf_string = tf_buffer_.allFramesAsString();
-            RCLCPP_INFO_THROTTLE(logger_, *parent_node_->get_clock(), 15000,
-                                 "Available TF frames:\n%s", tf_string.c_str());
+            RCLCPP_DEBUG_THROTTLE(logger_, *parent_node_->get_clock(), 15000,
+                                  "Available TF frames:\n%s", tf_string.c_str());
 
             // 检查 map→base_footprint 链路是否完整
             if (!tf_buffer_.canTransform("map", "base_footprint", tf2::TimePointZero, tf2::durationFromSec(0.1)))

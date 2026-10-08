@@ -42,6 +42,9 @@ namespace three_wheel_controller
             "wheel_front_steering_joint/position",
             "wheel_left_steering_joint/position",
             "wheel_right_steering_joint/position",
+            "wheel_front_wheel_joint/position",
+            "wheel_left_wheel_joint/position",
+            "wheel_right_wheel_joint/position",
             "wheel_front_wheel_joint/velocity",
             "wheel_left_wheel_joint/velocity",
             "wheel_right_wheel_joint/velocity",
@@ -92,6 +95,8 @@ namespace three_wheel_controller
             node->declare_parameter<double>("alignment_full_speed_angle", alignment_full_speed_angle_);
         if (!node->has_parameter("creep_wheel_speed"))
             node->declare_parameter<double>("creep_wheel_speed", creep_wheel_speed_);
+        if (!node->has_parameter("position_odometry"))
+            node->declare_parameter<bool>("position_odometry", position_odometry_);
         if (!node->has_parameter("reverse_switch_hysteresis"))
             node->declare_parameter<double>("reverse_switch_hysteresis", reverse_switch_hysteresis_);
         if (!node->has_parameter("publish_tf"))
@@ -130,6 +135,7 @@ namespace three_wheel_controller
         node->get_parameter("steering_hold_velocity_threshold", steering_hold_velocity_threshold_);
         node->get_parameter("alignment_full_speed_angle", alignment_full_speed_angle_);
         node->get_parameter("creep_wheel_speed", creep_wheel_speed_);
+        node->get_parameter("position_odometry", position_odometry_);
         node->get_parameter("reverse_switch_hysteresis", reverse_switch_hysteresis_);
         node->get_parameter("publish_tf", publish_tf_);
         node->get_parameter("odom_frame_id", odom_frame_id_);
@@ -217,23 +223,32 @@ namespace three_wheel_controller
             drive_cmds_.push_back(std::ref(*drive));
         }
 
+        steering_state_ifaces_.clear();
+        drive_state_ifaces_.clear();
+        drive_position_state_ifaces_.clear();
         for (const auto &wheel : wheel_configs_)
         {
             auto *steer_pos = find_state(wheel.steering_joint_name + "/position");
+            auto *wheel_pos = find_state(wheel.wheel_joint_name + "/position");
             auto *wheel_vel = find_state(wheel.wheel_joint_name + "/velocity");
 
-            if (!steer_pos || !wheel_vel)
+            if (!steer_pos || !wheel_vel || !wheel_pos)
             {
                 RCLCPP_ERROR(get_node()->get_logger(), "Missing state interface for %s", wheel.steering_joint_name.c_str());
                 return controller_interface::CallbackReturn::ERROR;
             }
             steering_state_ifaces_.push_back(std::ref(*steer_pos));
+            drive_position_state_ifaces_.push_back(std::ref(*wheel_pos));
             drive_state_ifaces_.push_back(std::ref(*wheel_vel));
         }
 
         odom_x_ = odom_y_ = odom_yaw_ = 0.0;
         actual_steering_angles_ = {0.0, 0.0, 0.0};
         actual_wheel_velocities_ = {0.0, 0.0, 0.0};
+        actual_wheel_positions_ = {0.0, 0.0, 0.0};
+        prev_wheel_positions_ = {0.0, 0.0, 0.0};
+        prev_steering_angles_ = {0.0, 0.0, 0.0};
+        have_prev_wheel_states_ = false;
         commanded_steering_angles_ = {0.0, 0.0, 0.0};
         selected_drive_directions_ = {1, 1, 1};
 
@@ -248,6 +263,9 @@ namespace three_wheel_controller
     {
         steering_cmds_.clear();
         drive_cmds_.clear();
+        steering_state_ifaces_.clear();
+        drive_state_ifaces_.clear();
+        drive_position_state_ifaces_.clear();
         return controller_interface::CallbackReturn::SUCCESS;
     }
 
@@ -286,7 +304,8 @@ namespace three_wheel_controller
         writeWheelCommands(steering_angles, wheel_speeds);
         commanded_steering_angles_ = steering_angles;
 
-        // 阶段6：用真实舵角和真实轮速反算底盘运动，更新里程计。
+        // 阶段6：用真实舵角和真实轮位置差分反算底盘运动，更新里程计。
+        // odom 只做测量、不做控制判断：门控只作用于驱动轮命令，不冻结积分。
         updateOdometryFromWheelStates(time, period);
 
         // 阶段7：调试日志（门开关边沿立即打，全量状态按 debug_log_period 周期打）。
@@ -341,15 +360,47 @@ namespace three_wheel_controller
         double estimated_vx = 0.0;
         double estimated_vy = 0.0;
         double estimated_omega = 0.0;
-        computeForwardKinematics(
-            actual_steering_angles_, actual_wheel_velocities_,
-            estimated_vx, estimated_vy, estimated_omega);
+
+        const double dt = period.seconds();
+        const bool dt_valid = dt > 0.0 && dt < 1.0;
+
+        if (position_odometry_ && have_prev_wheel_states_ && dt_valid &&
+            drive_position_state_ifaces_.size() >= 3)
+        {
+            // 位置差分（diff_drive 同款机制）：轮关节位置是精确的积分量，
+            // Δs = r·Δφ 对周期内的加减速/振荡完全免疫；
+            // 舵角取前后均值，摆舵期间的方向误差减半。
+            std::array<double, 3> mean_angles{};
+            std::array<double, 3> mean_wheel_velocities{};
+            for (size_t i = 0; i < 3; ++i)
+            {
+                double delta_phi = actual_wheel_positions_[i] - prev_wheel_positions_[i];
+                // 位置源可能在 ±π 处回绕（gz ODE 引擎的 revolute 关节坐标）：
+                // 把单周期增量折回 (−π, π]。10ms 周期内真实转角 ≪ π，折回无歧义。
+                if (delta_phi > M_PI)
+                    delta_phi -= 2.0 * M_PI;
+                else if (delta_phi < -M_PI)
+                    delta_phi += 2.0 * M_PI;
+                mean_wheel_velocities[i] = delta_phi / dt; // 周期平均角速度
+                mean_angles[i] = 0.5 * (actual_steering_angles_[i] + prev_steering_angles_[i]);
+            }
+            computeForwardKinematics(mean_angles, mean_wheel_velocities,
+                                     estimated_vx, estimated_vy, estimated_omega);
+        }
+        else
+        {
+            // 首个周期（差分还没有基准）或参数关闭位置差分：退回瞬时轮速采样
+            computeForwardKinematics(
+                actual_steering_angles_, actual_wheel_velocities_,
+                estimated_vx, estimated_vy, estimated_omega);
+        }
         last_est_vx_ = estimated_vx;
         last_est_vy_ = estimated_vy;
         last_est_wz_ = estimated_omega;
 
-        const double dt = period.seconds();
-        if (dt > 0.0 && dt < 1.0)
+        // 无门控：odom 永远反映真实测量（creep=0 时门关期间 Δφ 本就近零；
+        // 若将来恢复蠕动，舵轮刮擦的滚动量会如实入账，由激光匹配兜底）。
+        if (dt_valid)
         {
             if (std::abs(estimated_omega) < 1e-6)
             {
@@ -377,6 +428,12 @@ namespace three_wheel_controller
         }
 
         publishOdometry(time, estimated_vx, estimated_vy, estimated_omega);
+
+        // 无论积分与否都要推进差分基准：dt 异常周期丢弃该段位移，
+        // 避免跨多周期的位置差造成速度尖峰。
+        prev_wheel_positions_ = actual_wheel_positions_;
+        prev_steering_angles_ = actual_steering_angles_;
+        have_prev_wheel_states_ = true;
     }
 
     // ==================== 核心算法 ====================
@@ -652,6 +709,10 @@ namespace three_wheel_controller
         {
             actual_steering_angles_[i] = steering_state_ifaces_[i].get().get_value();
             actual_wheel_velocities_[i] = drive_state_ifaces_[i].get().get_value();
+            if (drive_position_state_ifaces_.size() >= 3)
+            {
+                actual_wheel_positions_[i] = drive_position_state_ifaces_[i].get().get_value();
+            }
         }
         return true;
     }

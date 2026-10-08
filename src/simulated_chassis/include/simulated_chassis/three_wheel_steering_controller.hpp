@@ -88,6 +88,8 @@ namespace three_wheel_controller
                             const std::array<double, 3> &wheel_speeds);
 
     // 用真实关节状态反算底盘速度，积分并发布里程计。
+    // 纯测量、无门控：门控只限制驱动轮命令，不影响 odom。
+    // 位置差分时增量折回 (−π,π]，免疫位置源在 ±π 处的回绕。
     void updateOdometryFromWheelStates(const rclcpp::Time &time,
                                        const rclcpp::Duration &period);
 
@@ -117,7 +119,8 @@ namespace three_wheel_controller
     bool enable_reverse_optimization_{true}; // 是否启用后退优化
     double steering_hold_velocity_threshold_{0.01}; // 轮心线速度低于此值时保持当前舵角 (m/s)
     double alignment_full_speed_angle_{0.174532925}; // 舵角误差 <= 10° 时才允许驱动
-    double creep_wheel_speed_{0.5};                  // 对齐期间轮子蠕动转速 rad/s，0=恢复完全停车（会死锁）
+    double creep_wheel_speed_{0.0};                  // 对齐期间最大轮速 rad/s；0=严格先摆舵再驱动
+    bool position_odometry_{true};                   // 里程计用位置差分（diff_drive 机制）；false=退回瞬时轮速
     double reverse_switch_hysteresis_{0.087266463};  // 切换轮速方向的 5° 惩罚
     bool publish_tf_{false};
     std::string odom_frame_id_{"odom"};
@@ -126,6 +129,7 @@ namespace three_wheel_controller
     // 状态接口缓存
     std::vector<std::reference_wrapper<hardware_interface::LoanedStateInterface>> steering_state_ifaces_;
     std::vector<std::reference_wrapper<hardware_interface::LoanedStateInterface>> drive_state_ifaces_;
+    std::vector<std::reference_wrapper<hardware_interface::LoanedStateInterface>> drive_position_state_ifaces_;
 
     // 里程计
     rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tf_pub_; // 可选
@@ -134,6 +138,12 @@ namespace three_wheel_controller
     std::array<double, 3> actual_steering_angles_{0.0, 0.0, 0.0};
     // 实际驱动轮速同样只来自 state interface。
     std::array<double, 3> actual_wheel_velocities_{0.0, 0.0, 0.0};
+    // 驱动轮关节位置（积分量）：位置差分里程计的输入。
+    std::array<double, 3> actual_wheel_positions_{0.0, 0.0, 0.0};
+    // 上一周期差分基准（轮位置+舵角）；on_activate 时重置，每周期无条件推进。
+    std::array<double, 3> prev_wheel_positions_{0.0, 0.0, 0.0};
+    std::array<double, 3> prev_steering_angles_{0.0, 0.0, 0.0};
+    bool have_prev_wheel_states_{false};
     // 上一周期下发的目标舵角，仅用于调试/状态记录。
     std::array<double, 3> commanded_steering_angles_{0.0, 0.0, 0.0};
     std::array<int, 3> selected_drive_directions_{1, 1, 1};

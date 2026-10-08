@@ -204,6 +204,9 @@ def generate_launch_description():
         executable="rosbridge_websocket",
         name="rosbridge_websocket",
         output="screen",
+        # 日志级别 WARN：默认 INFO 会为每条分片消息打一行
+        # （网页订阅 /map 时 1Hz × 4 分片 = 每秒刷屏），只留告警和错误。
+        arguments=["--ros-args", "--log-level", "WARN"],
         parameters=[
             {
                 "use_sim_time": use_sim_time,
@@ -260,4 +263,39 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription(args + [agv_nav_server, rosbridge, rosapi])
+    # 常驻地图保存节点：提前建立 /map 订阅，避免 map_saver_cli
+    # 每次冷启动时 DDS 发现占用 Humble 默认 2s 等待窗口。
+    map_saver = Node(
+        package="nav2_map_server",
+        executable="map_saver_server",
+        name="map_saver",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            # 10s→30s：CPU 饱和时 occupancy_grid 的 /map 迟滞，10s 窗口收不到图
+            # 就报 result=false（save_map 失败回退的根因之一）
+            "save_map_timeout": 30.0,
+            "free_thresh_default": 0.25,
+            "occupied_thresh_default": 0.65,
+        }],
+    )
+
+    map_saver_lifecycle_manager = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_map_saver",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "autostart": True,
+            "node_names": ["map_saver"],
+        }],
+    )
+
+    return LaunchDescription(args + [
+        agv_nav_server,
+        map_saver,
+        map_saver_lifecycle_manager,
+        rosbridge,
+        rosapi,
+    ])
