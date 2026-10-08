@@ -96,7 +96,9 @@ controller_server:
 
       iteration_count: 1
       prune_distance: 3.0
-      transform_tolerance: 0.3
+      # 等待对应时刻的 map->odom 到达；仿真负载下 0.3s 可能过短。
+      # 使用备份 nav2_params_3d copy.yaml 中的 1.0s，仍要求时间戳精确匹配。
+      transform_tolerance: 1.0
       temperature: 0.5
       gamma: 0.02
 

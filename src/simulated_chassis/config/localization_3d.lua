@@ -46,14 +46,15 @@ MAP_BUILDER.num_background_threads = 4
 -- ==== 3D轨迹构建器：与建图完全一致，保证点云特征空间吻合 ====
 TRAJECTORY_BUILDER_3D.min_range = 0.5
 TRAJECTORY_BUILDER_3D.max_range = 25.0
-TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.08           -- 对齐建图（定位不需要更细）
+TRAJECTORY_BUILDER_3D.voxel_filter_size = 0.10           -- 与 slam_3d_online.lua 相同
 TRAJECTORY_BUILDER_3D.num_accumulated_range_data = 2  -- ✅ 双雷达：累计2帧(前+后各1)
-TRAJECTORY_BUILDER_3D.rotational_histogram_size = 180
+TRAJECTORY_BUILDER_3D.rotational_histogram_size = 120
 
--- 3D 前端开启 OCSM 兜底（与建图一致）
-TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = true
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.2
-TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(3.0)
+-- 与建图前端一致：额外的 3D OCSM 搜索会增加处理延迟，积压的传感器
+-- 消息可能超出 TF 历史缓存。全局重定位仍由后端 constraint_builder 负责。
+TRAJECTORY_BUILDER_3D.use_online_correlative_scan_matching = false
+TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.linear_search_window = 0.15
+TRAJECTORY_BUILDER_3D.real_time_correlative_scan_matcher.angular_search_window = math.rad(5.0)
 
 TRAJECTORY_BUILDER_3D.submaps.num_range_data = 160       -- ⭐ 极大值：定位模式下几乎不创建新子图，防止重影
 -- TRAJECTORY_BUILDER_3D.submaps.range_data_inserter.hit_probability = 0.65  -- 对齐建图特征空间
