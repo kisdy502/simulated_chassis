@@ -123,7 +123,7 @@ controller_server:
         cost_weight: 2.0
         offset_from_furthest: 4
         threshold_to_consider: 0.5
-        max_angle_to_furthest: 1.0
+        max_angle_to_furthest: 0.1745    #车头偏离前方路径参考点方向多少时，MPPI 才启用角度评分，促使车头转回去
         mode: 1          # ✅ 关键：1 = No directional preference
 
       PathAlignCritic:
@@ -426,6 +426,8 @@ bt_navigator_rclcpp_node:
 
 velocity_smoother:
   ros__parameters:
+    # 必须显式声明，Nav2 的参数重写才会应用仿真时间；与生命周期管理器保持一致。
+    use_sim_time: True
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"

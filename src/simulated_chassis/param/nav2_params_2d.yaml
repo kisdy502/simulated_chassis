@@ -436,6 +436,8 @@ bt_navigator_rclcpp_node:
 
 velocity_smoother:
   ros__parameters:
+    # 与控制器和生命周期管理器统一时钟，避免速度超时计算使用不同时间基准。
+    use_sim_time: True
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
