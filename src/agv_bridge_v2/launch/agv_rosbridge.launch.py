@@ -27,7 +27,8 @@ agv_rosbridge.launch.py —— rosbridge 架构下的 AGV 对接 launch
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, ExecuteProcess
+from ament_index_python.packages import get_package_prefix
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -81,6 +82,20 @@ def _agv_nav_server_node(context):
                 "slam_launch_file": slam_launch_file,
             }
         ],
+    )]
+
+
+def _map_3d_server(context):
+    if LaunchConfiguration("enable_map_3d").perform(context).lower() != "true":
+        return []
+    executable_dir = os.path.join(get_package_prefix("agv_map_3d"), "lib", "agv_map_3d")
+    return [ExecuteProcess(
+        cmd=[os.path.join(executable_dir, "map_3d_server.py"),
+             "--exporter", os.path.join(executable_dir, "pbstream_to_ply"),
+             "--maps-dir", _resolve_maps_dir(context),
+             "--address", LaunchConfiguration("address"),
+             "--port", LaunchConfiguration("map_3d_port")],
+        output="screen",
     )]
 
 
@@ -293,6 +308,11 @@ def generate_launch_description():
     )
 
     return LaunchDescription(args + [
+        DeclareLaunchArgument("enable_map_3d", default_value="true",
+                              description="启动三维地图后台导出与 HTTP 文件服务"),
+        DeclareLaunchArgument("map_3d_port", default_value="8089",
+                              description="三维地图 HTTP 服务端口"),
+        OpaqueFunction(function=_map_3d_server),
         agv_nav_server,
         map_saver,
         map_saver_lifecycle_manager,
