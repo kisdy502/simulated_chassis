@@ -1,6 +1,7 @@
 #include "agv_bridge_v2/LocalizationMonitor.hpp"
 #include <tf2/utils.h>
 #include <cmath>
+#include <algorithm>
 #include <rclcpp/rclcpp.hpp>
 
 using namespace std::chrono_literals;
@@ -48,6 +49,11 @@ namespace agv_bridge
             auto transform = tf_buffer_.lookupTransform(
                 "map", "base_link", tf2::TimePointZero, tf2::durationFromSec(0.0));
 
+            if (std::abs(parent_node_->now().seconds() -
+                         rclcpp::Time(transform.header.stamp).seconds()) >= 1.0) {
+                throw tf2::TransformException("map->base_link output is stale (>=1s)");
+            }
+
             geometry_msgs::msg::Pose pose;
             pose.position.x = transform.transform.translation.x;
             pose.position.y = transform.transform.translation.y;
@@ -83,7 +89,15 @@ namespace agv_bridge
         }
         catch (const tf2::TransformException &ex)
         {
-            RCLCPP_WARN(logger_, "TF lookup failed: %s", ex.what());
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                is_initialized_ = false;
+                tf_initialized_ = false;
+                tf_stable_count_ = 0;
+                have_previous_ = false;
+            }
+            RCLCPP_WARN_THROTTLE(logger_, *parent_node_->get_clock(), 5000,
+                                "定位 TF 输出失效，拒绝使用旧位姿: %s", ex.what());
         }
     }
 
@@ -91,8 +105,8 @@ namespace agv_bridge
     {
         checkTFStability();
 
-        // Cartographer 纯定位模式：仅依赖 TF 树完整性判断初始化
-        // map→odom→base_footprint 链路完整且时间戳持续更新 = 定位已收敛
+        // 此处只判断 TF 输出可用；不代表扫描已与保存地图匹配成功。
+        std::lock_guard<std::mutex> lock(mutex_);
         is_initialized_ = tf_initialized_;
     }
 
@@ -131,7 +145,7 @@ namespace agv_bridge
                                   "Available TF frames:\n%s", tf_string.c_str());
 
             // 检查 map→base_footprint 链路是否完整
-            if (!tf_buffer_.canTransform("map", "base_footprint", tf2::TimePointZero, tf2::durationFromSec(0.1)))
+            if (!tf_buffer_.canTransform("map", "base_footprint", tf2::TimePointZero, tf2::durationFromSec(0.0)))
             {
                 RCLCPP_WARN_THROTTLE(logger_, *parent_node_->get_clock(), 15000,
                                      "TF 链路未就绪: map → base_footprint 不可达");
@@ -140,7 +154,7 @@ namespace agv_bridge
 
             geometry_msgs::msg::TransformStamped transform = tf_buffer_.lookupTransform(
                 "map", "base_footprint", tf2::TimePointZero,
-                tf2::durationFromSec(0.1));
+                tf2::durationFromSec(0.0));
 
             rclcpp::Time transform_time(transform.header.stamp);
             rclcpp::Time now = parent_node_->now();
@@ -156,7 +170,7 @@ namespace agv_bridge
 
             if (time_diff < 1.0)
             {
-                tf_stable_count_++;
+                tf_stable_count_ = std::min(tf_stable_count_ + 1, TF_STABLE_THRESHOLD);
                 RCLCPP_INFO_THROTTLE(logger_, *parent_node_->get_clock(), 15000,
                                      "TF 稳定计数: %d/%d", tf_stable_count_, TF_STABLE_THRESHOLD);
 
@@ -231,6 +245,9 @@ namespace agv_bridge
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!have_previous_)
+            return std::nullopt;
+        if (std::abs(parent_node_->now().seconds() -
+                     rclcpp::Time(pose_stamped.header.stamp).seconds()) >= 1.0)
             return std::nullopt;
         return pose_stamped;
     }

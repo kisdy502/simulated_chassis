@@ -66,9 +66,9 @@ namespace agv_bridge
         rclcpp::CallbackGroup::SharedPtr timer_group_;
 
         geometry_msgs::msg::PoseStamped pose_stamped;
-        double continuous_yaw_; // 累积的连续偏航角（弧度）
-        double last_raw_yaw_;   // 上一次的原始偏航角（用于差值计算）
-        bool have_previous_;    // 是否有上一帧
+        double continuous_yaw_ = 0.; // 累积的连续偏航角（弧度）
+        double last_raw_yaw_ = 0.;   // 上一次的原始偏航角（用于差值计算）
+        bool have_previous_ = false;    // 是否有上一帧
         mutable std::mutex mutex_;
     };
 
