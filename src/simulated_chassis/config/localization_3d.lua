@@ -75,7 +75,7 @@ POSE_GRAPH.optimization_problem.odometry_translation_weight = 1e5
 POSE_GRAPH.optimization_problem.odometry_rotation_weight = 1e5
 
 TRAJECTORY_BUILDER.pure_localization_trimmer = {
-  max_submaps_to_keep = 10,  -- 只保留最近3个子图，其余丢弃
+  max_submaps_to_keep = 5,  -- 只保留最近3个子图，其余丢弃
 }
 
 return options
