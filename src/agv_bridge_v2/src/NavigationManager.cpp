@@ -24,6 +24,7 @@ namespace agv_bridge
 
     NavigationManager::~NavigationManager()
     {
+        if (action_watchdog_) action_watchdog_->cancel();
         // 如果正在导航，尝试取消
         if (isNavigating())
         {
@@ -45,7 +46,7 @@ namespace agv_bridge
 
     bool NavigationManager::initialize()
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
 
         if (initialized_)
         {
@@ -93,6 +94,13 @@ namespace agv_bridge
             RCLCPP_WARN(logger_, "Follow path action server not available");
         }
 
+        for (const auto &name : {"controller_server", "planner_server", "behavior_server", "bt_navigator"}) {
+            LifecycleCheck check;
+            check.client = node_->create_client<lifecycle_msgs::srv::GetState>(std::string(name) + "/get_state");
+            lifecycle_checks_.push_back(std::move(check));
+        }
+        action_watchdog_ = node_->create_wall_timer(std::chrono::milliseconds(100),
+            [this]() { checkActionProgress(); });
         initialized_ = true;
         RCLCPP_INFO(logger_, "Navigation manager initialized");
         return true;
@@ -108,7 +116,7 @@ namespace agv_bridge
             return false;
         }
 
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         // 创建导航目标
         auto goal_msg = NavigateToPose::Goal();
         goal_msg.pose.header.stamp = node_->now();
@@ -130,7 +138,7 @@ namespace agv_bridge
             std::bind(&NavigationManager::resultCallback, this, std::placeholders::_1);
 
         // 发送导航目标
-        auto future_goal_handle = nav_action_client_->async_send_goal(goal_msg, send_goal_options);
+        dispatchGoal<NavigateToPose>(nav_action_client_, goal_msg, send_goal_options);
 
         setState(NavigationState::EXECUTING);
 
@@ -143,7 +151,7 @@ namespace agv_bridge
 
     void NavigationManager::goalResponseCallback(GoalHandleNavigateToPose::SharedPtr goal_handle)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
 
         if (!goal_handle)
         {
@@ -188,7 +196,7 @@ namespace agv_bridge
 
     void NavigationManager::resultCallback(const GoalHandleNavigateToPose::WrappedResult &result)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
 
         bool success = false;
         std::string status;
@@ -224,7 +232,7 @@ namespace agv_bridge
         auto send_goal_options = rclcpp_action::Client<nav2_msgs::action::Spin>::SendGoalOptions();
         send_goal_options.goal_response_callback = std::bind(&NavigationManager::spinGoalResponseCallback, this, std::placeholders::_1);
         send_goal_options.result_callback = std::bind(&NavigationManager::spinResultCallback, this, std::placeholders::_1);
-        auto future_goal = spin_client_->async_send_goal(goal_msg, send_goal_options);
+        dispatchGoal<Spin>(spin_client_, goal_msg, send_goal_options);
         return true;
     }
 
@@ -302,7 +310,7 @@ namespace agv_bridge
                 send_goal_options.result_callback =
                     std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
 
-                follow_path_client_->async_send_goal(goal_msg, send_goal_options);
+                dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options);
 
                 RCLCPP_INFO(logger_, "倒车旋转完成,开始倒车移动");
             }
@@ -363,7 +371,7 @@ namespace agv_bridge
         }
         const auto &robot_pose = current_pose_opt.value().pose;
 
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
 
         // ===== 倒车逻辑：只后退，绝不旋转车体 =====
         // 充电桩对接、窄过道通行、贴边作业等场景下，原地旋转会剐蹭甚至碰撞，
@@ -420,7 +428,7 @@ namespace agv_bridge
         send_goal_options.result_callback =
             std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
 
-        follow_path_client_->async_send_goal(goal_msg, send_goal_options);
+        dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options);
         setState(NavigationState::BACKING_UP); // 使用倒车状态
 
         RCLCPP_INFO(logger_,
@@ -490,6 +498,8 @@ namespace agv_bridge
     // 直线路点导航，public放，外部调用
     bool NavigationManager::followPathNavigation(const agv_bridge::MoveToMessage moveToMessage)
     {
+        std::lock_guard<std::recursive_mutex> task_lock(mutex_);
+        if (!isReady()) return false;
         current_task_ = moveToMessage;
 
         auto current_pose_opt = pose_provider_->getCurrentPose();
@@ -500,7 +510,7 @@ namespace agv_bridge
         }
         const auto &robot_pose = current_pose_opt.value().pose;
 
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
 
         // 🔴 新增: 判断是否倒车
         if (moveToMessage.edgeInfo.backUp)
@@ -556,7 +566,7 @@ namespace agv_bridge
         send_goal_options.result_callback =
             std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
 
-        follow_path_client_->async_send_goal(goal_msg, send_goal_options);
+        dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options);
 
         setState(NavigationState::EXECUTING);
 
@@ -626,6 +636,8 @@ namespace agv_bridge
     // 贝塞尔曲线路点导航，public放，外部调用
     bool NavigationManager::followBezierPathNavigation(const agv_bridge::MoveToMessage moveToMessage)
     {
+        std::lock_guard<std::recursive_mutex> task_lock(mutex_);
+        if (!isReady()) return false;
         current_task_ = moveToMessage;
 
         auto current_pose_opt = pose_provider_->getCurrentPose();
@@ -639,7 +651,7 @@ namespace agv_bridge
 
         double robot_yaw = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
 
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
 
         // 获取边和已反转的控制点（如果reverse_path，外部已处理反转）
         std::vector<double> control_x, control_y;
@@ -706,7 +718,7 @@ namespace agv_bridge
             std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
 
         // 发送目标
-        follow_path_client_->async_send_goal(goal_msg, send_goal_options);
+        dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options);
         setState(NavigationState::EXECUTING);
         return true;
     }
@@ -886,124 +898,85 @@ namespace agv_bridge
 
     void NavigationManager::stopNavigation()
     {
-
-        // 如果有活跃任务，先通知取消并缓存任务信息
-        // if (current_task_.has_value())
-        // {
-        //     auto task = current_task_.value();
-        //     RCLCPP_INFO(logger_, "停止任务: commandId=%s, nodeId=%s",
-        //                 task.commandId.c_str(), task.nodeId.c_str());
-        //     if (callbacks_)
-        //     {
-        //         callbacks_->onCommandAck(task.commandId, task.nodeId, "CANCELLED", "导航已停止");
-        //     }
-        // }
-
-        bool cancelled = cancelNavigation();
-        if (!cancelled)
-        {
-            RCLCPP_WARN(logger_, "取消导航失败，但继续重置状态");
-        }
-        else
-        {
-            RCLCPP_INFO(logger_, "取消导航请求已经发送成功，等待取消回调通知结果!");
-        }
-
-        // 确保状态重置为 IDLE
-        // setState(NavigationState::IDLE);
-
-        // RCLCPP_INFO(logger_, "导航已停止");
+        cancelNavigation();
     }
 
     bool NavigationManager::cancelNavigation()
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        if (!isNavigating())
-        {
-            RCLCPP_WARN(logger_, "Cannot cancel: not currently navigating");
-            return false;
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!current_task_) return false;
+        cancel_pending_ = true;
+        action_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        bool has_handle = false;
+        if (nav_goal_handle_) { nav_action_client_->async_cancel_goal(nav_goal_handle_); has_handle = true; }
+        if (follow_path_goal_handle_) { follow_path_client_->async_cancel_goal(follow_path_goal_handle_); has_handle = true; }
+        if (spin_goal_handle_) { spin_client_->async_cancel_goal(spin_goal_handle_); has_handle = true; }
+        // A pending send has no handle yet. Retire it now; dispatchGoal cancels
+        // any accepted reply arriving after this task has been retired.
+        if (!has_handle) {
+            if (awaiting_response_) unsafe_generation_ = action_generation_;
+            finishTask(false, "CANCELED", "导航已取消（底层目标尚未接受）");
         }
+        return true;
+    }
 
-        bool cancelled = false;
+    bool NavigationManager::isReady() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        const auto now = std::chrono::steady_clock::now();
+        if (!initialized_ || lifecycle_checks_.empty() || unsafe_generation_ != 0) return false;
+        for (const auto &check : lifecycle_checks_)
+            if (!check.active || now - check.checked > std::chrono::seconds(3)) return false;
+        return spin_client_->action_server_is_ready() && follow_path_client_->action_server_is_ready();
+    }
 
-        // 取消 navigate_to_pose
-        if (nav_action_client_ && nav_goal_handle_)
-        {
-            auto future_cancel = nav_action_client_->async_cancel_goal(nav_goal_handle_);
-            if (future_cancel.wait_for(std::chrono::seconds(5)) == std::future_status::ready)
-            {
-                nav_goal_handle_.reset();
-                cancelled = true;
-                RCLCPP_INFO(logger_, "Cancelled navigate_to_pose action");
+    void NavigationManager::checkActionProgress()
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        const auto now = std::chrono::steady_clock::now();
+        for (std::size_t i = 0; i < lifecycle_checks_.size(); ++i) {
+            auto &check = lifecycle_checks_[i];
+            if (check.pending && now - check.checked > std::chrono::seconds(3)) {
+                check.client->prune_pending_requests();
+                check.pending = false;
+                check.active = false;
             }
-            else
-            {
-                RCLCPP_ERROR(logger_, "Failed to cancel navigate_to_pose action");
-            }
+            if (check.pending || now - check.checked < std::chrono::seconds(1)) continue;
+            check.checked = now;
+            if (!check.client->service_is_ready()) { check.active = false; continue; }
+            check.pending = true;
+            check.client->async_send_request(std::make_shared<lifecycle_msgs::srv::GetState::Request>(),
+                [this, i](rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedFuture future) {
+                    std::lock_guard<std::recursive_mutex> lock(mutex_);
+                    auto &entry = lifecycle_checks_[i];
+                    entry.pending = false;
+                    entry.active = future.get()->current_state.id == 3; // PRIMARY_STATE_ACTIVE
+                    entry.checked = std::chrono::steady_clock::now();
+                });
         }
-
-        // 取消 follow_path
-        if (follow_path_client_ && follow_path_goal_handle_)
-        {
-            auto future_cancel = follow_path_client_->async_cancel_goal(follow_path_goal_handle_);
-            if (future_cancel.wait_for(std::chrono::seconds(5)) == std::future_status::ready)
-            {
-                follow_path_goal_handle_.reset();
-                cancelled = true;
-                RCLCPP_INFO(logger_, "Cancelled follow_path action");
-            }
-            else
-            {
-                RCLCPP_ERROR(logger_, "Failed to cancel follow_path action");
-            }
+        if (current_task_ && (awaiting_response_ || cancel_pending_) && now >= action_deadline_) {
+            unsafe_generation_ = action_generation_;
+            if (cancel_pending_) finishTask(false, "CANCELED", "导航取消结果等待超时，已释放任务");
+            else failTask("FAILED", "底层导航目标响应超时，请等待 Nav2 就绪后重试");
         }
-
-        // 取消 spin
-        if (spin_client_ && spin_goal_handle_)
-        {
-            auto future_cancel = spin_client_->async_cancel_goal(spin_goal_handle_);
-            if (future_cancel.wait_for(std::chrono::seconds(5)) == std::future_status::ready)
-            {
-                spin_goal_handle_.reset();
-                cancelled = true;
-                RCLCPP_INFO(logger_, "Cancelled spin action");
-            }
-            else
-            {
-                RCLCPP_ERROR(logger_, "Failed to cancel spin action");
-            }
-        }
-
-        if (cancelled)
-        {
-            setState(NavigationState::CANCELLED);
-            RCLCPP_INFO(logger_, "Navigation cancelled successfully");
-        }
-        else
-        {
-            RCLCPP_WARN(logger_, "No active navigation to cancel");
-        }
-
-        return cancelled;
     }
 
     NavigationState NavigationManager::getCurrentState() const
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         return current_state_;
     }
 
     bool NavigationManager::isNavigating() const
     {
-        // std::lock_guard<std::mutex> lock(mutex_);
+        // std::lock_guard<std::recursive_mutex> lock(mutex_);
         return current_state_ != NavigationState::IDLE;
     }
 
     // 1. 执行路点导航和贝塞尔曲线路点导航，都到这三个回调
     void NavigationManager::followPathGoalResponseCallback(const GoalHandleFollowPath::SharedPtr &goal_handle)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
 
         if (!goal_handle)
         {
@@ -1046,7 +1019,7 @@ namespace agv_bridge
     // 3. 结果回调
     void NavigationManager::followPathResultCallback(const GoalHandleFollowPath::WrappedResult &result)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
 
         switch (result.code)
         {
@@ -1123,7 +1096,16 @@ namespace agv_bridge
     void NavigationManager::finishTask(bool success, const std::string status, const std::string message)
     {
         // 缓存任务数据,避免多次访问 value() (防止在多线程环境下current_task_被重置)
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!current_task_) return;
         agv_bridge::MoveToMessage task = current_task_.value();
+        ++action_generation_;
+        awaiting_response_ = false;
+        cancel_pending_ = false;
+        pending_navigation_ = pending_bezier_ = pending_rotate_ = false;
+        nav_goal_handle_.reset();
+        follow_path_goal_handle_.reset();
+        spin_goal_handle_.reset();
 
         if (callbacks_)
         {

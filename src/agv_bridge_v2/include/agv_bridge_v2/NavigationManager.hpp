@@ -13,6 +13,9 @@
 #include <memory>
 #include <functional>
 #include <mutex>
+#include <chrono>
+#include <cstdint>
+#include "lifecycle_msgs/srv/get_state.hpp"
 #include <nav2_msgs/action/follow_path.hpp>
 #include <nav2_msgs/action/spin.hpp>
 #include "agv_bridge_v2/utils/TransformUtils.hpp"
@@ -165,6 +168,7 @@ namespace agv_bridge
         bool isNavigating() const;
 
         void setSpeedLimit(double speed);
+        bool isReady() const;
 
     private:
         // 回调函数
@@ -232,6 +236,60 @@ namespace agv_bridge
             double p1x, double p1y,
             int segments = 100);
 
+        // Every dispatched action gets a generation. Late replies cannot attach
+        // themselves to a newer task; accepted stale goals are canceled.
+        template<typename Action>
+        void dispatchGoal(const typename rclcpp_action::Client<Action>::SharedPtr &client,
+                          const typename Action::Goal &goal,
+                          typename rclcpp_action::Client<Action>::SendGoalOptions options)
+        {
+            const auto generation = ++action_generation_;
+            awaiting_response_ = true;
+            action_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            auto response = options.goal_response_callback;
+            auto result = options.result_callback;
+            auto feedback = options.feedback_callback;
+            options.goal_response_callback = [this, client, generation, response](auto handle) {
+                std::lock_guard<std::recursive_mutex> lock(mutex_);
+                if (generation != action_generation_ || !current_task_) {
+                    if (handle) client->async_cancel_goal(handle);
+                    else if (generation == unsafe_generation_) unsafe_generation_ = 0;
+                    return;
+                }
+                awaiting_response_ = false;
+                if (response) response(handle);
+                if (cancel_pending_ && handle) client->async_cancel_goal(handle);
+            };
+            options.result_callback = [this, generation, result](const auto &value) {
+                std::lock_guard<std::recursive_mutex> lock(mutex_);
+                if (generation == unsafe_generation_) unsafe_generation_ = 0;
+                if (generation != action_generation_ || !current_task_) return;
+                if (cancel_pending_) finishTask(false, "CANCELED", "导航已取消");
+                else if (result) result(value);
+            };
+            options.feedback_callback = [this, generation, feedback](auto handle, const auto &value) {
+                std::lock_guard<std::recursive_mutex> lock(mutex_);
+                if (generation == action_generation_ && !cancel_pending_ && feedback)
+                    feedback(handle, value);
+            };
+            try { client->async_send_goal(goal, options); }
+            catch (const std::exception &e) { failTask("FAILED", std::string("提交导航动作失败: ") + e.what()); }
+        }
+        void checkActionProgress();
+        rclcpp::TimerBase::SharedPtr action_watchdog_;
+        std::uint64_t action_generation_ = 0;
+        std::uint64_t unsafe_generation_ = 0;
+        bool awaiting_response_ = false;
+        bool cancel_pending_ = false;
+        std::chrono::steady_clock::time_point action_deadline_;
+        struct LifecycleCheck {
+            rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedPtr client;
+            bool pending = false;
+            bool active = false;
+            std::chrono::steady_clock::time_point checked;
+        };
+        std::vector<LifecycleCheck> lifecycle_checks_;
+
         // 成员变量
         rclcpp::Node *node_;
         rclcpp::Logger logger_;  // 子logger，日志tag显示类名
@@ -243,7 +301,7 @@ namespace agv_bridge
         NavigationState current_state_;
 
         // 互斥锁
-        mutable std::mutex mutex_;
+        mutable std::recursive_mutex mutex_;
 
         // 是否已初始化
         bool initialized_;

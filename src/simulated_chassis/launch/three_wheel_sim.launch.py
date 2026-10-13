@@ -148,6 +148,7 @@ def generate_launch_description():
     cmd_vel_relay = Node(
         package='simulated_chassis',
         executable='cmd_vel_relay_node',
+        condition=IfCondition(LaunchConfiguration('include_cmd_vel_relay')),
         name='cmd_vel_relay_node',
         output='screen',
         parameters=[{
@@ -174,6 +175,7 @@ def generate_launch_description():
     joy_node = Node(
         package='joy',
         executable='joy_node',
+        condition=IfCondition(LaunchConfiguration('start_gamepad')),
         name='joy_node',
         output='screen',
         parameters=[{
@@ -187,6 +189,7 @@ def generate_launch_description():
     gamepad_teleop_node = Node(
         package='simulated_chassis',
         executable='gamepad_teleop_node',
+        condition=IfCondition(LaunchConfiguration('start_gamepad')),
         name='gamepad_teleop_node',
         output='screen',
         parameters=[{
@@ -210,7 +213,16 @@ def generate_launch_description():
         ],
     )
 
+    gazebo_gui = ExecuteProcess(
+        cmd=["ign", "gazebo", "-g"], output="screen",
+        condition=IfCondition(LaunchConfiguration("gui")),
+    )
+
     return LaunchDescription([
+        DeclareLaunchArgument("include_cmd_vel_relay", default_value="true"),
+        DeclareLaunchArgument("start_gamepad", default_value="true"),
+        DeclareLaunchArgument("gui", default_value="false"),
+        TimerAction(period=2.0, actions=[gazebo_gui]),
         use_sim_time_arg,
         start_teleop_arg,
         set_plugin_path,

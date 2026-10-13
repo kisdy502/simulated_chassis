@@ -31,7 +31,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction, LogInfo, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, EnvironmentVariable
 from launch_ros.actions import Node
 
 
@@ -46,6 +46,8 @@ def generate_launch_description():
 
     # ===== 启动参数 =====
     declared_arguments = [
+        DeclareLaunchArgument('use_rviz', default_value=EnvironmentVariable('START_RVIZ', default_value='true'),
+                              description='是否启动 RViz'),
         DeclareLaunchArgument(
             'include_cmd_vel_relay', default_value='true',
             description='启动速度转发；bridge 托管时设为 false',
@@ -128,6 +130,7 @@ def generate_launch_description():
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
+        condition=IfCondition(LaunchConfiguration('use_rviz')),
         name='rviz2',
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen',

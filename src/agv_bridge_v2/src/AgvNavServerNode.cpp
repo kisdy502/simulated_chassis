@@ -388,31 +388,22 @@ namespace agv_bridge
         const std::shared_ptr<GoalHandleFollowEdge> goal_handle)
     {
         cancel_requested_ = true;
-
-        if (navigation_manager_ && navigation_manager_->isNavigating())
-        {
-            // 让 NavigationManager 去取消 nav2 的 follow_path / spin / navigate_to_pose，
-            // 结果会通过 onNavigationResult 回到当前 goal，此处不做终结。
-            RCLCPP_INFO(this->get_logger(), "收到取消请求，正在取消底层 nav2 动作...");
-            navigation_manager_->stopNavigation();
-        }
-        else
-        {
-            // 底层没有在执行的动作，直接终结，避免上位机一直等 cancel 响应
-            RCLCPP_INFO(this->get_logger(), "收到取消请求，但当前没有正在执行的导航，直接结束");
-
-            auto result = std::make_shared<FollowEdge::Result>();
-            result->success = false;
-            result->message = "导航已取消";
-            result->command_id = active_command_id_;
-            result->node_id = active_node_id_;
-
-            if (goal_handle && goal_handle->is_active())
-            {
+        // The action server enters CANCELING only after this callback returns
+        // ACCEPT. Finalize on a later tick, never from inside handle_cancel.
+        cancel_finalize_timer_ = this->create_wall_timer(10ms, [this, goal_handle]() {
+            cancel_finalize_timer_->cancel();
+            if (navigation_manager_ && navigation_manager_->isNavigating()) {
+                navigation_manager_->stopNavigation();
+            } else if (goal_handle && goal_handle->is_canceling()) {
+                auto result = std::make_shared<FollowEdge::Result>();
+                result->success = false;
+                result->message = "导航已取消";
+                result->command_id = active_command_id_;
+                result->node_id = active_node_id_;
                 goal_handle->canceled(result);
+                reset_goal();
             }
-            reset_goal();
-        }
+        });
 
         return rclcpp_action::CancelResponse::ACCEPT;
     }
@@ -433,6 +424,11 @@ namespace agv_bridge
         if (!localization_monitor_->isInitialized())
         {
             abort_current_goal("无法获取机器人位姿（定位未初始化），拒绝执行导航命令");
+            return;
+        }
+
+        if (!navigation_manager_->isReady()) {
+            abort_current_goal("Nav2 尚未完全启动或未激活，请稍后重试");
             return;
         }
 
@@ -1361,6 +1357,10 @@ namespace agv_bridge
         std::shared_ptr<GoalHandleFollowEdge> goal_handle;
         {
             std::lock_guard<std::mutex> lock(goal_mutex_);
+            if (command_id != active_command_id_) {
+                RCLCPP_WARN(this->get_logger(), "忽略过期导航结果: command_id=%s", command_id.c_str());
+                return;
+            }
             goal_handle = current_goal_handle_;
             current_goal_handle_.reset();
         }
@@ -1536,6 +1536,17 @@ namespace agv_bridge
                                             const std::vector<std::string> &extra_args,
                                             pid_t &pid_slot, const char *log_path)
     {
+        std::string persistent_log_path;
+        if (const char *directory = std::getenv("AGV_PROCESS_LOG_DIR"))
+        {
+            if (*directory)
+            {
+                const std::string original(log_path);
+                persistent_log_path = std::string(directory) + "/" +
+                    original.substr(original.find_last_of('/') + 1);
+                log_path = persistent_log_path.c_str();
+            }
+        }
         std::vector<std::string> argv_str = {"ros2", "launch", package, launch_file};
         argv_str.insert(argv_str.end(), extra_args.begin(), extra_args.end());
 

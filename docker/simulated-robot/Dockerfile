@@ -1,12 +1,14 @@
 FROM ros2-base:latest
 
 SHELL ["/bin/bash", "-c"]
+ARG BUILD_JOBS=2
 
-ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     xvfb \
+    xauth \
     xterm \
     ros-humble-teleop-twist-keyboard \
     ros-humble-topic-tools \
@@ -22,8 +24,9 @@ COPY src/simulated_chassis/ ./simulated_chassis/
 
 WORKDIR /ros2_ws
 
-RUN source /opt/ros/humble/setup.bash \
-    && colcon build --packages-select jzt_robot simulated_chassis \
+RUN mkdir -p src/jzt_robot/maps src/simulated_chassis/maps \
+    && source /opt/ros/humble/setup.bash \
+    && MAKEFLAGS="-j${BUILD_JOBS}" colcon build --executor sequential --packages-select jzt_robot simulated_chassis \
         --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
     && rm -rf build log
 
@@ -33,6 +36,6 @@ ENV GAZEBO_PLUGIN_PATH=/ros2_ws/install/lib
 
 COPY docker/simulated-robot/launch_robot.sh /launch_robot.sh
 COPY docker/simulated-robot/run_rviz.sh /run_rviz.sh
-RUN chmod +x /launch_robot.sh /run_rviz.sh
+RUN sed -i 's/\r$//' /launch_robot.sh /run_rviz.sh && chmod +x /launch_robot.sh /run_rviz.sh
 
 ENTRYPOINT ["/launch_robot.sh"]

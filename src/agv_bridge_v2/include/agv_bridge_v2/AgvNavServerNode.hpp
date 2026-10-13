@@ -276,6 +276,7 @@ namespace agv_bridge
 
         rclcpp::TimerBase::SharedPtr status_timer_;
         rclcpp::TimerBase::SharedPtr feedback_timer_;
+        rclcpp::TimerBase::SharedPtr cancel_finalize_timer_;
         rclcpp::TimerBase::SharedPtr localization_timer_;
         rclcpp::TimerBase::SharedPtr tf_timer_;
         // 心跳专用回调组：上位机所有闸门都依赖 /agv/status，任何慢回调都不能饿死它

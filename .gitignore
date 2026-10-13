@@ -68,3 +68,8 @@ my_bag_sm
 
 /maps/*
 /serverProjects/*
+
+# Docker local deployment data
+.env
+runtime/
+*.docker-images.tar.gz

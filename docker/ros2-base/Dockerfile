@@ -47,6 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-ign-ros2-control \
     ros-humble-diff-drive-controller \
     ros-humble-joint-state-broadcaster \
+    ros-humble-joy \
     ros-humble-robot-state-publisher \
     ros-humble-xacro \
     ros-humble-behaviortree-cpp-v3 \
@@ -80,13 +81,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     htop \
     && rm -rf /var/lib/apt/lists/*
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-joy \
+    ros-humble-pointcloud-to-laserscan \
+    ros-humble-rviz2 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN rosdep init || true && rosdep update
 
 ENV ROS_DOMAIN_ID=0
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 COPY docker/ros2-base/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]

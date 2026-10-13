@@ -1,228 +1,62 @@
 #!/bin/bash
-
-set -e
-
-COMPOSE_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$COMPOSE_DIR"
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
+set -euo pipefail
+cd "$(dirname "$0")"
+mkdir -p maps runtime/bridge/ros runtime/bridge/process runtime/simulation/ros
 usage() {
-    echo "Usage: $0 {build|up|up-nav|up-slam|down|restart|logs|status|save-map|explore|clean}"
-    echo ""
-    echo "Commands:"
-    echo "  build       - Build all Docker images"
-    echo "  up          - Start core services (robot + bridge)"
-    echo "  up-nav      - Start with Nav2 navigation"
-    echo "  up-slam     - Start with Cartographer SLAM"
-    echo "  down        - Stop and remove containers"
-    echo "  restart     - Restart services"
-    echo "  logs        - View logs [service_name]"
-    echo "  status      - Check container status"
-    echo "  save-map    - Save SLAM map (arg: map_name)"
-    echo "  explore     - Auto-explore for mapping (args: speed turn_speed)"
-    echo "  clean       - Remove images, volumes and cache"
-    echo ""
-    echo "Examples:"
-    echo "  $0 build              # Build images"
-    echo "  $0 up                 # Robot + Bridge"
-    echo "  $0 up-slam            # Robot + Bridge + SLAM"
-    echo "  $0 explore 0.3 0.5    # Start exploration"
-    echo "  $0 save-map my_map    # Save map as my_map"
-    echo "  $0 logs -f agv-bridge # Follow bridge logs"
+    echo "Usage: $0 {build|up|up-nav|up-slam|start-mapping|save-map NAME|down|restart|logs [SERVICE]|status|export [FILE]|shell [SERVICE]}"
 }
-
-build_images() {
-    echo -e "${GREEN}Building ROS2 base image (for nav2/slam)...${NC}"
-    docker compose build nav2-server cartographer || true
-    
-    echo -e "${GREEN}Building simulated robot image...${NC}"
-    docker compose build robot-simulation
-    
-    echo -e "${GREEN}Building AGV bridge image...${NC}"
-    docker compose build agv-bridge
-    
-    echo -e "${GREEN}All images built successfully!${NC}"
+check_source_files() {
+    local path signature
+    while IFS= read -r -d '' path; do
+        signature=$(od -An -tx1 -N3 "$path" | tr -d ' \n')
+        if [[ "$signature" == 887d1c ]]; then
+            echo "Encrypted file is unreadable to Docker: $path. Restore Linux-readable plain text before building." >&2
+            return 1
+        fi
+    done < <(find src/jzt_robot src/simulated_chassis src/agv_bridge_v2 src/agv_bridge_v2_interfaces -type f -print0)
 }
-
-start_services() {
-    local mode=$1
-
-    case "$mode" in
-        nav)
-            echo -e "${GREEN}Starting: Robot + Bridge + Navigation${NC}"
-            docker compose --profile navigation up -d --force-recreate
-            ;;
-        slam)
-            echo -e "${GREEN}Starting: Robot + Bridge + SLAM${NC}"
-            docker compose --profile slam up -d --force-recreate
-            ;;
-        *)
-            echo -e "${GREEN}Starting: Robot + Bridge${NC}"
-            docker compose up -d robot-simulation agv-bridge
-            ;;
-    esac
-
-    echo -e "${GREEN}Services started. Checking status...${NC}"
-    sleep 3
-    docker compose ps
-}
-
-stop_services() {
-    echo -e "${YELLOW}Stopping all services...${NC}"
-    docker compose down --remove-orphans
-    echo -e "${GREEN}Services stopped.${NC}"
-}
-
-restart_services() {
-    stop_services
-    sleep 2
-    start_services ""
-}
-
-view_logs() {
-    local service=$1
-    if [ -n "$service" ]; then
-        docker compose logs -f "$service"
-    else
-        docker compose logs -f
-    fi
-}
-
-check_status() {
-    echo -e "${GREEN}=== Container Status ===${NC}"
-    docker compose ps
-    
-    echo ""
-    echo -e "${GREEN}=== Resource Usage ===${NC}"
-    docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
-}
-
-cleanup() {
-    echo -e "${RED}This will remove all containers, images and volumes!${NC}"
-    read -p "Are you sure? (y/N) " -n 1 -r
-    echo
-    
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        docker compose down -v --rmi all --remove-orphans
-        docker system prune -f
-        echo -e "${GREEN}Cleanup completed.${NC}"
-    fi
-}
-
-save_map() {
-    local map_name=${1:-"slam_map"}
-    echo -e "${GREEN}Saving Cartographer state as: ${map_name}${NC}"
-
-    docker exec cartographer_slam bash -c "
+call_bridge() {
+    local service=$1 type=$2 request=$3 output
+    output=$(docker compose exec -T agv-bridge bash -c '
         source /opt/ros/humble/setup.bash
         source /ros2_ws/install/setup.bash
-        export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-        ros2 service call /write_state cartographer_ros_msgs/srv/WriteState \"{filename: '/ros2_ws/maps/${map_name}.pbstream'}\"
-    "
-
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}Map saved to ./maps/${map_name}.pbstream${NC}"
-        ls -la ./maps/
-        echo ""
-        echo -e "${YELLOW}提示: 使用离线建图将pbstream转换为地图:${NC}"
-        echo "  ./deploy.sh up-slam-offline bag:=<bag_file> pbstream:=./maps/${map_name}.pbstream"
-    else
-        echo -e "${RED}Failed to save map${NC}"
+        exec timeout 60 ros2 service call "$1" "$2" "$3"
+    ' bash "$service" "$type" "$request")
+    printf '%s\n' "$output"
+    if ! printf '%s\n' "$output" | grep -Eq 'success=True|success: true'; then
+        echo "Bridge rejected the request or no successful response was received" >&2
+        return 1
     fi
 }
-
-explore() {
-    echo -e "${GREEN}Starting auto-exploration for SLAM...${NC}"
-    echo "Press Ctrl+C to stop"
-    
-    docker exec -it robot_simulation bash -c '
-        source /opt/ros/humble/setup.bash
-        export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-        
-        LINEAR_SPEED=${1:-0.3}
-        TURN_SPEED=${2:-0.5}
-        
-        echo "Exploration started (speed: $LINEAR_SPEED m/s, turn: $TURN_SPEED rad/s)"
-        echo "Press Ctrl+C to stop"
-        echo ""
-        
-        mode=0
-        trap "echo Stopping; ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \"{linear: {x: 0.0}, angular: {z: 0.0}}\" --once; exit" INT TERM
-        
-        while true; do
-            case $mode in
-                0)  # 直走
-                    ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
-                        "{linear: {x: $LINEAR_SPEED}, angular: {z: 0.0}}" --once
-                    sleep 4
-                    mode=1
-                    ;;
-                1)  # 左转
-                    ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
-                        "{linear: {x: 0.0}, angular: {z: $TURN_SPEED}}" --once
-                    sleep 1.5
-                    mode=2
-                    ;;
-                2)  # 直走
-                    ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
-                        "{linear: {x: $LINEAR_SPEED}, angular: {z: 0.0}}" --once
-                    sleep 4
-                    mode=3
-                    ;;
-                3)  # 右转
-                    ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
-                        "{linear: {x: 0.0}, angular: {z: -$TURN_SPEED}}" --once
-                    sleep 1.5
-                    mode=0
-                    ;;
-            esac
-        done
-    ' "$@"
-}
-
-case "$1" in
+case "${1:-}" in
     build)
-        build_images
+        check_source_files
+        docker build -t ros2-base:latest -f docker/ros2-base/Dockerfile .
+        docker compose build robot-simulation agv-bridge
         ;;
-    up)
-        start_services ""
-        ;;
-    up-nav)
-        start_services "nav"
-        ;;
+    up|up-nav) docker compose up -d robot-simulation agv-bridge ;;
     up-slam)
-        start_services "slam"
+        docker compose up -d robot-simulation agv-bridge
+        call_bridge /agv/start_mapping agv_bridge_v2_interfaces/srv/StartMapping '{}'
         ;;
-    down)
-        stop_services
-        ;;
-    restart)
-        restart_services
-        ;;
-    logs)
-        view_logs "$2"
-        ;;
-    status)
-        check_status
+    start-mapping)
+        call_bridge /agv/start_mapping agv_bridge_v2_interfaces/srv/StartMapping '{}'
         ;;
     save-map)
-        save_map "$2"
+        name=${2:?Specify a map name}
+        [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "Use letters, digits, underscores or hyphens" >&2; exit 1; }
+        call_bridge /agv/save_map agv_bridge_v2_interfaces/srv/SaveMap "{map_name: '$name'}"
+        echo "Save accepted asynchronously. Check /agv/status and bridge logs; files are under maps/$name/."
         ;;
-    explore)
-        explore "$2" "$3"
+    down) docker compose down --remove-orphans ;;
+    restart) docker compose up -d --force-recreate robot-simulation agv-bridge ;;
+    logs) docker compose logs -f "${2:-agv-bridge}" ;;
+    status) docker compose ps ;;
+    shell) docker compose exec "${2:-agv-bridge}" bash ;;
+    export)
+        file=${2:-wheel-3d.docker-images.tar.gz}
+        docker image save ros2-base:latest simulated-robot:wheel-3d agv-bridge:wheel-3d | gzip > "$file"
+        echo "Exported $file; also deliver docker-compose.yml, docker/, deploy.sh and .env.example. Maps are separate."
         ;;
-    check-map)
-        check_map_quality
-        ;;
-    clean)
-        cleanup
-        ;;
-    *)
-        usage
-        exit 1
-        ;;
+    *) usage; exit 1 ;;
 esac

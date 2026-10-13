@@ -1,0 +1,16 @@
+.git
+build
+install
+log
+**/__pycache__
+**/*.pyc
+**/*.log
+**/*.pbstream
+**/*.mcap
+**/*.db3
+maps
+src/*/maps
+my_bag*
+serverProjects
+runtime
+.env
