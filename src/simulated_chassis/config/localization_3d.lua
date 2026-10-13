@@ -64,7 +64,7 @@ TRAJECTORY_BUILDER_3D.ceres_scan_matcher.rotation_weight = 4e2       -- 对齐�
 
 -- ==== 后端：纯定位（仅放宽节奏，不动匹配门槛） ====
 POSE_GRAPH.optimize_every_n_nodes = 60                   -- 定位下不需要频繁优化（建图是40）
-POSE_GRAPH.constraint_builder.sampling_ratio = 0.4       -- 定位降低采样率，省CPU
+POSE_GRAPH.constraint_builder.sampling_ratio = 0.5       -- 定位降低采样率，省CPU
 POSE_GRAPH.constraint_builder.min_score = 0.65           -- 对齐建图（地图好，反而要更高门槛防误匹配）
 POSE_GRAPH.constraint_builder.global_localization_min_score = 0.62
 POSE_GRAPH.global_constraint_search_after_n_seconds = 10.0  -- 定位下不需要频繁全局搜索
