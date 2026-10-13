@@ -11,7 +11,7 @@ options = {
   published_frame = "odom",
   odom_frame = "odom",
   provide_odom_frame = false,
-  publish_frame_projected_to_2d = true,  -- 发布tf时强制投影到z=0/roll=0/pitch=0，前端local SLAM的z漂移不传导到map→odom
+  publish_frame_projected_to_2d = false,  -- 发布tf时强制投影到z=0/roll=0/pitch=0，前端local SLAM的z漂移不传导到map→odom
   -- ✅ TF 发布方案（配套 tracked_pose_tf_node，解决两种抖动）：
   -- 1) 外推开+carto直发map→odom：值=外推到now的SLAM位姿∘t_slam旧时刻odom位姿⁻¹，锚定时刻不一致，
   --    与控制器 odom→base 组合会把 t_slam→now 的运动计两次 → 前进-回退锯齿抖动；

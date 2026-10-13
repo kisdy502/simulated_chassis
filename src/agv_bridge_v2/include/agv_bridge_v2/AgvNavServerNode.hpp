@@ -213,6 +213,12 @@ namespace agv_bridge
         int feedback_interval_ms_ = 400;
         bool enable_tf_broadcast_ = true;
         bool use_sim_time_ = false;
+        bool manage_navigation_ = false;
+        pid_t navigation_pid_ = -1;
+        std::mutex navigation_proc_mutex_;
+        std::chrono::steady_clock::time_point next_navigation_start_{};
+        void stop_managed_navigation();
+        void ensure_managed_navigation();
 
         // ===== 地图管理参数 =====
         std::string maps_dir_ = "maps";

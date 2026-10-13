@@ -114,6 +114,7 @@ namespace agv_bridge
         {
             transition_thread_.join();
         }
+        stop_managed_navigation();
         stop_child_process(slam_pid_, "建图");
         stop_child_process(localization_pid_, "定位");
     }
@@ -131,6 +132,7 @@ namespace agv_bridge
         this->declare_parameter<std::string>("maps_dir", "maps");
         this->declare_parameter<std::string>("pbstream_file", "");
         this->declare_parameter<std::string>("robot_package", "jzt_robot");
+        this->declare_parameter<bool>("manage_navigation", false);
         this->declare_parameter<std::string>("localization_launch_package", "");
         this->declare_parameter<std::string>("localization_launch_file", "localization.launch.py");
         this->declare_parameter<std::string>("localization_configuration_basename", "");
@@ -147,6 +149,7 @@ namespace agv_bridge
         this->get_parameter("maps_dir", maps_dir_);
         this->get_parameter("pbstream_file", pbstream_file_);
         this->get_parameter("robot_package", robot_package_);
+        this->get_parameter("manage_navigation", manage_navigation_);
         this->get_parameter("localization_launch_package", localization_launch_package_);
         this->get_parameter("localization_launch_file", localization_launch_file_);
         this->get_parameter("localization_configuration_basename", localization_configuration_basename_);
@@ -1261,6 +1264,8 @@ namespace agv_bridge
             }
         }
 
+        ensure_managed_navigation();
+
         // 定位稳定后每 5 秒刷新当前地图的位置记忆。异常断电最多丢失约 5 秒，
         // 下次启动或 load_map 时可直接从最近位姿开始匹配。
         if (current)
@@ -1584,8 +1589,55 @@ namespace agv_bridge
         return true;
     }
 
+    void AgvNavServerNode::stop_managed_navigation()
+    {
+        if (!manage_navigation_) return;
+        std::lock_guard<std::mutex> guard(navigation_proc_mutex_);
+        stop_child_process(navigation_pid_, "导航");
+    }
+
+    void AgvNavServerNode::ensure_managed_navigation()
+    {
+        if (!manage_navigation_ || transition_in_progress_.load()) return;
+        {
+            std::lock_guard<std::mutex> guard(mode_mutex_);
+            if (mode_ != MODE_NAVIGATION || map_name_.empty()) return;
+        }
+        if (!localization_monitor_->isInitialized()) return;
+        std::lock_guard<std::mutex> guard(navigation_proc_mutex_);
+        if (transition_in_progress_.load()) return;
+        const auto now = std::chrono::steady_clock::now();
+        if (navigation_pid_ > 0)
+        {
+            const pid_t result = ::waitpid(navigation_pid_, nullptr, WNOHANG);
+            if (result == 0 || (result < 0 && errno != ECHILD)) return;
+            // Clean up only the process group created by this bridge.
+            ::kill(-navigation_pid_, SIGTERM);
+            navigation_pid_ = -1;
+            next_navigation_start_ = now + std::chrono::seconds(5);
+            RCLCPP_ERROR(get_logger(), "托管导航 launch 已退出，5 秒后重试（/tmp/agv_navigation.log）");
+            return;
+        }
+        if (now < next_navigation_start_) return;
+        for (const auto &name : get_node_graph_interface()->get_node_names())
+        {
+            if (name == "controller_server" || name == "planner_server" || name == "behavior_server" ||
+                name == "/controller_server" || name == "/planner_server" || name == "/behavior_server")
+            {
+                next_navigation_start_ = now + std::chrono::seconds(5);
+                RCLCPP_WARN(get_logger(), "发现外部 Nav2，暂不启动托管导航；请停止手动 navigation launch");
+                return;
+            }
+        }
+        if (!spawn_ros_launch(robot_package_, "navigation.launch.py",
+                {"include_localization:=false", "include_cmd_vel_relay:=false", useSimTimeArg(use_sim_time_)},
+                navigation_pid_, "/tmp/agv_navigation.log"))
+            next_navigation_start_ = now + std::chrono::seconds(5);
+    }
+
     void AgvNavServerNode::stop_child_process(pid_t &pid_slot, const char *what)
     {
+        if (&pid_slot == &localization_pid_) stop_managed_navigation();
         pid_t pid = -1;
         {
             std::lock_guard<std::mutex> lock(proc_mutex_);
@@ -1623,6 +1675,7 @@ namespace agv_bridge
         const geometry_msgs::msg::Pose *initial_pose,
         std::string &error)
     {
+        stop_managed_navigation();
         if (localization_monitor_) localization_monitor_->reset();
         if (!spawn_ros_launch(
                 localization_launch_package_, localization_launch_file_,

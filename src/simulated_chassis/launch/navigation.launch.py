@@ -21,7 +21,7 @@ v2: 定位链路（cartographer + occupancy_grid）拆分到 localization.launch
     # 上位机地图管理模式（定位由 agv_nav_server 托管，切图/建图只切定位，nav2 不动）：
     ros2 launch simulated_chassis navigation.launch.py include_localization:=false
     ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
-        pbstream_file:=$PWD/maps/map0925/map0925.pbstream \
+        pbstream_file:=$PWD/maps/map1008Pro/map1008Pro.pbstream \
         robot_package:=simulated_chassis
 """
 
@@ -46,6 +46,10 @@ def generate_launch_description():
 
     # ===== 启动参数 =====
     declared_arguments = [
+        DeclareLaunchArgument(
+            'include_cmd_vel_relay', default_value='true',
+            description='启动速度转发；bridge 托管时设为 false',
+        ),
         DeclareLaunchArgument(
             'pbstream_file',
             default_value=default_pbstream,
@@ -97,6 +101,7 @@ def generate_launch_description():
     cmd_vel_relay = Node(
         package='simulated_chassis',
         executable='cmd_vel_relay_node',
+        condition=IfCondition(LaunchConfiguration('include_cmd_vel_relay')),
         name='cmd_vel_relay_node',
         output='screen',
         parameters=[{

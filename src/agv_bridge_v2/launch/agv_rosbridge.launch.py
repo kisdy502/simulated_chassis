@@ -14,7 +14,9 @@ agv_rosbridge.launch.py —— rosbridge 架构下的 AGV 对接 launch
 用法：
   ros2 launch agv_bridge_v2 agv_rosbridge.launch.py
   ros2 launch agv_bridge_v2 agv_rosbridge.launch.py port:=9090 agv_id:=three_wheel_agv
-  # 托管定位（启用 /agv/load_map 切图，navigation launch 需 include_localization:=false）：
+  # simulated_chassis 默认同时托管定位和 Nav2，不再手动启动 navigation.launch.py：
+  # 建图时停 Nav2，定位 TF 就绪后重新启动；速度转发常驻，建图仍可遥控。
+  # 旧流程传 manage_navigation:=false，手动 navigation launch 传 include_localization:=false。
   ros2 launch agv_bridge_v2 agv_rosbridge.launch.py pbstream_file:=$PWD/maps/my_map/my_map.pbstream
   # 换机器人（定位/建图 launch 从该包拉起）：
   ros2 launch agv_bridge_v2 agv_rosbridge.launch.py robot_package:=zioneer_robot
@@ -57,7 +59,12 @@ def _agv_nav_server_node(context):
     robot_package = LaunchConfiguration("robot_package")
     localization_launch_file = LaunchConfiguration("localization_launch_file")
     slam_launch_file = LaunchConfiguration("slam_launch_file")
-    return [Node(
+    manage_arg = LaunchConfiguration("manage_navigation").perform(context).lower()
+    manage_navigation = (robot_package.perform(context) == "simulated_chassis"
+                         if manage_arg == "auto" else manage_arg == "true")
+    if manage_navigation and robot_package.perform(context) != "simulated_chassis":
+        raise RuntimeError("manage_navigation currently supports simulated_chassis only")
+    nodes = [Node(
         package="agv_bridge_v2",
         executable="agv_nav_server",
         name="agv_nav_server",
@@ -77,11 +84,21 @@ def _agv_nav_server_node(context):
                 "maps_dir": _resolve_maps_dir(context),
                 "pbstream_file": pbstream_file,
                 "robot_package": robot_package,
+                "manage_navigation": manage_navigation,
                 "localization_launch_file": localization_launch_file,
                 "slam_launch_file": slam_launch_file,
             }
         ],
     )]
+    if manage_navigation:
+        nodes.append(Node(
+            package="simulated_chassis", executable="cmd_vel_relay_node",
+            name="bridge_cmd_vel_relay_node", output="screen",
+            parameters=[{"input_topic": "/cmd_vel",
+                         "output_topic": "/three_wheel_base_controller/cmd_vel",
+                         "use_sim_time": use_sim_time}],
+        ))
+    return nodes
 
 
 def generate_launch_description():
@@ -108,6 +125,8 @@ def generate_launch_description():
     services_glob = ParameterValue(LaunchConfiguration("services_glob"), value_type=str)
 
     args = [
+        DeclareLaunchArgument("manage_navigation", default_value="auto",
+                              description="auto: simulated_chassis 托管 Nav2；false: 手动启动导航"),
         DeclareLaunchArgument("use_sim_time", default_value="true",
                               description="是否使用仿真时间（Gazebo /clock）"),
         DeclareLaunchArgument("agv_id", default_value="AGV001",
@@ -129,8 +148,9 @@ def generate_launch_description():
         #      /agv/start_mapping、/agv/save_map）====
         # 机器人包标准契约：包内需提供 localization.launch.py 与 slam.launch.py。
         # pbstream_file 非空时，定位由 agv_nav_server 以子进程托管（load_map 切图、
-        # save_map 保存后自动重启定位）；此时 navigation launch 需传
-        # include_localization:=false，避免 cartographer 双开。
+        # save_map 保存后自动重启定位）。simulated_chassis 默认托管导航，
+        # 不要另启 navigation launch；其他包或 manage_navigation:=false 时，
+        # 手动 navigation launch 需传 include_localization:=false。
         DeclareLaunchArgument(
             "maps_dir",
             default_value="maps",
