@@ -1,0 +1,11 @@
+std_msgs/Header header
+string state
+string command_id
+bool busy
+bool ready
+bool fault_latched
+bool stop_unconfirmed
+string error_code
+string message
+string[] joint_names
+float64[] joint_positions

@@ -12,12 +12,17 @@ ros2 launch simulated_chassis three_wheel_sim.launch.py
 
 ros2 launch simulated_chassis three_wheel_sim.launch.py start_teleop:=true
 
-### 2导航
+### 2导航（不用启动了，交给bridge启动）
 
 ros2 launch simulated_chassis navigation.launch.py include_localization:=false
 
 ### 3桥接节点
 ros2 launch agv_bridge_v2 agv_rosbridge.launch.py  robot_package:=simulated_chassis
+
+### 有地图加载，
+ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
+        pbstream_file:=$PWD/maps/map1008Pro/map1008Pro.pbstream \
+        robot_package:=simulated_chassis
 
 ## 重启前清场（重要）
 

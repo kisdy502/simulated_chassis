@@ -1,0 +1,14 @@
+arm_manager:
+  ros__parameters:
+    group_name: arm
+    tool_link: arm_tool0
+    joint_names: [arm_joint1, arm_joint2, arm_joint3, arm_joint4, arm_joint5, arm_joint6]
+    move_action: /move_action
+    execute_action: /execute_trajectory
+    execution_event_topic: /trajectory_execution_event
+    joint_states_topic: /joint_states
+    planning_time: 5.0
+    joint_state_timeout: 2.0
+    stop_timeout: 5.0
+    simulation_mode: false
+    allow_fault_injection: false

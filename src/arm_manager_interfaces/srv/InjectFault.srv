@@ -1,0 +1,5 @@
+# Software simulation only; this does not detect physical collisions.
+string reason
+---
+bool success
+string message

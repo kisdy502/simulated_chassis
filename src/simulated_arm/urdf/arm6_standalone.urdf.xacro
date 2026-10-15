@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!--
+  六轴机械臂独立仿真模型（台面/地面固定版）
+
+  use_ignition:=true  -> Ignition Gazebo 联动仿真（ign_ros2_control）
+  use_ignition:=false -> mock 硬件（fake_components，RViz 纯规划演示）
+
+  world link + 固定关节让机械臂锚定在世界原点（Gazebo 中基座不动、关节可动）
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="simulated_arm">
+  <xacro:arg name="use_ignition" default="false"/>
+
+  <xacro:include filename="$(find simulated_arm)/urdf/arm6_macro.xacro"/>
+
+  <link name="world"/>
+
+  <xacro:arm6_macro parent_link="world"
+                    mount_xyz="0 0 0" mount_rpy="0 0 0"
+                    use_ignition="$(arg use_ignition)"/>
+</robot>

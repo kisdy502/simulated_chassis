@@ -1,0 +1,6 @@
+# Save current measured joints; rejected while moving or faulted.
+string name
+bool overwrite
+---
+bool success
+string message

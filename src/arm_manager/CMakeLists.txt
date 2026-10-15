@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.8)
+project(arm_manager)
+find_package(ament_cmake REQUIRED)
+install(PROGRAMS scripts/arm_manager_node.py DESTINATION lib/${PROJECT_NAME} RENAME arm_manager_node)
+install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
+install(FILES README.md DESTINATION share/${PROJECT_NAME})
+ament_package()

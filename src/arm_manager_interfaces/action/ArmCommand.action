@@ -1,0 +1,28 @@
+# Required unique ID. Repeated IDs are rejected during this node's lifetime.
+string command_id
+# joint | pose | named (pose is an OMPL goal, NOT a straight-line motion)
+string operation
+# joint target must contain each configured joint exactly once; radians
+string[] joint_names
+float64[] joint_positions
+# pose target: explicit frame_id, metres, unit quaternion
+geometry_msgs/PoseStamped target_pose
+# named target: a persisted joint teach point
+string target_name
+# Both scales must be in (0, 1]. Zero is rejected.
+float64 velocity_scale
+float64 acceleration_scale
+# Wall-clock total deadline including planning/execution; must be > 0
+float64 timeout_sec
+---
+bool success
+string command_id
+# OK | INVALID_ARGUMENT | NOT_READY | PLANNING_FAILED | EXECUTION_FAILED |
+# CANCELED | TIMEOUT | INJECTED_FAULT | STOP_UNCONFIRMED | INTERNAL_ERROR
+string error_code
+string message
+int32 moveit_error_code
+---
+string command_id
+string state
+string detail

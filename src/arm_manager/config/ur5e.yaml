@@ -1,0 +1,14 @@
+arm_manager:
+  ros__parameters:
+    group_name: ur_manipulator
+    tool_link: tool0
+    joint_names: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint]
+    move_action: /move_action
+    execute_action: /execute_trajectory
+    execution_event_topic: /trajectory_execution_event
+    joint_states_topic: /joint_states
+    planning_time: 5.0
+    joint_state_timeout: 2.0
+    stop_timeout: 5.0
+    simulation_mode: false
+    allow_fault_injection: false
