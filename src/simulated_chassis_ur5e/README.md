@@ -6,7 +6,7 @@
 
 ```bash
 source /opt/ros/humble/setup.bash
-colcon build --symlink-install --packages-select arm_manager_interfaces arm_manager simulated_chassis simulated_ur5e simulated_chassis_ur5e
+colcon build --symlink-install --packages-select agv_bridge_v2_interfaces agv_bridge_v2 arm_manager_interfaces arm_manager simulated_chassis simulated_ur5e simulated_chassis_ur5e
 source install/setup.bash
 
 # 终端一：一个世界、一台组合机器人、一个 controller_manager
@@ -14,11 +14,19 @@ ros2 launch simulated_chassis_ur5e simulation.launch.py gui:=true
 
 # 终端二：原有 bridge + MoveIt + arm_manager，无需单独启动机械臂
 ros2 launch simulated_chassis_ur5e bridge.launch.py rviz:=true
+
+# 如需加载已有地图，用下面命令替代上一条 bridge 命令；定位就绪后启动托管导航
+ros2 launch simulated_chassis_ur5e bridge.launch.py \
+  pbstream_file:=$PWD/maps/map1008Pro/map1008Pro.pbstream rviz:=true
 ```
 
 无界面 GPU 雷达仍需渲染上下文，可用 `xvfb-run -a ros2 launch simulated_chassis_ur5e simulation.launch.py`；Docker 无界面入口已使用 xvfb。
 
 bridge 入口支持 `agv_id`、`port`、`address`、`maps_dir`、`pbstream_file`、`manage_navigation` 等原有配置。`rviz` 默认 false，`allow_fault_injection` 默认 false。启动 bridge 前会检查实际 robot_description、全部控制器和机械臂关节状态就绪；不匹配或重复启动运行节点时拒绝启动机械臂。bridge 重启不会重新生成模型或执行收臂动作。
+
+整机入口只保留机械臂 RViz（`rviz_mobile_ur5e`），托管导航显式关闭自己的 RViz。该窗口同时包含整机模型、MoveIt、地图和导航路径显示；定位后可将 Fixed Frame 改为 `map` 查看全局地图。
+
+在 bridge 所在终端按 Ctrl+C，会同步退出其启动的定位、建图、导航、MoveIt、arm_manager 和 RViz。等待终端返回命令提示符后再重启；退出时先发送中断信号，超时再逐级终止进程组。核心 bridge 节点异常退出也会触发外层 launch 关闭。独立终端启动的仿真仍由仿真终端管理，关闭 RViz 窗口本身不会关闭整套 bridge。
 
 ## 配置归属
 
@@ -52,6 +60,10 @@ bridge 入口支持 `agv_id`、`port`、`address`、`maps_dir`、`pbstream_file`
 python3 src/simulated_chassis_ur5e/test/integration_fortress.py
 # 附加 3D 建图、保存、定位和托管导航回归
 python3 src/simulated_chassis_ur5e/test/integration_fortress.py --navigation
+# 增加 RViz 唯一性、正常退出清理、bridge 节点异常退出清理检查（需要 xvfb-run）
+python3 src/simulated_chassis_ur5e/test/integration_fortress.py --navigation --shutdown-check
+# 服务等待中退出，以及启动器提前退出后遗留子进程的回收检查
+python3 src/agv_bridge_v2/scripts/test_managed_shutdown.py
 ```
 
 测试使用独立 ROS_DOMAIN_ID=92、IGN_PARTITION、临时地图与示教目录，不修改用户地图或示教点。Docker Compose 和入口脚本另做静态检查；镜像仍需按部署流程重建。

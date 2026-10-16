@@ -80,4 +80,15 @@ install(DIRECTORY launch docs scripts
 # ==================== 导出 ====================
 ament_export_dependencies(${AGV_ROS_DEPS})
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_navigation_readiness
+    test/test_navigation_readiness.cpp
+    src/NavigationManager.cpp src/LocalizationMonitor.cpp src/TransformUtils.cpp
+    ENV ROS_DOMAIN_ID=87 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    TIMEOUT 90)
+  target_include_directories(test_navigation_readiness PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  ament_target_dependencies(test_navigation_readiness ${AGV_ROS_DEPS})
+endif()
+
 ament_package()

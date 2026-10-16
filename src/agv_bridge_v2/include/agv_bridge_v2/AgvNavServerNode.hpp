@@ -222,6 +222,10 @@ namespace agv_bridge
         pid_t navigation_pid_ = -1;
         std::mutex navigation_proc_mutex_;
         std::chrono::steady_clock::time_point next_navigation_start_{};
+        std::thread navigation_recovery_thread_;
+        std::atomic<bool> navigation_recovery_in_progress_{false};
+        std::chrono::steady_clock::time_point navigation_started_at_{};
+        std::chrono::steady_clock::time_point navigation_unhealthy_since_{};
         void stop_managed_navigation();
         void ensure_managed_navigation();
 

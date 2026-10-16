@@ -22,7 +22,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/prctl.h>
 #include <thread>
 #include <unistd.h>
 
@@ -155,6 +154,7 @@ namespace agv_bridge
         {
             transition_thread_.join();
         }
+        if (navigation_recovery_thread_.joinable()) navigation_recovery_thread_.join();
         stop_managed_navigation();
         stop_child_process(slam_pid_, "建图");
         stop_child_process(localization_pid_, "定位");
@@ -471,8 +471,12 @@ namespace agv_bridge
             return;
         }
 
+        if (navigation_recovery_in_progress_.load()) {
+            abort_current_goal("Nav2 正在恢复，请稍后重新下发任务");
+            return;
+        }
         if (!navigation_manager_->isReady()) {
-            abort_current_goal("Nav2 尚未完全启动或未激活，请稍后重试");
+            abort_current_goal("Nav2 未就绪: " + navigation_manager_->readinessError());
             return;
         }
 
@@ -1348,7 +1352,7 @@ namespace agv_bridge
 
         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 30000,
                              "%s",
-                             current ? "✅ 定位已就绪，可接受导航任务" : "❌ 定位未收敛，等待 Cartographer/AMCL");
+                             current ? (navigation_manager_->isReady() ? "✅ 定位与导航均已就绪" : "定位已就绪，等待 Nav2 全部激活") : "❌ 定位未收敛，等待 Cartographer/AMCL");
     }
 
     void AgvNavServerNode::broadcast_tf()
@@ -1599,13 +1603,15 @@ namespace agv_bridge
                 log_path = persistent_log_path.c_str();
             }
         }
-        std::vector<std::string> argv_str = {"ros2", "launch", package, launch_file};
+        const pid_t parent_pid = ::getpid();
+        std::vector<std::string> argv_str = {"/usr/bin/python3",
+            ament_index_cpp::get_package_share_directory("agv_bridge_v2") + "/scripts/managed_ros_launch.py",
+            std::to_string(parent_pid), "ros2", "launch", package, launch_file};
         argv_str.insert(argv_str.end(), extra_args.begin(), extra_args.end());
 
         // Serialize spawn with shutdown's PID-slot removal. No child may be spawned after shutdown begins.
         std::lock_guard<std::mutex> process_guard(proc_mutex_);
         if (shutting_down_.load() || !rclcpp::ok()) return false;
-        const pid_t parent_pid = ::getpid();
         const pid_t pid = ::fork();
         if (pid < 0)
         {
@@ -1614,8 +1620,6 @@ namespace agv_bridge
         }
         if (pid == 0)
         {
-            // If the bridge is forcibly killed, ros2 launch still receives a shutdown signal.
-            if (::prctl(PR_SET_PDEATHSIG, SIGTERM) != 0 || ::getppid() != parent_pid) ::_exit(125);
             // 子进程：独立进程组（便于整组终止），输出重定向到日志文件
             ::setpgid(0, 0);
             const int fd = ::open(log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -1664,7 +1668,9 @@ namespace agv_bridge
 
     void AgvNavServerNode::ensure_managed_navigation()
     {
-        if (shutting_down_.load() || !manage_navigation_ || transition_in_progress_.load()) return;
+        if (shutting_down_.load() || !manage_navigation_ || transition_in_progress_.load() ||
+            navigation_recovery_in_progress_.load()) return;
+        if (navigation_recovery_thread_.joinable()) navigation_recovery_thread_.join();
         {
             std::lock_guard<std::mutex> guard(mode_mutex_);
             if (mode_ != MODE_NAVIGATION || map_name_.empty()) return;
@@ -1676,10 +1682,42 @@ namespace agv_bridge
         if (navigation_pid_ > 0)
         {
             const pid_t result = ::waitpid(navigation_pid_, nullptr, WNOHANG);
-            if (result == 0 || (result < 0 && errno != ECHILD)) return;
+            if (result == 0) {
+                if (navigation_manager_->isStackActive()) {
+                    navigation_unhealthy_since_ = {};
+                    return;
+                }
+                // Allow bringup to finish and tolerate a short lifecycle transition.
+                if (now - navigation_started_at_ < std::chrono::seconds(60)) return;
+                if (navigation_unhealthy_since_ == std::chrono::steady_clock::time_point{}) {
+                    navigation_unhealthy_since_ = now;
+                    return;
+                }
+                if (now - navigation_unhealthy_since_ < std::chrono::seconds(10)) return;
+                RCLCPP_ERROR(get_logger(), "托管 Nav2 持续未就绪: %s；停止整组后重新启动，不自动重放任务",
+                             navigation_manager_->readinessError().c_str());
+                navigation_recovery_in_progress_.store(true);
+                navigation_recovery_thread_ = std::thread([this]() {
+                    try {
+                        {
+                            std::lock_guard<std::mutex> recovery_guard(navigation_proc_mutex_);
+                            stop_child_process(navigation_pid_, "导航恢复");
+                            navigation_unhealthy_since_ = {};
+                            next_navigation_start_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+                        }
+                        // Do not hold the process lock while delivering task callbacks.
+                        navigation_manager_->resetAfterServerShutdown();
+                    } catch (const std::exception &e) {
+                        RCLCPP_ERROR(get_logger(), "托管导航恢复失败: %s", e.what());
+                    }
+                    navigation_recovery_in_progress_.store(false);
+                });
+                return;
+            }
+            if (result < 0 && errno != ECHILD) return;
             // Clean up only the process group created by this bridge.
-            ::kill(-navigation_pid_, SIGTERM);
-            navigation_pid_ = -1;
+            stop_child_process(navigation_pid_, "导航");
+            navigation_manager_->resetAfterServerShutdown();
             next_navigation_start_ = now + std::chrono::seconds(5);
             RCLCPP_ERROR(get_logger(), "托管导航 launch 已退出，5 秒后重试（/tmp/agv_navigation.log）");
             return;
@@ -1700,6 +1738,10 @@ namespace agv_bridge
                  "use_rviz:=" + std::string(navigation_use_rviz_ ? "true" : "false"), useSimTimeArg(use_sim_time_)},
                 navigation_pid_, "/tmp/agv_navigation.log"))
             next_navigation_start_ = now + std::chrono::seconds(5);
+        else {
+            navigation_started_at_ = now;
+            navigation_unhealthy_since_ = {};
+        }
     }
 
     void AgvNavServerNode::stop_child_process(pid_t &pid_slot, const char *what)

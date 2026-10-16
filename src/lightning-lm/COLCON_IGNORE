@@ -1,0 +1,2 @@
+# This third-party source tree is not a standalone package in this ROS workspace.
+# Build it separately if needed; do not discover its internal miao CMake project.

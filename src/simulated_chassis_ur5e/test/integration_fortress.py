@@ -94,7 +94,9 @@ def run():
 
         def service(kind, name, request):
             client = node.create_client(kind, name)
-            assert client.wait_for_service(timeout_sec=10), name
+            # NavigationManager initially waits for absent Nav2 action servers;
+            # arm readiness alone does not mean bridge services are advertised yet.
+            assert client.wait_for_service(timeout_sec=45), name
             response = wait(client.call_async(request))
             node.destroy_client(client)
             return response
@@ -199,12 +201,12 @@ def run():
             old_token = tokens[processes[1].pid]
             os.killpg(processes[1].pid, signal.SIGINT)
             processes[1].wait(timeout=40)
+            processes.pop(1)
             until(lambda: not marked_processes(old_token), 10)
             print('PASS bridge SIGINT reaps all marked navigation/localization/arm/RViz descendants', flush=True)
-            processes.pop(1)
             data['status'] = None
             restart = ['ros2', 'launch', 'simulated_chassis_ur5e', 'bridge.launch.py', 'port:=19092',
-                f'manage_navigation:={str(navigation).lower()}', f'maps_dir:={directory}/maps', f'teach_points_file:={directory}/points.json'])
+                f'manage_navigation:={str(navigation).lower()}', f'maps_dir:={directory}/maps', f'teach_points_file:={directory}/points.json']
             if navigation and shutdown_check:
                 restart += [f'pbstream_file:={directory}/maps/upper_body_test/upper_body_test.pbstream', 'rviz:=true']
             launch(restart)
