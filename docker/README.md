@@ -2,6 +2,10 @@
 
 Two containers are used: robot-simulation runs Gazebo and the chassis; agv-bridge owns localization, online mapping and Nav2. Do not start separate navigation or Cartographer containers alongside these. This branch supports 3D lidar and saves pbstream/PGM/YAML; map-3d frontend and HTTP features are outside this deployment.
 
+The default `ROBOT_PROFILE=chassis_3d_ur5e` now spawns one assembled chassis + folded UR5e model. The bridge container also starts MoveIt and arm_manager after checking the simulation model/controllers. No separate arm container or arm launch is needed. Set `ROBOT_PROFILE=chassis_3d` to retain the original chassis-only deployment. Both containers must use the same profile (Compose passes one shared variable). Rebuild ros2-base and both service images for the new dependencies/packages; do not combine old and new images.
+
+Mount geometry lives in `src/simulated_chassis_ur5e/config/mounting.yaml`; shared standalone/mobile folded angles live in `src/simulated_ur5e/config/initial_positions.yaml`. Arm teach points persist in the bridge ROS data bind mount (`runtime/bridge/ros/arm_manager/mobile_ur5e_teach_points.json`). Restarting bridge does not recreate the robot or fold an already moved arm.
+
 Run from a Linux or WSL shell at the repository root:
 
 ```bash

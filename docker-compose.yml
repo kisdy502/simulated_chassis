@@ -10,6 +10,7 @@ services:
     environment:
       DISPLAY: ${DISPLAY:-:0}
       ROBOT_TYPE: ${ROBOT_TYPE:-omni_3wd}
+      ROBOT_PROFILE: ${ROBOT_PROFILE:-chassis_3d_ur5e}
       MODE: simulation
       USE_SIM_TIME: ${USE_SIM_TIME:-true}
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
@@ -43,6 +44,7 @@ services:
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
       CYCLONEDDS_URI: file:///etc/cyclonedds.xml
       ROBOT_PACKAGE: ${ROBOT_PACKAGE:-simulated_chassis}
+      ROBOT_PROFILE: ${ROBOT_PROFILE:-chassis_3d_ur5e}
       MANAGE_NAVIGATION: ${MANAGE_NAVIGATION:-true}
       MAPS_DIR: /ros2_ws/maps
       PBSTREAM_FILE: ${PBSTREAM_FILE:-}

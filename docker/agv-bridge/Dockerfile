@@ -16,13 +16,17 @@ WORKDIR /ros2_ws/src
 COPY src/agv_bridge_v2/ ./agv_bridge_v2/
 COPY src/agv_bridge_v2_interfaces/ ./agv_bridge_v2_interfaces/
 COPY src/simulated_chassis/ ./simulated_chassis/
+COPY src/simulated_ur5e/ ./simulated_ur5e/
+COPY src/arm_manager_interfaces/ ./arm_manager_interfaces/
+COPY src/arm_manager/ ./arm_manager/
+COPY src/simulated_chassis_ur5e/ ./simulated_chassis_ur5e/
 
 WORKDIR /ros2_ws
 
 # 先编译接口包（agv_bridge_v2 依赖它生成 action/srv/msg）
 RUN mkdir -p src/simulated_chassis/maps \
     && source /opt/ros/humble/setup.bash \
-    && MAKEFLAGS="-j${BUILD_JOBS}" colcon build --executor sequential --packages-up-to agv_bridge_v2 simulated_chassis \
+    && MAKEFLAGS="-j${BUILD_JOBS}" colcon build --executor sequential --packages-select agv_bridge_v2_interfaces agv_bridge_v2 simulated_chassis arm_manager_interfaces arm_manager simulated_ur5e simulated_chassis_ur5e \
         --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
     && rm -rf build log
 

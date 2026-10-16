@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="three_wheel_agv">
+  <xacro:include filename="$(find ur_moveit_config)/srdf/ur_macro.srdf.xacro"/>
+  <xacro:ur_srdf name="ur" prefix="ur5e_"/>
+  <xacro:property name="initial" value="${xacro.load_yaml('$(find simulated_ur5e)/config/initial_positions.yaml')}"/>
+  <group_state name="stowed" group="ur5e_ur_manipulator">
+    <joint name="ur5e_shoulder_pan_joint" value="${initial['shoulder_pan_joint']}"/>
+    <joint name="ur5e_shoulder_lift_joint" value="${initial['shoulder_lift_joint']}"/>
+    <joint name="ur5e_elbow_joint" value="${initial['elbow_joint']}"/>
+    <joint name="ur5e_wrist_1_joint" value="${initial['wrist_1_joint']}"/>
+    <joint name="ur5e_wrist_2_joint" value="${initial['wrist_2_joint']}"/>
+    <joint name="ur5e_wrist_3_joint" value="${initial['wrist_3_joint']}"/>
+  </group_state>
+  <!-- Base joints are sensed but never planned/executed by MoveIt. -->
+  <passive_joint name="wheel_front_steering_joint"/><passive_joint name="wheel_left_steering_joint"/><passive_joint name="wheel_right_steering_joint"/>
+  <passive_joint name="wheel_front_wheel_joint"/><passive_joint name="wheel_left_wheel_joint"/><passive_joint name="wheel_right_wheel_joint"/>
+  <disable_collisions link1="base_link" link2="arm_mount_link" reason="Adjacent"/>
+  <disable_collisions link1="arm_mount_link" link2="ur5e_base_link_inertia" reason="Adjacent"/>
+  <!-- Fixed/adjacent chassis geometry intentionally touches; arm vs chassis is NOT disabled. -->
+  <disable_collisions link1="base_link" link2="front_lidar_link" reason="Adjacent"/>
+  <disable_collisions link1="base_link" link2="rear_lidar_link" reason="Adjacent"/>
+  <disable_collisions link1="base_link" link2="wheel_front_steering_link" reason="Adjacent"/>
+  <disable_collisions link1="base_link" link2="wheel_left_steering_link" reason="Adjacent"/>
+  <disable_collisions link1="base_link" link2="wheel_right_steering_link" reason="Adjacent"/>
+  <disable_collisions link1="wheel_front_steering_link" link2="wheel_front_wheel_link" reason="Adjacent"/>
+  <disable_collisions link1="wheel_left_steering_link" link2="wheel_left_wheel_link" reason="Adjacent"/>
+  <disable_collisions link1="wheel_right_steering_link" link2="wheel_right_wheel_link" reason="Adjacent"/>
+</robot>

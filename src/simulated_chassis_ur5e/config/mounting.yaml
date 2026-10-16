@@ -1,0 +1,6 @@
+# Coordinates relative to chassis base_link; chassis top is z=0.09 m.
+pedestal_radius: 0.09
+pedestal_height: 0.22
+pedestal_mass: 3.0
+xyz: '0 0 0.09'
+rpy: '0 0 0'

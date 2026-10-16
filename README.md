@@ -1,5 +1,23 @@
 # 仿真机器人+agv_bridge节点
 
+## 三舵轮 3D 雷达＋UR5e 上装（新组合入口）
+
+上装的模型、安装参数、控制/规划配置集中在 `src/simulated_chassis_ur5e`；通用 bridge 和原有纯底盘入口保留。
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select arm_manager_interfaces arm_manager simulated_chassis simulated_ur5e simulated_chassis_ur5e
+source install/setup.bash
+# 终端一：整机物理仿真（需要图形显示）
+ros2 launch simulated_chassis_ur5e simulation.launch.py gui:=true
+# 终端二：bridge 自动带起机械臂运行节点
+ros2 launch simulated_chassis_ur5e bridge.launch.py rviz:=true
+```
+
+无需另外启动 `simulated_ur5e` 或 `arm_manager`。机器人直接以折叠姿态生成；bridge 重启不重置姿态。无界面和完整配置见 [组合包说明](src/simulated_chassis_ur5e/README.md)。
+
+Docker 默认 `ROBOT_PROFILE=chassis_3d_ur5e`；需要原纯底盘时设为 `chassis_3d`。下面保留原纯底盘手动调试流程。
+
 ## 启动顺序
 
 ### 1仿真机器人

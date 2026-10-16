@@ -28,6 +28,7 @@ def setup(context):
         "use_fake_hardware": "false" if simulation else "true",
         "sim_ignition": "true" if simulation else "false",
         "simulation_controllers": controllers,
+        "initial_positions_file": os.path.join(share, 'config', 'initial_positions.yaml'),
     }
     description = {"robot_description": xacro.process_file(
         os.path.join(description_share, "urdf", "ur.urdf.xacro"),
@@ -35,6 +36,12 @@ def setup(context):
     semantic = {"robot_description_semantic": xacro.process_file(
         os.path.join(moveit_share, "srdf", "ur.srdf.xacro"),
         mappings={"name": "ur", "prefix": ""}).toxml()}
+    import xml.etree.ElementTree as ET
+    semantic_root = ET.fromstring(semantic['robot_description_semantic'])
+    stowed = ET.SubElement(semantic_root, 'group_state', name='stowed', group='ur_manipulator')
+    for name, angle in load_yaml(os.path.join(share, 'config', 'initial_positions.yaml')).items():
+        ET.SubElement(stowed, 'joint', name=name, value=str(angle))
+    semantic['robot_description_semantic'] = ET.tostring(semantic_root, encoding='unicode')
     ompl = {
         "planning_plugin": "ompl_interface/OMPLPlanner",
         "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization "
@@ -43,6 +50,7 @@ def setup(context):
                             "default_planner_request_adapters/FixStartStateCollision "
                             "default_planner_request_adapters/FixStartStatePathConstraints",
         "start_state_max_bounds_error": 0.1,
+        "path_tolerance": 0.01,
     }
     ompl.update(load_yaml(os.path.join(moveit_share, "config", "ompl_planning.yaml")))
     kinematics = load_yaml(os.path.join(moveit_share, "config", "kinematics.yaml"))
@@ -67,6 +75,7 @@ def setup(context):
                 "ur_type": "ur5e", "runtime_config_package": "simulated_ur5e",
                 "controllers_file": "controllers.yaml", "initial_joint_controller": "joint_trajectory_controller",
                 "launch_rviz": "false", "gazebo_gui": LaunchConfiguration("gui"),
+                'description_package': 'simulated_ur5e', 'description_file': 'ur5e.urdf.xacro',
                 "world_file": os.path.join(share, "worlds", "ur5e_world.sdf"),
             }.items()))
     else:

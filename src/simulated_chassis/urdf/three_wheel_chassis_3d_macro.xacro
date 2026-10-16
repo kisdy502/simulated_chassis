@@ -1,0 +1,599 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- Shared 3D chassis, also composed by the UR5e simulation profile. -->
+  <xacro:macro name="three_wheel_lidar_collision" params="">
+    <collision>
+      <origin xyz="0 0 0.02"/><geometry><cylinder radius="0.04" length="0.04"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 0 0.04"/><geometry><sphere radius="0.04"/></geometry>
+    </collision>
+  </xacro:macro>
+  <xacro:macro name="three_wheel_chassis_3d" params="controllers_file:='$(find simulated_chassis)/param/three_wheel_controllers.yaml' lidar_collisions:=false">
+
+
+  <!-- 全局材质定义：垫柱/转向节引用的 grey 之前未定义，触发 urdf_parser 警告 -->
+  <material name="grey">
+    <color rgba="0.5 0.5 0.5 1.0" />
+  </material>
+
+  <!-- ==================== Base Footprint ==================== -->
+  <link name="base_footprint">
+  </link>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint" />
+    <child link="base_link" />
+    <origin xyz="0 0 0.15" rpy="0 0 0" />
+  </joint>
+
+  <!-- ==================== Base Link ==================== -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="60.0" />
+      <!-- 惯量按箱体 0.8 x 0.6 x 0.18 公式计算（Ixx=m/12*(y²+z²) 等） -->
+      <inertia ixx="1.96" ixy="0.0" ixz="0.0" iyy="3.36" iyz="0.0" izz="5.0" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8 0.6 0.18" />
+      </geometry>
+      <material name="green">
+        <color rgba="0.1 0.8 0.1 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.8 0.6 0.18" />
+      </geometry>
+    </collision>
+    <!-- 雷达安装垫柱（高1cm：底盘顶面 z=0.09 → 雷达座 z=0.10），位置随雷达外移至前后边缘 -->
+    <visual>
+      <origin xyz="0.36 0 0.095" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.025" length="0.01" />
+      </geometry>
+      <material name="grey" />
+    </visual>
+    <visual>
+      <origin xyz="-0.36 0 0.095" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.025" length="0.01" />
+      </geometry>
+      <material name="grey" />
+    </visual>
+  </link>
+
+  <!-- ==================== IMU ==================== -->
+  <link name="imu_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.01" />
+      <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.04 0.04 0.02" />
+      </geometry>
+      <material name="purple">
+        <color rgba="0.8 0.0 0.8 1.0" />
+      </material>
+    </visual>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="imu_link" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+  </joint>
+
+  <!-- ==================== 3D Lidar 双雷达（前+后，Mid-360 仿真） ==================== -->
+  <!-- 雷达经1cm垫柱安装在底盘顶面（雷达座 z=0.10，世界高度0.25），并外移至前后边缘：
+       底座半径0.04，中心取±0.36 使外沿与底盘边缘(±0.4)对齐，
+       前后向俯角射线出射即越过底盘边缘；侧向>约2°的俯角射线会打在自家底盘上，
+       机身两侧近处存在小范围盲区 -->
+  <!-- 前雷达：底盘前边缘，前倾5°(rpy.pitch=+0.0873，顶部向前) -->
+  <link name="front_lidar_link">
+    <xacro:if value="${lidar_collisions}"><xacro:three_wheel_lidar_collision/></xacro:if>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.2" />
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
+    </inertial>
+    <!-- 半球穹顶雷达外形：底座圆柱 + 球体(下半埋入底座，只露上半球)，仿 Mid-360 -->
+    <visual>
+      <origin xyz="0 0 0.02" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.04" length="0.04" />
+      </geometry>
+      <material name="lidar_base">
+        <color rgba="0.12 0.12 0.12 1.0" />
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.04" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.04" />
+      </geometry>
+      <material name="lidar_dome">
+        <color rgba="0.22 0.22 0.22 1.0" />
+      </material>
+    </visual>
+  </link>
+
+  <joint name="front_lidar_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="front_lidar_link" />
+    <origin xyz="0.36 0 0.10" rpy="0 0 0" />
+  </joint>
+
+  <!-- 后雷达：底盘后边缘，朝后(yaw=π)+后倾5° → 覆盖机器人正后方 -->
+  <link name="rear_lidar_link">
+    <xacro:if value="${lidar_collisions}"><xacro:three_wheel_lidar_collision/></xacro:if>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.2" />
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001" />
+    </inertial>
+    <!-- 半球穹顶雷达外形：底座圆柱 + 球体(下半埋入底座，只露上半球)，仿 Mid-360 -->
+    <visual>
+      <origin xyz="0 0 0.02" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.04" length="0.04" />
+      </geometry>
+      <material name="lidar_base">
+        <color rgba="0.12 0.12 0.12 1.0" />
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.04" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.04" />
+      </geometry>
+      <material name="lidar_dome">
+        <color rgba="0.22 0.22 0.22 1.0" />
+      </material>
+    </visual>
+  </link>
+
+  <joint name="rear_lidar_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="rear_lidar_link" />
+    <origin xyz="-0.36 0 0.10" rpy="0 0 3.1416" />
+  </joint>
+
+  <!-- ==================== Front Steering Module ==================== -->
+  <link name="wheel_front_steering_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="1.5" />
+      <inertia ixx="0.0045" ixy="0.0" ixz="0.0" iyy="0.0045" iyz="0.0" izz="0.0075" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.03" length="0.06" />
+      </geometry>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1.0" />
+      </material>
+    </visual>
+  </link>
+
+  <joint name="wheel_front_steering_joint" type="revolute">
+    <parent link="base_link" />
+    <child link="wheel_front_steering_link" />
+    <origin xyz="0.3 0.0 -0.05" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-1.5708" upper="1.5708" effort="100.0" velocity="5.0" />
+  </joint>
+
+  <link name="wheel_front_wheel_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="3.0" />
+      <inertia ixx="0.0091" ixy="0.0" ixz="0.0" iyy="0.0091" iyz="0.0" izz="0.015" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.1" length="0.08" />
+      </geometry>
+      <material name="orange_wheel">
+        <color rgba="1.0 0.35 0.0 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.1" length="0.08" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="wheel_front_wheel_joint" type="revolute">
+    <parent link="wheel_front_steering_link" />
+    <child link="wheel_front_wheel_link" />
+    <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1e9" upper="1e9" effort="10.0" velocity="10.0" />
+  </joint>
+
+  <!-- ==================== Left Steering Module ==================== -->
+  <link name="wheel_left_steering_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="1.5" />
+      <inertia ixx="0.0045" ixy="0.0" ixz="0.0" iyy="0.0045" iyz="0.0" izz="0.0075" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.03" length="0.06" />
+      </geometry>
+      <material name="grey" />
+    </visual>
+  </link>
+
+  <joint name="wheel_left_steering_joint" type="revolute">
+    <parent link="base_link" />
+    <child link="wheel_left_steering_link" />
+    <origin xyz="-0.15 0.20 -0.05" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-1.5708" upper="1.5708" effort="100.0" velocity="5.0" />
+  </joint>
+
+  <link name="wheel_left_wheel_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="3.0" />
+      <inertia ixx="0.0091" ixy="0.0" ixz="0.0" iyy="0.0091" iyz="0.0" izz="0.015" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.1" length="0.08" />
+      </geometry>
+      <material name="orange_wheel">
+        <color rgba="1.0 0.35 0.0 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.1" length="0.08" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="wheel_left_wheel_joint" type="revolute">
+    <parent link="wheel_left_steering_link" />
+    <child link="wheel_left_wheel_link" />
+    <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1e9" upper="1e9" effort="10.0" velocity="10.0" />
+  </joint>
+
+  <!-- ==================== Right Steering Module ==================== -->
+  <link name="wheel_right_steering_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="1.5" />
+      <inertia ixx="0.0045" ixy="0.0" ixz="0.0" iyy="0.0045" iyz="0.0" izz="0.0075" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.03" length="0.06" />
+      </geometry>
+      <material name="grey" />
+    </visual>
+  </link>
+
+  <joint name="wheel_right_steering_joint" type="revolute">
+    <parent link="base_link" />
+    <child link="wheel_right_steering_link" />
+    <origin xyz="-0.15 -0.20 -0.05" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-1.5708" upper="1.5708" effort="100.0" velocity="5.0" />
+  </joint>
+
+  <link name="wheel_right_wheel_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="3.0" />
+      <inertia ixx="0.0091" ixy="0.0" ixz="0.0" iyy="0.0091" iyz="0.0" izz="0.015" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.1" length="0.08" />
+      </geometry>
+      <material name="orange_wheel">
+        <color rgba="1.0 0.35 0.0 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.1" length="0.08" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="wheel_right_wheel_joint" type="revolute">
+    <parent link="wheel_right_steering_link" />
+    <child link="wheel_right_wheel_link" />
+    <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1e9" upper="1e9" effort="10.0" velocity="10.0" />
+  </joint>
+
+  <!-- ==================== ros2_control ==================== -->
+  <ros2_control name="IgnitionSystem" type="system">
+    <hardware>
+      <plugin>ign_ros2_control/IgnitionSystem</plugin>
+    </hardware>
+    <joint name="wheel_front_steering_joint">
+      <command_interface name="position" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="wheel_left_steering_joint">
+      <command_interface name="position" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="wheel_right_steering_joint">
+      <command_interface name="position" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="wheel_front_wheel_joint">
+      <command_interface name="velocity" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="wheel_left_wheel_joint">
+      <command_interface name="velocity" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
+    </joint>
+    <joint name="wheel_right_wheel_joint">
+      <command_interface name="velocity" />
+      <state_interface name="position" />
+      <state_interface name="velocity" />
+    </joint>
+  </ros2_control>
+
+  <!-- ==================== Gazebo Plugins ==================== -->
+  <gazebo>
+    <plugin filename="ign_ros2_control-system" name="ign_ros2_control::IgnitionROS2ControlPlugin">
+      <parameters>${controllers_file}</parameters>
+      <robot_param>robot_description</robot_param>
+      <robot_param_node>robot_state_publisher</robot_param_node>
+    </plugin>
+    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
+    </plugin>
+    <plugin name="ignition::gazebo::systems::Imu" filename="ignition-gazebo-imu-system"></plugin>
+  </gazebo>
+
+  <!-- ==================== IMU Sensor ==================== -->
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <update_rate>100</update_rate>
+      <visualize>false</visualize>
+      <topic>/imu</topic>
+      <ignition_frame_id>imu_link</ignition_frame_id>
+
+      <imu>
+        <frame_id>imu_link</frame_id>
+
+        <!-- 角速度：白噪声密度约 0.01°/s/√Hz，
+           100Hz 下每采样 σ≈0.001 rad/s (0.057°/s)；
+           上电零偏 σ≈0.002°/s (3.5e-5 rad/s)；
+           零偏随机游走 10°/hr，相关时间 1000s -->
+        <angular_velocity>
+          <x>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.00005</bias_stddev>
+              <dynamic_bias_stddev>0.00005</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
+            </noise>
+          </x>
+          <y>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.00005</bias_stddev>
+              <dynamic_bias_stddev>0.00005</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
+            </noise>
+          </y>
+          <z>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.00005</bias_stddev>
+              <dynamic_bias_stddev>0.00005</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
+            </noise>
+          </z>
+        </angular_velocity>
+
+        <!-- 线加速度：白噪声密度约 60µg/√Hz，
+           100Hz 下每采样 σ≈0.0006 m/s²；
+           上电零偏 σ≈0.00015 m/s² (15µg)；
+           零偏随机游走 0.05mg，相关时间 1000s -->
+        <linear_acceleration>
+          <x>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.0006</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.00015</bias_stddev>
+              <dynamic_bias_stddev>0.0002</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
+            </noise>
+          </x>
+          <y>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.0006</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.00015</bias_stddev>
+              <dynamic_bias_stddev>0.0002</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
+            </noise>
+          </y>
+          <z>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.0006</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.00015</bias_stddev>
+              <dynamic_bias_stddev>0.0002</dynamic_bias_stddev>
+              <dynamic_bias_correlation_time>1000.0</dynamic_bias_correlation_time>
+            </noise>
+          </z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+
+  <!-- ==================== 双 3D Lidar Sensor (Mid-360 仿真) ==================== -->
+  <!-- 前雷达 -->
+  <gazebo reference="front_lidar_link">
+    <sensor name="front_lidar_sensor" type="gpu_lidar">
+      <always_on>true</always_on>
+      <update_rate>15</update_rate>
+      <visualize>true</visualize>
+      <topic>/front_lidar/point_cloud</topic>
+      <ignition_frame_id>front_lidar_link</ignition_frame_id>
+
+      <lidar>
+        <frame_id>front_lidar_link</frame_id>
+        <scan>
+          <horizontal>
+            <samples>270</samples>
+            <resolution>1</resolution>
+            <min_angle>-2.35619</min_angle>
+            <max_angle>2.35619</max_angle>
+          </horizontal>
+          <!-- 对齐 zioneer 差速版：下沿 -10°。原 -25° 俯角射线会打在自己底盘前边缘
+               （雷达在边缘内 4cm、甲板仅低 1cm，≥14° 俯角即自打），眼前出现幻影障碍
+               导致导航减速。-10° 时打中甲板需 ≥27°，几何上不可能自打。 -->
+          <vertical>
+            <samples>16</samples>
+            <min_angle>-0.1745</min_angle>            <!-- -10° -->
+            <max_angle>0.349</max_angle>              <!-- +20° -->
+          </vertical>
+        </scan>
+        <range>
+          <min>0.5</min>
+          <max>30.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.0005</bias_stddev>
+          <precision>0.01</precision>
+          <stddev>0.002</stddev>
+        </noise>
+      </lidar>
+    </sensor>
+  </gazebo>
+
+  <!-- 后雷达 -->
+  <gazebo reference="rear_lidar_link">
+    <sensor name="rear_lidar_sensor" type="gpu_lidar">
+      <always_on>true</always_on>
+      <update_rate>15</update_rate>
+      <visualize>true</visualize>
+      <topic>/rear_lidar/point_cloud</topic>
+      <ignition_frame_id>rear_lidar_link</ignition_frame_id>
+
+      <lidar>
+        <frame_id>rear_lidar_link</frame_id>
+        <scan>
+          <horizontal>
+            <samples>270</samples>
+            <resolution>1</resolution>
+            <min_angle>-2.35619</min_angle>
+            <max_angle>2.35619</max_angle>
+          </horizontal>
+          <!-- 对齐 zioneer 差速版：下沿 -10°，杜绝俯角射线自打底盘边缘 -->
+          <vertical>
+            <samples>16</samples>
+            <min_angle>-0.1745</min_angle>            <!-- -10° -->
+            <max_angle>0.349</max_angle>              <!-- +20° -->
+          </vertical>
+        </scan>
+        <range>
+          <min>0.5</min>
+          <max>30.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <bias_mean>0.0</bias_mean>
+          <bias_stddev>0.0005</bias_stddev>
+          <precision>0.01</precision>
+          <stddev>0.002</stddev>
+        </noise>
+      </lidar>
+    </sensor>
+  </gazebo>
+
+
+
+  <!-- 在 robot 标签的末尾，为每个车轮的 link 指定摩擦参数 -->
+  <gazebo reference="wheel_front_wheel_link">
+    <surface>
+      <friction>
+        <ode>
+          <mu>0.8</mu>
+          <mu2>0.6</mu2>
+        </ode>
+      </friction>
+    </surface>
+  </gazebo>
+
+  <gazebo reference="wheel_left_wheel_link">
+    <surface>
+      <friction>
+        <ode>
+          <mu>0.8</mu>
+          <mu2>0.6</mu2>
+        </ode>
+      </friction>
+    </surface>
+  </gazebo>
+
+  <gazebo reference="wheel_right_wheel_link">
+    <surface>
+      <friction>
+        <ode>
+          <mu>0.8</mu>
+          <mu2>0.6</mu2>
+        </ode>
+      </friction>
+    </surface>
+  </gazebo>
+
+
+  </xacro:macro>
+</robot>

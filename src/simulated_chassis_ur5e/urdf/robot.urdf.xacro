@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="three_wheel_agv">
+  <xacro:arg name="controllers_file" default="$(find simulated_chassis_ur5e)/config/controllers.yaml"/>
+  <xacro:arg name="mounting_file" default="$(find simulated_chassis_ur5e)/config/mounting.yaml"/>
+  <xacro:include filename="$(find simulated_chassis)/urdf/three_wheel_chassis_3d_macro.xacro"/>
+  <xacro:include filename="$(find simulated_chassis_ur5e)/urdf/arm_mount.xacro"/>
+  <xacro:three_wheel_chassis_3d controllers_file="$(arg controllers_file)" lidar_collisions="true"/>
+  <xacro:mounted_ur5e mounting_file="$(arg mounting_file)"/>
+</robot>

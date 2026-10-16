@@ -54,6 +54,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-nav2-behavior-tree \
     && rm -rf /var/lib/apt/lists/*
 
+# Mobile UR5e simulation/runtime (no vendor source checkout needed for the assembled model).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-ur-description \
+    ros-humble-ur-moveit-config \
+    ros-humble-moveit \
+    ros-humble-joint-trajectory-controller \
+    && rm -rf /var/lib/apt/lists/*
+
 # rosbridge：对外提供 JSON over WebSocket，取代 agv_bridge_v2 自带的 libwebsockets 服务
 # 含 rosbridge_server + rosbridge_library + rosapi(+rosapi_msgs)
 RUN apt-get update && apt-get install -y --no-install-recommends \

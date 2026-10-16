@@ -29,8 +29,9 @@ agv_rosbridge.launch.py —— rosbridge 架构下的 AGV 对接 launch
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
-from launch.substitutions import LaunchConfiguration
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, EmitEvent
+from launch.events import Shutdown
+from launch.substitutions import LaunchConfiguration, EnvironmentVariable
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -70,6 +71,9 @@ def _agv_nav_server_node(context):
         name="agv_nav_server",
         output="screen",
         emulate_tty=True,
+        sigterm_timeout='30.0',
+        sigkill_timeout='5.0',
+        on_exit=[EmitEvent(event=Shutdown(reason='AGV navigation server exited'))],
         # 必须运行在根命名空间：NavigationManager 内部用相对名创建
         # follow_path / spin / navigate_to_pose 客户端。
         namespace="/",
@@ -85,6 +89,7 @@ def _agv_nav_server_node(context):
                 "pbstream_file": pbstream_file,
                 "robot_package": robot_package,
                 "manage_navigation": manage_navigation,
+                'navigation_use_rviz': ParameterValue(LaunchConfiguration('navigation_use_rviz'), value_type=bool),
                 "localization_launch_file": localization_launch_file,
                 "slam_launch_file": slam_launch_file,
             }
@@ -125,6 +130,9 @@ def generate_launch_description():
     services_glob = ParameterValue(LaunchConfiguration("services_glob"), value_type=str)
 
     args = [
+        DeclareLaunchArgument('navigation_use_rviz',
+            default_value=EnvironmentVariable('START_RVIZ', default_value='true'),
+            description='托管导航是否打开 RViz；组合机械臂 profile 固定关闭'),
         DeclareLaunchArgument("manage_navigation", default_value="auto",
                               description="auto: simulated_chassis 托管 Nav2；false: 手动启动导航"),
         DeclareLaunchArgument("use_sim_time", default_value="true",

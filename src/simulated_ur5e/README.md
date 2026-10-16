@@ -62,7 +62,7 @@ source install/setup.bash
 
 接口使用方法见 `src/arm_manager/README.md`。可用 `include_arm_manager:=false` 关闭，或 `allow_fault_injection:=true` 开启模拟故障测试。RViz Execute 和业务接口不要同时下发运动任务。
 
-在 RViz MotionPlanning 面板选择 `ur_manipulator`，拖动末端交互标记，先 Plan 再 Execute。建议最初将速度、加速度缩放设为 0.1。使用官方默认初始关节姿态。
+在 RViz MotionPlanning 面板选择 `ur_manipulator`，拖动末端交互标记，先 Plan 再 Execute。建议最初将速度、加速度缩放设为 0.1。初始姿态采用 `config/initial_positions.yaml` 的折叠收起角度，与整机上装共用；SRDF 中的 `stowed` 为同一姿态。mock 和 Fortress 都从该状态直接初始化，不执行开机收臂动作。
 
 控制链路：RViz → MoveIt2 / OMPL → `/joint_trajectory_controller/follow_joint_trajectory` → 标准 JTC → 模拟硬件或 `ign_ros2_control`。
 

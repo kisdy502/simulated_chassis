@@ -1,0 +1,7 @@
+# Shared standalone/mobile UR5e transport posture (radians).
+shoulder_pan_joint: 0.0
+shoulder_lift_joint: -2.6
+elbow_joint: 2.65
+wrist_1_joint: -1.62079632679
+wrist_2_joint: -1.57079632679
+wrist_3_joint: 0.0

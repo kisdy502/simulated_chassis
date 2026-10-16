@@ -4,6 +4,7 @@
 #include <memory>
 #include <exception>
 #include <iostream>
+#include <sys/prctl.h>
 
 /**
  * agv_nav_server —— rosbridge 架构下的 AGV 瘦节点
@@ -18,6 +19,9 @@
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
+    // Reap descendants if a nested ros2 launch exits before its own children.
+    if (::prctl(PR_SET_CHILD_SUBREAPER, 1) != 0)
+        RCLCPP_WARN(rclcpp::get_logger("agv_nav_server"), "Could not enable child subreaper");
 
     try
     {
@@ -30,8 +34,11 @@ int main(int argc, char **argv)
         executor.add_node(node);
         executor.spin();
 
+        executor.remove_node(node);
+        node->shutdown_managed_processes();
+        node.reset();
         rclcpp::shutdown();
-        RCLCPP_INFO(node->get_logger(), "AGV Nav Server shutdown complete");
+        RCLCPP_INFO(rclcpp::get_logger("agv_nav_server"), "AGV Nav Server shutdown complete (managed processes reaped)");
         return 0;
     }
     catch (const std::exception &e)

@@ -23,4 +23,17 @@ args=(
 )
 # ros2 launch rejects an empty CLI value; use the launch default for no initial map.
 if [[ -n "$pbstream" ]]; then args+=(pbstream_file:="$pbstream"); fi
-exec ros2 launch agv_bridge_v2 agv_rosbridge.launch.py "${args[@]}"
+if [[ "${ROBOT_PROFILE:-chassis_3d_ur5e}" == chassis_3d_ur5e ]]; then
+    # This profile fixes robot_package and use_sim_time internally.
+    profile_args=(agv_id:="${AGV_ID:-AGV001}" port:="${WEBSOCKET_PORT:-9090}"
+      maps_dir:="${MAPS_DIR:-/ros2_ws/maps}" manage_navigation:="${MANAGE_NAVIGATION:-true}"
+      back_up_max_heading_error_deg:="${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}"
+      rviz:="${START_RVIZ:-false}")
+    if [[ -n "$pbstream" ]]; then profile_args+=(pbstream_file:="$pbstream"); fi
+    exec ros2 launch simulated_chassis_ur5e bridge.launch.py "${profile_args[@]}"
+elif [[ "${ROBOT_PROFILE}" == chassis_3d ]]; then
+    exec ros2 launch agv_bridge_v2 agv_rosbridge.launch.py "${args[@]}"
+else
+    echo "Unsupported ROBOT_PROFILE: ${ROBOT_PROFILE}" >&2
+    exit 1
+fi

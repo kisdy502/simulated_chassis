@@ -82,6 +82,8 @@ namespace agv_bridge
 
         explicit AgvNavServerNode(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
         ~AgvNavServerNode() noexcept override;
+        // Explicitly called by main before releasing the node. Safe to call again in destructor.
+        void shutdown_managed_processes() noexcept;
 
         AgvNavServerNode(const AgvNavServerNode &) = delete;
         AgvNavServerNode &operator=(const AgvNavServerNode &) = delete;
@@ -214,6 +216,9 @@ namespace agv_bridge
         bool enable_tf_broadcast_ = true;
         bool use_sim_time_ = false;
         bool manage_navigation_ = false;
+        bool navigation_use_rviz_ = false;
+        std::atomic<bool> shutting_down_{false};
+        std::once_flag shutdown_once_;
         pid_t navigation_pid_ = -1;
         std::mutex navigation_proc_mutex_;
         std::chrono::steady_clock::time_point next_navigation_start_{};

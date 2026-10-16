@@ -9,6 +9,8 @@ from launch.actions import (
 from launch.event_handlers import OnProcessStart
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, EnvironmentVariable, Command
+from launch.actions import OpaqueFunction
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.actions import Node
 
 
@@ -34,10 +36,10 @@ def generate_launch_description():
     # 本包默认机器人 = 3D 雷达版。
     # 2D 仿真时：本行改回 three_wheel_chassis_2d.xacro，
     # 并把下方 bridge 的 arguments/remappings 换回 2D 版（gpu_lidar 单波束 LaserScan）。
-    xacro_path = os.path.join(pkg_share, "urdf", "three_wheel_chassis_3d.xacro")
+    xacro_path = LaunchConfiguration('description_file')
     world_path = os.path.join(pkg_share, "world", "world_m.sdf")
     robot_description = {
-        "robot_description": Command(["xacro ", xacro_path])
+        "robot_description": ParameterValue(Command(["xacro ", xacro_path]), value_type=str)
     }
 
     robot_state_pub = Node(
@@ -66,6 +68,7 @@ def generate_launch_description():
             os.path.dirname(pkg_share),
             ":",
             os.path.join(pkg_share, "models"),
+            ":", LaunchConfiguration('extra_resource_path'),
         ],
     )
 
@@ -101,6 +104,11 @@ def generate_launch_description():
                  arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"]),
             Node(package="controller_manager", executable="spawner",
                  arguments=["three_wheel_base_controller", "--controller-manager", "/controller_manager"]),
+            OpaqueFunction(function=lambda context: [
+                Node(package='controller_manager', executable='spawner',
+                     arguments=[name, '-c', '/controller_manager', '--controller-manager-timeout', '60'])
+                for name in LaunchConfiguration('extra_controllers').perform(context).split()
+            ]),
         ],
     )
 
@@ -219,6 +227,9 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument('description_file', default_value=os.path.join(pkg_share, 'urdf', 'three_wheel_chassis_3d.xacro')),
+        DeclareLaunchArgument('extra_controllers', default_value=''),
+        DeclareLaunchArgument('extra_resource_path', default_value=''),
         DeclareLaunchArgument("include_cmd_vel_relay", default_value="true"),
         DeclareLaunchArgument("start_gamepad", default_value="true"),
         DeclareLaunchArgument("gui", default_value="false"),

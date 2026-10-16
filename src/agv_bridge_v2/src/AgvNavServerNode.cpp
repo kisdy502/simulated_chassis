@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/prctl.h>
 #include <thread>
 #include <unistd.h>
 
@@ -36,6 +37,37 @@ namespace agv_bridge
         std::string useSimTimeArg(bool use_sim_time)
         {
             return "use_sim_time:=" + std::string(use_sim_time ? "true" : "false");
+        }
+
+        template<class Future, class Duration>
+        bool waitFuture(Future &future, Duration timeout, const std::atomic<bool> &stopping)
+        {
+            const auto deadline = std::chrono::steady_clock::now() + timeout;
+            while (!stopping.load() && rclcpp::ok() && std::chrono::steady_clock::now() < deadline)
+            {
+                const auto remaining = deadline - std::chrono::steady_clock::now();
+                if (future.wait_for(std::min(remaining, std::chrono::duration_cast<std::chrono::steady_clock::duration>(100ms))) ==
+                    std::future_status::ready) return true;
+            }
+            return false;
+        }
+
+        template<class Client, class Duration>
+        bool waitService(const Client &client, Duration timeout, const std::atomic<bool> &stopping)
+        {
+            const auto deadline = std::chrono::steady_clock::now() + timeout;
+            while (!stopping.load() && rclcpp::ok() && std::chrono::steady_clock::now() < deadline)
+                if (client->wait_for_service(100ms)) return true;
+            return false;
+        }
+
+        template<class Duration>
+        bool sleepInterruptible(Duration duration, const std::atomic<bool> &stopping)
+        {
+            const auto deadline = std::chrono::steady_clock::now() + duration;
+            while (!stopping.load() && rclcpp::ok() && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(100ms);
+            return !stopping.load() && rclcpp::ok();
         }
 
     }
@@ -92,10 +124,19 @@ namespace agv_bridge
 
     AgvNavServerNode::~AgvNavServerNode() noexcept
     {
+        shutdown_managed_processes();
+    }
+
+    void AgvNavServerNode::shutdown_managed_processes() noexcept
+    {
+        std::call_once(shutdown_once_, [this]() {
+        shutting_down_.store(true);
+        for (auto timer : {status_timer_, feedback_timer_, localization_timer_, tf_timer_, cancel_finalize_timer_})
+            if (timer) timer->cancel();
         try
         {
             // 退出时取消正在执行的导航，避免 nav2 控制器停留在最后一条路径
-            if (navigation_manager_ && navigation_manager_->isNavigating())
+            if (rclcpp::ok() && navigation_manager_ && navigation_manager_->isNavigating())
             {
                 navigation_manager_->stopNavigation();
             }
@@ -109,7 +150,7 @@ namespace agv_bridge
             RCLCPP_ERROR(this->get_logger(), "析构中发生未知异常");
         }
 
-        // 回收模式切换后台线程，再停掉托管的定位/建图子进程
+        // Waits in the transition thread are interruptible; spawning is now disabled.
         if (transition_thread_.joinable())
         {
             transition_thread_.join();
@@ -117,6 +158,7 @@ namespace agv_bridge
         stop_managed_navigation();
         stop_child_process(slam_pid_, "建图");
         stop_child_process(localization_pid_, "定位");
+        });
     }
 
     // ============================ 初始化 ============================
@@ -133,6 +175,7 @@ namespace agv_bridge
         this->declare_parameter<std::string>("pbstream_file", "");
         this->declare_parameter<std::string>("robot_package", "jzt_robot");
         this->declare_parameter<bool>("manage_navigation", false);
+        this->declare_parameter<bool>("navigation_use_rviz", false);
         this->declare_parameter<std::string>("localization_launch_package", "");
         this->declare_parameter<std::string>("localization_launch_file", "localization.launch.py");
         this->declare_parameter<std::string>("localization_configuration_basename", "");
@@ -150,6 +193,7 @@ namespace agv_bridge
         this->get_parameter("pbstream_file", pbstream_file_);
         this->get_parameter("robot_package", robot_package_);
         this->get_parameter("manage_navigation", manage_navigation_);
+        this->get_parameter("navigation_use_rviz", navigation_use_rviz_);
         this->get_parameter("localization_launch_package", localization_launch_package_);
         this->get_parameter("localization_launch_file", localization_launch_file_);
         this->get_parameter("localization_configuration_basename", localization_configuration_basename_);
@@ -982,7 +1026,11 @@ namespace agv_bridge
                     // 等定位侧 occupancy_grid 起来发出第一帧 /map（TRANSIENT_LOCAL
                     // 打底，但节点本身要 ~1.5s 延迟启动 + 1s 发布周期）再补导出，
                     // 否则抢跑重蹈覆辙。
-                    std::this_thread::sleep_for(std::chrono::seconds(3));
+                    if (!sleepInterruptible(3s, shutting_down_))
+                    {
+                        transition_in_progress_.store(false);
+                        return;
+                    }
                     std::string retry_error;
                     if (export_grid(retry_error))
                     {
@@ -1146,7 +1194,11 @@ namespace agv_bridge
                     pbstream_abs, name, has_pose ? &remembered_pose : nullptr, error))
             {
                 RCLCPP_ERROR(this->get_logger(), "自动重启失败: %s，5s 后重试一次", error.c_str());
-                std::this_thread::sleep_for(std::chrono::seconds(5));
+                if (!sleepInterruptible(5s, shutting_down_))
+                {
+                    transition_in_progress_.store(false);
+                    return;
+                }
                 if (!start_managed_localization(
                         pbstream_abs, name, has_pose ? &remembered_pose : nullptr, error))
                 {
@@ -1550,6 +1602,10 @@ namespace agv_bridge
         std::vector<std::string> argv_str = {"ros2", "launch", package, launch_file};
         argv_str.insert(argv_str.end(), extra_args.begin(), extra_args.end());
 
+        // Serialize spawn with shutdown's PID-slot removal. No child may be spawned after shutdown begins.
+        std::lock_guard<std::mutex> process_guard(proc_mutex_);
+        if (shutting_down_.load() || !rclcpp::ok()) return false;
+        const pid_t parent_pid = ::getpid();
         const pid_t pid = ::fork();
         if (pid < 0)
         {
@@ -1558,6 +1614,8 @@ namespace agv_bridge
         }
         if (pid == 0)
         {
+            // If the bridge is forcibly killed, ros2 launch still receives a shutdown signal.
+            if (::prctl(PR_SET_PDEATHSIG, SIGTERM) != 0 || ::getppid() != parent_pid) ::_exit(125);
             // 子进程：独立进程组（便于整组终止），输出重定向到日志文件
             ::setpgid(0, 0);
             const int fd = ::open(log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -1585,10 +1643,7 @@ namespace agv_bridge
         }
         // 父子两侧都 setpgid，避免竞态
         ::setpgid(pid, pid);
-        {
-            std::lock_guard<std::mutex> lock(proc_mutex_);
-            pid_slot = pid;
-        }
+        pid_slot = pid;
 
         std::string cmdline;
         for (const auto &arg : argv_str)
@@ -1609,14 +1664,14 @@ namespace agv_bridge
 
     void AgvNavServerNode::ensure_managed_navigation()
     {
-        if (!manage_navigation_ || transition_in_progress_.load()) return;
+        if (shutting_down_.load() || !manage_navigation_ || transition_in_progress_.load()) return;
         {
             std::lock_guard<std::mutex> guard(mode_mutex_);
             if (mode_ != MODE_NAVIGATION || map_name_.empty()) return;
         }
         if (!localization_monitor_->isInitialized()) return;
         std::lock_guard<std::mutex> guard(navigation_proc_mutex_);
-        if (transition_in_progress_.load()) return;
+        if (shutting_down_.load() || transition_in_progress_.load()) return;
         const auto now = std::chrono::steady_clock::now();
         if (navigation_pid_ > 0)
         {
@@ -1641,7 +1696,8 @@ namespace agv_bridge
             }
         }
         if (!spawn_ros_launch(robot_package_, "navigation.launch.py",
-                {"include_localization:=false", "include_cmd_vel_relay:=false", useSimTimeArg(use_sim_time_)},
+                {"include_localization:=false", "include_cmd_vel_relay:=false",
+                 "use_rviz:=" + std::string(navigation_use_rviz_ ? "true" : "false"), useSimTimeArg(use_sim_time_)},
                 navigation_pid_, "/tmp/agv_navigation.log"))
             next_navigation_start_ = now + std::chrono::seconds(5);
     }
@@ -1660,24 +1716,40 @@ namespace agv_bridge
             return;
         }
 
-        // 先 SIGINT（ros2 launch 会优雅停掉 cartographer 等子节点），超时整组 SIGKILL
-        if (::kill(-pid, SIGINT) != 0)
-        {
-            ::kill(pid, SIGINT);
-        }
-        for (int i = 0; i < 20; ++i)
-        {
-            if (::waitpid(pid, nullptr, WNOHANG) == pid)
+        bool reaped = false;
+        const auto signal_group = [pid](int signal) {
+            if (::kill(-pid, signal) != 0 && errno == ESRCH) ::kill(pid, signal);
+        };
+        const auto wait_group = [&](int polls) {
+            for (int i = 0; i < polls; ++i)
             {
-                RCLCPP_INFO(this->get_logger(), "%s子进程 pid=%d 已退出", what, pid);
-                return;
+                if (!reaped)
+                {
+                    const auto result = ::waitpid(pid, nullptr, WNOHANG);
+                    reaped = result == pid || (result < 0 && errno == ECHILD);
+                }
+                // Descendants adopted through PR_SET_CHILD_SUBREAPER belong to this same owned group.
+                if (reaped) while (::waitpid(-pid, nullptr, WNOHANG) > 0) {}
+                // A dead launch leader does not imply its descendants exited.
+                if (reaped && ::kill(-pid, 0) != 0 && errno == ESRCH) return true;
+                std::this_thread::sleep_for(100ms);
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            return false;
+        };
+        signal_group(SIGINT);
+        if (!wait_group(50))
+        {
+            RCLCPP_WARN(get_logger(), "%s进程组 %d 仍在退出，发送 SIGTERM", what, pid);
+            signal_group(SIGTERM);
+            if (!wait_group(20))
+            {
+                RCLCPP_WARN(get_logger(), "%s进程组 %d 停止超时，发送 SIGKILL", what, pid);
+                signal_group(SIGKILL);
+                wait_group(10);
+            }
         }
-
-        RCLCPP_WARN(this->get_logger(), "%s子进程 pid=%d 未在 2s 内退出，SIGKILL 整个进程组", what, pid);
-        ::kill(-pid, SIGKILL);
-        ::waitpid(pid, nullptr, 0);
+        if (!reaped) while (::waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {}
+        RCLCPP_INFO(get_logger(), "%s进程组 pid=%d 回收完成", what, pid);
     }
 
     bool AgvNavServerNode::start_managed_localization(
@@ -1699,7 +1771,7 @@ namespace agv_bridge
             return false;
         }
 
-        if (!start_trajectory_client_->wait_for_service(std::chrono::seconds(30)))
+        if (!waitService(start_trajectory_client_, 30s, shutting_down_))
         {
             error = "Cartographer /start_trajectory 服务 30 秒内未就绪";
             stop_child_process(localization_pid_, "定位");
@@ -1711,7 +1783,7 @@ namespace agv_bridge
         // FROZEN/FINISHED 轨迹，不能已有 ACTIVE 轨迹；否则新轨迹会争用传感器 topics。
         int frozen_trajectory_id = -1;
         std::vector<int> active_trajectory_ids;
-        if (!trajectory_states_client_->wait_for_service(std::chrono::seconds(30)))
+        if (!waitService(trajectory_states_client_, 30s, shutting_down_))
         {
             error = "Cartographer /get_trajectory_states 服务不可用";
             stop_child_process(localization_pid_, "定位");
@@ -1727,14 +1799,14 @@ namespace agv_bridge
         const auto states_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(300);
         RCLCPP_INFO(this->get_logger(), "地图 %s：等待加载完成并查询轨迹状态（最多 300 秒）",
                     map_name.c_str());
-        while (rclcpp::ok() && std::chrono::steady_clock::now() < states_deadline)
+        while (rclcpp::ok() && !shutting_down_.load() && std::chrono::steady_clock::now() < states_deadline)
         {
             auto states_future = trajectory_states_client_->async_send_request(
                 std::make_shared<cartographer_ros_msgs::srv::GetTrajectoryStates::Request>());
             const auto remaining = states_deadline - std::chrono::steady_clock::now();
             const auto wait_time = std::min(remaining,
                 std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::seconds(5)));
-            if (states_future.wait_for(wait_time) == std::future_status::ready)
+            if (waitFuture(states_future, wait_time, shutting_down_))
             {
                 states_response = states_future.get();
                 break;
@@ -1803,8 +1875,9 @@ namespace agv_bridge
         }
 
         auto future = start_trajectory_client_->async_send_request(request);
-        if (future.wait_for(std::chrono::seconds(60)) != std::future_status::ready)
+        if (!waitFuture(future, 60s, shutting_down_))
         {
+            start_trajectory_client_->remove_pending_request(future);
             error = "/start_trajectory 调用超时（60 秒）";
             stop_child_process(localization_pid_, "定位");
             return false;
@@ -1888,7 +1961,7 @@ namespace agv_bridge
 
     bool AgvNavServerNode::call_write_state(const std::string &pbstream_abs_path, std::string &error)
     {
-        if (!write_state_client_->wait_for_service(std::chrono::seconds(10)))
+        if (!waitService(write_state_client_, 10s, shutting_down_))
         {
             error = "cartographer /write_state 服务不可用（建图节点未运行？）";
             return false;
@@ -1898,9 +1971,9 @@ namespace agv_bridge
         request->filename = pbstream_abs_path;
 
         auto future = write_state_client_->async_send_request(request);
-        const auto rc = future.wait_for(std::chrono::seconds(45));
-        if (rc != std::future_status::ready)
+        if (!waitFuture(future, 45s, shutting_down_))
         {
+            write_state_client_->remove_pending_request(future);
             error = "/write_state 调用超时（45s）";
             return false;
         }
@@ -1918,7 +1991,7 @@ namespace agv_bridge
 
     bool AgvNavServerNode::call_save_map(const std::string &stem, std::string &error)
     {
-        if (!save_map_client_->wait_for_service(std::chrono::seconds(10)))
+        if (!waitService(save_map_client_, 10s, shutting_down_))
         {
             error = "/map_saver/save_map 服务 10 秒内不可用";
             return false;
@@ -1935,8 +2008,9 @@ namespace agv_bridge
         auto future = save_map_client_->async_send_request(request);
         // 15s→40s：CPU 饱和时（大图 write_state 连锁 + 全栈联调）15s 频繁误杀
         // 正在慢速执行的保存（实测手动调用可正常完成，仅慢）。
-        if (future.wait_for(std::chrono::seconds(40)) != std::future_status::ready)
+        if (!waitFuture(future, 40s, shutting_down_))
         {
+            save_map_client_->remove_pending_request(future);
             error = "/map_saver/save_map 调用超时（40 秒）";
             return false;
         }

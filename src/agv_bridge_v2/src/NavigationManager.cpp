@@ -26,7 +26,7 @@ namespace agv_bridge
     {
         if (action_watchdog_) action_watchdog_->cancel();
         // 如果正在导航，尝试取消
-        if (isNavigating())
+        if (rclcpp::ok() && isNavigating())
         {
             cancelNavigation();
         }

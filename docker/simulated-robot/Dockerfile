@@ -21,12 +21,16 @@ WORKDIR /ros2_ws/src
 
 COPY src/jzt_robot/ ./jzt_robot/
 COPY src/simulated_chassis/ ./simulated_chassis/
+COPY src/simulated_ur5e/ ./simulated_ur5e/
+COPY src/arm_manager_interfaces/ ./arm_manager_interfaces/
+COPY src/arm_manager/ ./arm_manager/
+COPY src/simulated_chassis_ur5e/ ./simulated_chassis_ur5e/
 
 WORKDIR /ros2_ws
 
 RUN mkdir -p src/jzt_robot/maps src/simulated_chassis/maps \
     && source /opt/ros/humble/setup.bash \
-    && MAKEFLAGS="-j${BUILD_JOBS}" colcon build --executor sequential --packages-select jzt_robot simulated_chassis \
+    && MAKEFLAGS="-j${BUILD_JOBS}" colcon build --executor sequential --packages-select jzt_robot simulated_chassis arm_manager_interfaces arm_manager simulated_ur5e simulated_chassis_ur5e \
         --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
     && rm -rf build log
 
