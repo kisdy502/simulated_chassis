@@ -86,7 +86,7 @@ protected:
   rclcpp_action::Server<Spin>::SharedPtr spin_server;
   rclcpp_action::Server<FollowPath>::SharedPtr path_server;
   rclcpp_action::Server<NavigationManager::NavigateToPose>::SharedPtr nav_server;
-  rclcpp::executors::MultiThreadedExecutor executor;
+  rclcpp::executors::MultiThreadedExecutor executor{rclcpp::ExecutorOptions(), 2};
   std::thread worker;
   TestCallbacks callbacks;
   std::shared_ptr<NavigationManager> manager;
