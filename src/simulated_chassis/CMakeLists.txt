@@ -17,6 +17,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_msgs REQUIRED)
+find_package(message_filters REQUIRED)
 find_package(behaviortree_cpp_v3 REQUIRED)
 find_package(nav2_behavior_tree REQUIRED)
 find_package(nav2_util REQUIRED)
@@ -112,6 +113,20 @@ ament_target_dependencies(tracked_pose_tf_node
   tf2_geometry_msgs
 )
 
+# Dual Lidar Merge Node（前后 3D 雷达合流 + time/ring 字段，lightning-lm 接入）
+add_executable(dual_lidar_merge_node
+  src/dual_lidar_merge_node.cpp
+)
+
+ament_target_dependencies(dual_lidar_merge_node
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  tf2
+  tf2_ros
+  message_filters
+)
+
 # Pointcloud Ground Filter Node（进 Cartographer 前滤除地面回波）
 add_executable(pointcloud_ground_filter
   src/pointcloud_ground_filter.cpp
@@ -127,7 +142,7 @@ ament_target_dependencies(pointcloud_ground_filter
 target_link_libraries(pointcloud_ground_filter Eigen3::Eigen)
 
 
-install(TARGETS odom_relay_node gamepad_teleop_node cmd_vel_relay_node pointcloud_ground_filter tracked_pose_tf_node
+install(TARGETS odom_relay_node gamepad_teleop_node cmd_vel_relay_node pointcloud_ground_filter tracked_pose_tf_node dual_lidar_merge_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

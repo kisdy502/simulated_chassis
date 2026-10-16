@@ -73,3 +73,6 @@ my_bag_sm
 .env
 runtime/
 *.docker-images.tar.gz
+
+# lightning-lm vendor 演示媒体（161MB GIF/PNG，不入库）
+src/lightning-lm/doc/
