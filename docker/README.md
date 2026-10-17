@@ -73,3 +73,47 @@ Deliver docker-compose.yml, docker/, deploy.sh, .env.example and maps separately
 Source files must be plain text as seen by Linux. Windows transparent-encryption software can make a file readable in Windows but unreadable to WSL/Docker; verify Linux can read modified launch/C++ files before building.
 
 The old independent navigation/SLAM profiles and automatic motion exploration command are removed. up-nav aliases up; up-slam starts the two containers and calls bridge's mapping service. Build failures are not ignored.
+
+## Mobile UR5e offline handoff
+
+Run the delivered images on the recipient's own Linux Docker host. Shutting down
+the sender's WSL does not affect a separate host; containers on the sender's WSL
+still require that WSL/Docker engine to stay running.
+
+Rebuild all three images: old base images may lack UR description, MoveIt and the
+joint trajectory controller. Then produce an offline folder:
+
+```bash
+bash deploy.sh build
+bash deploy.sh bundle
+```
+
+The default output is `delivery/wheel-3d-ur5e/`: images, checksum, image IDs,
+Compose, `.env` template, deployment script, DDS config, instructions and maps.
+Existing output folders are rejected. To omit maps:
+`INCLUDE_MAPS=false bash deploy.sh bundle /path/to/new-folder`.
+Existing live logs, teaching data and `last_pose.yaml` parking memories are not copied.
+Verify initial localization on the new simulation and set the initial pose if needed.
+
+On the recipient's x86_64 Linux Docker host:
+
+```bash
+cd wheel-3d-ur5e
+sha256sum -c SHA256SUMS
+gzip -dc wheel-3d.docker-images.tar.gz | docker load
+# Edit .env; for a supplied map, for example:
+# PBSTREAM_FILE=/ros2_ws/maps/map1008Pro/map1008Pro.pbstream
+bash deploy.sh up
+```
+
+The receiver needs Docker Engine, Compose v2, bash and gzip, but no ROS or source
+checkout. This folder intentionally has no sources: do not run `deploy.sh build`
+there. The frontend connects to `ws://THIS_HOST_IP:9090` (configured port).
+Frontend/dispatch applications are separate and are not included in these images.
+Maps and arm teach points persist through the existing data mounts.
+
+Keep `ROBOT_PROFILE=chassis_3d_ur5e` for the assembled robot. The chassis-only
+profile `chassis_3d` remains available. Both containers must use the same profile;
+never start a second arm/world/controller manager. Headless lidar uses Xvfb and
+software rendering; the arm/MoveIt add compute load, so check simulation rate and
+navigation control latency on the destination machine.

@@ -169,6 +169,9 @@ namespace agv_bridge
 
         void setSpeedLimit(double speed);
         bool isReady() const;
+        bool isStackActive() const;
+        std::string readinessError() const;
+        void resetAfterServerShutdown();
 
     private:
         // 回调函数
@@ -239,10 +242,15 @@ namespace agv_bridge
         // Every dispatched action gets a generation. Late replies cannot attach
         // themselves to a newer task; accepted stale goals are canceled.
         template<typename Action>
-        void dispatchGoal(const typename rclcpp_action::Client<Action>::SharedPtr &client,
+        bool dispatchGoal(const typename rclcpp_action::Client<Action>::SharedPtr &client,
                           const typename Action::Goal &goal,
                           typename rclcpp_action::Client<Action>::SendGoalOptions options)
         {
+            const auto error = readinessError();
+            if (!error.empty()) {
+                failTask("FAILED", "Nav2 未就绪: " + error);
+                return false;
+            }
             const auto generation = ++action_generation_;
             awaiting_response_ = true;
             action_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -273,8 +281,13 @@ namespace agv_bridge
                     feedback(handle, value);
             };
             try { client->async_send_goal(goal, options); }
-            catch (const std::exception &e) { failTask("FAILED", std::string("提交导航动作失败: ") + e.what()); }
+            catch (const std::exception &e) {
+                failTask("FAILED", std::string("提交导航动作失败: ") + e.what());
+                return false;
+            }
+            return true;
         }
+        friend struct NavigationManagerTestPeer;
         void checkActionProgress();
         rclcpp::TimerBase::SharedPtr action_watchdog_;
         std::uint64_t action_generation_ = 0;
@@ -284,9 +297,12 @@ namespace agv_bridge
         std::chrono::steady_clock::time_point action_deadline_;
         struct LifecycleCheck {
             rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedPtr client;
+            std::string name;
             bool pending = false;
             bool active = false;
             std::chrono::steady_clock::time_point checked;
+            std::chrono::steady_clock::time_point responded;
+            std::uint64_t request_generation = 0;
         };
         std::vector<LifecycleCheck> lifecycle_checks_;
 

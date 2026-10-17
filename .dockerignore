@@ -14,3 +14,6 @@ my_bag*
 serverProjects
 runtime
 .env
+
+# Offline Docker delivery artifacts
+delivery/

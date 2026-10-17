@@ -94,8 +94,10 @@ namespace agv_bridge
             RCLCPP_WARN(logger_, "Follow path action server not available");
         }
 
-        for (const auto &name : {"controller_server", "planner_server", "behavior_server", "bt_navigator"}) {
+        for (const auto &name : {"controller_server", "smoother_server", "planner_server", "behavior_server",
+                                 "bt_navigator", "waypoint_follower", "velocity_smoother"}) {
             LifecycleCheck check;
+            check.name = name;
             check.client = node_->create_client<lifecycle_msgs::srv::GetState>(std::string(name) + "/get_state");
             lifecycle_checks_.push_back(std::move(check));
         }
@@ -138,7 +140,7 @@ namespace agv_bridge
             std::bind(&NavigationManager::resultCallback, this, std::placeholders::_1);
 
         // 发送导航目标
-        dispatchGoal<NavigateToPose>(nav_action_client_, goal_msg, send_goal_options);
+        if (!dispatchGoal<NavigateToPose>(nav_action_client_, goal_msg, send_goal_options)) return false;
 
         setState(NavigationState::EXECUTING);
 
@@ -232,7 +234,7 @@ namespace agv_bridge
         auto send_goal_options = rclcpp_action::Client<nav2_msgs::action::Spin>::SendGoalOptions();
         send_goal_options.goal_response_callback = std::bind(&NavigationManager::spinGoalResponseCallback, this, std::placeholders::_1);
         send_goal_options.result_callback = std::bind(&NavigationManager::spinResultCallback, this, std::placeholders::_1);
-        dispatchGoal<Spin>(spin_client_, goal_msg, send_goal_options);
+        if (!dispatchGoal<Spin>(spin_client_, goal_msg, send_goal_options)) return false;
         return true;
     }
 
@@ -310,7 +312,7 @@ namespace agv_bridge
                 send_goal_options.result_callback =
                     std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
 
-                dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options);
+                if (!dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options)) return;
 
                 RCLCPP_INFO(logger_, "倒车旋转完成,开始倒车移动");
             }
@@ -428,7 +430,7 @@ namespace agv_bridge
         send_goal_options.result_callback =
             std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
 
-        dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options);
+        if (!dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options)) return false;
         setState(NavigationState::BACKING_UP); // 使用倒车状态
 
         RCLCPP_INFO(logger_,
@@ -566,7 +568,7 @@ namespace agv_bridge
         send_goal_options.result_callback =
             std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
 
-        dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options);
+        if (!dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options)) return false;
 
         setState(NavigationState::EXECUTING);
 
@@ -718,7 +720,7 @@ namespace agv_bridge
             std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
 
         // 发送目标
-        dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options);
+        if (!dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options)) return false;
         setState(NavigationState::EXECUTING);
         return true;
     }
@@ -922,12 +924,53 @@ namespace agv_bridge
 
     bool NavigationManager::isReady() const
     {
+        return readinessError().empty();
+    }
+
+    std::string NavigationManager::readinessError() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!initialized_) return "导航管理器尚未初始化";
+        if (unsafe_generation_ != 0) return "上一条底层动作尚未确认停止";
+        const auto now = std::chrono::steady_clock::now();
+        if (lifecycle_checks_.empty()) return "Nav2 生命周期状态尚未取得";
+        for (const auto &check : lifecycle_checks_) {
+            if (!check.active) return check.name + " 未激活或状态查询失败";
+            if (now - check.responded > std::chrono::seconds(3))
+                return check.name + " 生命周期状态已过期";
+        }
+        if (!spin_client_->action_server_is_ready() || !follow_path_client_->action_server_is_ready())
+            return "Nav2 动作服务尚未就绪";
+        return {};
+    }
+
+    bool NavigationManager::isStackActive() const
+    {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         const auto now = std::chrono::steady_clock::now();
-        if (!initialized_ || lifecycle_checks_.empty() || unsafe_generation_ != 0) return false;
+        if (!initialized_ || lifecycle_checks_.empty()) return false;
         for (const auto &check : lifecycle_checks_)
-            if (!check.active || now - check.checked > std::chrono::seconds(3)) return false;
+            if (!check.active || now - check.responded > std::chrono::seconds(3)) return false;
         return spin_client_->action_server_is_ready() && follow_path_client_->action_server_is_ready();
+    }
+
+    void NavigationManager::resetAfterServerShutdown()
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        // Only call after the owned Nav2 process group has exited.
+        unsafe_generation_ = 0;
+        ++action_generation_;
+        awaiting_response_ = cancel_pending_ = false;
+        for (auto &check : lifecycle_checks_) {
+            ++check.request_generation;
+            check.client->prune_pending_requests();
+            check.pending = check.active = false;
+            check.responded = {};
+        }
+        if (current_task_) failTask("FAILED", "Nav2 生命周期异常，导航已停止；恢复后请重新下发任务");
+        nav_goal_handle_.reset();
+        follow_path_goal_handle_.reset();
+        spin_goal_handle_.reset();
     }
 
     void NavigationManager::checkActionProgress()
@@ -937,6 +980,7 @@ namespace agv_bridge
         for (std::size_t i = 0; i < lifecycle_checks_.size(); ++i) {
             auto &check = lifecycle_checks_[i];
             if (check.pending && now - check.checked > std::chrono::seconds(3)) {
+                ++check.request_generation;
                 check.client->prune_pending_requests();
                 check.pending = false;
                 check.active = false;
@@ -945,13 +989,19 @@ namespace agv_bridge
             check.checked = now;
             if (!check.client->service_is_ready()) { check.active = false; continue; }
             check.pending = true;
+            const auto request_generation = ++check.request_generation;
             check.client->async_send_request(std::make_shared<lifecycle_msgs::srv::GetState::Request>(),
-                [this, i](rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedFuture future) {
+                [this, i, request_generation](rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedFuture future) {
                     std::lock_guard<std::recursive_mutex> lock(mutex_);
                     auto &entry = lifecycle_checks_[i];
+                    if (entry.request_generation != request_generation) return;
                     entry.pending = false;
-                    entry.active = future.get()->current_state.id == 3; // PRIMARY_STATE_ACTIVE
-                    entry.checked = std::chrono::steady_clock::now();
+                    try { entry.active = future.get()->current_state.id == 3; }
+                    catch (const std::exception &e) {
+                        entry.active = false;
+                        RCLCPP_WARN(logger_, "%s 状态查询失败: %s", entry.name.c_str(), e.what());
+                    }
+                    entry.responded = std::chrono::steady_clock::now();
                 });
         }
         if (current_task_ && (awaiting_response_ || cancel_pending_) && now >= action_deadline_) {
