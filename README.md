@@ -1,5 +1,11 @@
 # 仿真机器人+agv_bridge节点
 
+## 建图 / 定位 / 导航（bridge 统一托管）
+
+仿真单独启动，其余节点只启动 bridge 一个入口，由它托管定位/建图/Nav2 并支持
+`slam_algorithm:=cartographer|lightning` 后端切换。完整步骤见
+[docs/mapping_and_localization.md](docs/mapping_and_localization.md)。
+
 ## 三舵轮 3D 雷达＋UR5e 上装（新组合入口）
 
 上装的模型、安装参数、控制/规划配置集中在 `src/simulated_chassis_ur5e`；通用 bridge 和原有纯底盘入口保留。

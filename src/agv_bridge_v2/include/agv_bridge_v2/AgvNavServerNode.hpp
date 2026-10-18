@@ -22,6 +22,7 @@
 #include "cartographer_ros_msgs/srv/start_trajectory.hpp"
 #include "cartographer_ros_msgs/srv/get_trajectory_states.hpp"
 #include "nav2_msgs/srv/save_map.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
 
 #include "agv_bridge_v2/NavigationManager.hpp"
 #include "agv_bridge_v2/LocalizationMonitor.hpp"
@@ -30,6 +31,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <atomic>
 #include <thread>
@@ -197,12 +199,41 @@ namespace agv_bridge
         /// @brief 调用常驻 map_saver_server 从 /map 保存 pgm/yaml，并校验文件。
         bool call_save_map(const std::string &stem, std::string &error);
 
+        /// @brief 同步执行子进程（fork/exec + 独立进程组 + 超时逐级终止），
+        /// 供 `ros2 service call /lightning/save_map` 等无编译期依赖的调用使用。
+        bool run_child_sync(const std::vector<std::string> &argv, const char *log_path,
+                            int timeout_sec, std::string &error);
+
+        /// @brief 调 lightning /lightning/save_map 保存地图目录，并校验落盘文件。
+        /// 通过 ros2 CLI 子进程调用，避免 agv_bridge_v2 编译期依赖 lightning 接口包
+        ///（lightning-lm 默认 COLCON_IGNORE，不随桥接一起构建）。
+        bool call_lightning_save_map(const std::string &map_name, std::string &error);
+
         /// @brief 拉起只加载冻结地图的 Cartographer，并通过 /start_trajectory 启动定位。
+        /// @param map_artifact cartographer：pbstream 绝对路径；lightning：地图目录绝对路径
         bool start_managed_localization(
-            const std::string &pbstream_abs_path,
+            const std::string &map_artifact,
             const std::string &map_name,
             const geometry_msgs::msg::Pose *initial_pose,
             std::string &error);
+
+        /// @brief lightning 定位拉起：spawn lightning_loc.launch.py（map_dir/init_* 参数），
+        /// 就绪判定 = 进程存活 + /tracked_pose 出现新消息（无 cartographer 式服务可等）。
+        bool start_lightning_localization(
+            const std::string &map_dir,
+            const std::string &map_name,
+            const geometry_msgs::msg::Pose *initial_pose,
+            std::string &error);
+
+        /// @brief 当前后端下地图工件是否齐备（carto: pbstream；lightning: map.yaml+global.pcd）
+        bool hasMapArtifact(const std::string &map_name) const;
+
+        /// @brief 当前后端的地图工件路径（carto: pbstream；lightning: 地图目录）
+        std::string mapArtifactPath(const std::string &map_name) const;
+
+        /// @brief 建图/定位期间最近一帧 /tracked_pose（超龄返回 nullopt）。
+        /// lightning SLAM 无 map→base TF，save_map 的初始位姿从这里取。
+        std::optional<geometry_msgs::msg::PoseStamped> freshTrackedPose(double max_age_sec) const;
 
         bool load_remembered_pose(const std::string &map_name, geometry_msgs::msg::Pose &pose) const;
         bool save_remembered_pose(const std::string &map_name,
@@ -238,6 +269,10 @@ namespace agv_bridge
         std::string localization_configuration_basename_;
         std::string slam_launch_package_;                    // 空 = 用 robot_package_
         std::string slam_launch_file_ = "slam.launch.py";
+        std::string slam_algorithm_ = "cartographer";        // cartographer | lightning
+        bool use_lightning_ = false;                         // slam_algorithm_ == "lightning"
+        std::string lightning_slam_launch_file_ = "lightning_slam.launch.py";
+        std::string lightning_localization_launch_file_ = "lightning_loc.launch.py";
 
         // ===== 状态 =====
         std::atomic<bool> control_stopped_{false};
@@ -281,6 +316,16 @@ namespace agv_bridge
         rclcpp::Publisher<AgvStatus>::SharedPtr status_pub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
         rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
+        // /tracked_pose 探活（lightning 定位就绪判定 + 建图期位姿来源；
+        // best_effort 订阅兼容 reliable/best_effort 两种发布端）
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr tracked_pose_sub_;
+        std::atomic<int64_t> tracked_pose_count_{0};
+        mutable std::mutex tracked_pose_mutex_;
+        geometry_msgs::msg::PoseStamped last_tracked_pose_;
+        std::chrono::steady_clock::time_point last_tracked_pose_time_{};
+        // F2:SLAM 健康自检 —— /map 新鲜度（slam_alive / map_age_sec 字段数据源）
+        rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+        std::atomic<int64_t> last_map_wall_sec_{0};
         std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
         rclcpp::TimerBase::SharedPtr status_timer_;

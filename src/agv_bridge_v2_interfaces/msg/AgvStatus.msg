@@ -34,3 +34,9 @@ string mode
 # 当前加载的定位地图名（maps_dir 下三件套的文件名主干，不含扩展名）；
 # 未记录 / 未知时为空
 string map_name
+
+# ---- F2 建图链路规范化：SLAM 健康自检（上位机仅提示用，不作判定）----
+# 最近 5 秒内是否收到过 /map（建图期 = SLAM 在出图；定位期 = map_server 有图）
+bool slam_alive
+# 最近一帧 /map 距今秒数（wall clock；从未收到过为 -1）
+int32 map_age_sec

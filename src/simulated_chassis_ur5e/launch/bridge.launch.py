@@ -14,10 +14,12 @@ def generate_launch_description():
     defaults = {'agv_id': 'AGV001', 'port': '9090', 'address': '0.0.0.0', 'maps_dir': 'maps',
         'pbstream_file': '', 'manage_navigation': 'true', 'back_up_max_heading_error_deg': '20.0',
         'rviz': 'false', 'allow_fault_injection': 'false',
+        'slam_algorithm': 'cartographer',
         'mounting_file': path('config', 'mounting.yaml'),
         'teach_points_file': '~/.ros/arm_manager/mobile_ur5e_teach_points.json'}
     bridge_args = {key: LaunchConfiguration(key) for key in (
-        'agv_id', 'port', 'address', 'maps_dir', 'pbstream_file', 'manage_navigation', 'back_up_max_heading_error_deg')}
+        'agv_id', 'port', 'address', 'maps_dir', 'pbstream_file', 'manage_navigation',
+        'back_up_max_heading_error_deg', 'slam_algorithm')}
     bridge_args.update({'robot_package': 'simulated_chassis', 'use_sim_time': 'true',
         'navigation_use_rviz': 'false',
         'topics_sub_glob': "['/odom', '/tf', '/tf_static', '/map', '/plan', '/local_plan', '/joint_states', '/agv/status', '/scan_1', '/scan_2', '/agv/pose', '/arm_manager/status']",

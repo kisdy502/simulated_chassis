@@ -1,0 +1,14 @@
+# 机械臂/腰部关节运动指令（F1 机械臂仿真接入）
+# 上位机通过 rosbridge 调用：
+#   {"op":"call_service","id":"a1","service":"/agv/arm_move",
+#    "args":{"arm":"left","joints":[0,0,0,0,0,0,0],"duration_sec":3.0}}
+#
+# 语义：受理后异步插值执行（s 型加减速，10~20Hz 步进），执行进度通过
+# /joint_states 自然体现；执行期间 /agv/status.mode 维持现状，不引入新模式。
+# 同一组（left/right/waist）上一条指令未完成时受理失败，可先查 /joint_states 判断。
+string arm        # "left" | "right" | "waist"
+float64[] joints  # 目标关节角（弧度）。left/right 各 7 个，waist 2 个
+float64 duration_sec  # 插值时长（秒），建议 1.0~30.0，取值范围 [0.05, 300]
+---
+bool success
+string message

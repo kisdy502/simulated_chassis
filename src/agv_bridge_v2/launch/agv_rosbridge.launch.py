@@ -37,16 +37,19 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def _resolve_maps_dir(context):
-    """maps_dir 显式指定时用之；否则从 pbstream_file 推导绝对路径
-    （<...>/maps/<name>/<name>.pbstream -> <...>/maps）。
+    """maps_dir 显式指定时用之；否则从 pbstream_file 推导绝对路径。
+    （cartographer: <...>/maps/<name>/<name>.pbstream -> <...>/maps；
+     lightning: <...>/maps/<name>/ 或目录内任意文件 -> <...>/maps）。
     相对默认值 "maps" 会跟随启动时的 cwd，换目录启动会让 list_maps
     扫到错误位置（地图管理/导入列表为空的根因）。"""
     explicit = LaunchConfiguration("maps_dir").perform(context).strip()
     if explicit and explicit != "maps":
         return explicit
-    pb = LaunchConfiguration("pbstream_file").perform(context).strip()
+    pb = os.path.abspath(LaunchConfiguration("pbstream_file").perform(context).strip())
     if pb:
-        derived = os.path.dirname(os.path.dirname(os.path.abspath(pb)))
+        if os.path.isdir(pb):
+            return os.path.dirname(pb) or "maps"
+        derived = os.path.dirname(os.path.dirname(pb))
         if derived:
             return derived
     return "maps"
@@ -60,6 +63,9 @@ def _agv_nav_server_node(context):
     robot_package = LaunchConfiguration("robot_package")
     localization_launch_file = LaunchConfiguration("localization_launch_file")
     slam_launch_file = LaunchConfiguration("slam_launch_file")
+    slam_algorithm = LaunchConfiguration("slam_algorithm")
+    lightning_slam_launch_file = LaunchConfiguration("lightning_slam_launch_file")
+    lightning_localization_launch_file = LaunchConfiguration("lightning_localization_launch_file")
     manage_arg = LaunchConfiguration("manage_navigation").perform(context).lower()
     manage_navigation = (robot_package.perform(context) == "simulated_chassis"
                          if manage_arg == "auto" else manage_arg == "true")
@@ -92,6 +98,9 @@ def _agv_nav_server_node(context):
                 'navigation_use_rviz': ParameterValue(LaunchConfiguration('navigation_use_rviz'), value_type=bool),
                 "localization_launch_file": localization_launch_file,
                 "slam_launch_file": slam_launch_file,
+                "slam_algorithm": slam_algorithm,
+                "lightning_slam_launch_file": lightning_slam_launch_file,
+                "lightning_localization_launch_file": lightning_localization_launch_file,
             }
         ],
     )]
@@ -184,6 +193,22 @@ def generate_launch_description():
             default_value="slam.launch.py",
             description="建图 launch 文件名（在 robot_package 内）",
         ),
+        DeclareLaunchArgument(
+            "slam_algorithm",
+            default_value="cartographer",
+            choices=["cartographer", "lightning"],
+            description="SLAM 后端：cartographer（pbstream 三件套）或 lightning（点云地图目录）",
+        ),
+        DeclareLaunchArgument(
+            "lightning_slam_launch_file",
+            default_value="lightning_slam.launch.py",
+            description="lightning 建图 launch 文件名（在 robot_package 内）",
+        ),
+        DeclareLaunchArgument(
+            "lightning_localization_launch_file",
+            default_value="lightning_loc.launch.py",
+            description="lightning 定位 launch 文件名（在 robot_package 内）",
+        ),
 
         # ==== 下发：上位机 publish 的 topic（rosbridge 语义：gates advertise/publish）====
         # /cmd_vel        —— 手动点动（经 cmd_vel_relay 转发到底盘）
@@ -217,7 +242,8 @@ def generate_launch_description():
             "services_glob",
             default_value=(
                 "['/rosapi/*', '/agv/set_control', '/agv/get_map', '/agv/load_map', "
-                "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize']"
+                "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize', "
+                "'/agv/arm_move']"
             ),
             description="允许上位机调用的 service 白名单",
         ),
@@ -267,7 +293,7 @@ def generate_launch_description():
                 "topics_sub_glob": topics_sub_glob,
                 "services_glob": services_glob,
                 # 参数只允许访问本节点，防止远端改掉 nav2 关键参数
-                "params_glob": ParameterValue("['/agv_nav_server/*']", value_type=str),
+                "params_glob": ParameterValue("['/agv_nav_server/*', '/robot_state_publisher/*']", value_type=str),
             }
         ],
     )
@@ -285,7 +311,7 @@ def generate_launch_description():
                 "topics_pub_glob": topics_pub_glob,
                 "topics_sub_glob": topics_sub_glob,
                 "services_glob": services_glob,
-                "params_glob": ParameterValue("['/agv_nav_server/*']", value_type=str),
+                "params_glob": ParameterValue("['/agv_nav_server/*', '/robot_state_publisher/*']", value_type=str),
                 "params_timeout": 5.0,
             }
         ],

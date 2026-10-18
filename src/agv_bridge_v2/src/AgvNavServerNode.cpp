@@ -89,21 +89,49 @@ namespace agv_bridge
         // 工作线程才能可靠收到 /start_trajectory 的响应。
         if (!pbstream_file_.empty())
         {
-            const std::string pbstream_abs = absolute_path(pbstream_file_);
-            const std::string name = file_stem(pbstream_abs);
+            std::string artifact = absolute_path(pbstream_file_);
+            std::string name;
+            if (use_lightning_)
+            {
+                // lightning：pbstream_file 允许传地图目录（…/maps/foo）或目录内任意文件
+                //（…/maps/foo/global.pcd）；统一解析为地图目录 + 地图名
+                while (artifact.size() > 1 && artifact.back() == '/') artifact.pop_back();
+                struct stat st
+                {
+                };
+                const auto baseName = [](const std::string &p)
+                {
+                    const auto slash = p.rfind('/');
+                    return slash == std::string::npos ? p : p.substr(slash + 1);
+                };
+                if (::stat(artifact.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+                {
+                    name = baseName(artifact);
+                }
+                else
+                {
+                    const auto slash = artifact.rfind('/');
+                    artifact = slash == std::string::npos ? "" : artifact.substr(0, slash);
+                    name = baseName(artifact);
+                }
+            }
+            else
+            {
+                name = file_stem(artifact);
+            }
             {
                 std::lock_guard<std::mutex> lock(mode_mutex_);
                 map_name_ = name;
                 mode_ = MODE_RELOCALIZING;
             }
             transition_in_progress_.store(true);
-            transition_thread_ = std::thread([this, pbstream_abs, name]()
+            transition_thread_ = std::thread([this, artifact, name]()
             {
                 geometry_msgs::msg::Pose remembered_pose;
                 const bool has_pose = load_remembered_pose(name, remembered_pose);
                 std::string error;
                 if (!start_managed_localization(
-                        pbstream_abs, name, has_pose ? &remembered_pose : nullptr, error))
+                        artifact, name, has_pose ? &remembered_pose : nullptr, error))
                 {
                     RCLCPP_ERROR(this->get_logger(), "初始定位启动失败: %s (has_pose=%d)",
                                  error.c_str(), has_pose);
@@ -181,6 +209,10 @@ namespace agv_bridge
         this->declare_parameter<std::string>("localization_configuration_basename", "");
         this->declare_parameter<std::string>("slam_launch_package", "");
         this->declare_parameter<std::string>("slam_launch_file", "slam.launch.py");
+        // ===== SLAM 算法选择：cartographer（默认）| lightning（dev-lightning 分支接入）=====
+        this->declare_parameter<std::string>("slam_algorithm", "cartographer");
+        this->declare_parameter<std::string>("lightning_slam_launch_file", "lightning_slam.launch.py");
+        this->declare_parameter<std::string>("lightning_localization_launch_file", "lightning_loc.launch.py");
         // 注意：use_sim_time 由 rclcpp 内置自动声明，这里只能读取，不能重复 declare
 
         this->get_parameter("agv_id", agv_id_);
@@ -199,6 +231,18 @@ namespace agv_bridge
         this->get_parameter("localization_configuration_basename", localization_configuration_basename_);
         this->get_parameter("slam_launch_package", slam_launch_package_);
         this->get_parameter("slam_launch_file", slam_launch_file_);
+        this->get_parameter("slam_algorithm", slam_algorithm_);
+        this->get_parameter("lightning_slam_launch_file", lightning_slam_launch_file_);
+        this->get_parameter("lightning_localization_launch_file", lightning_localization_launch_file_);
+
+        if (slam_algorithm_ != "cartographer" && slam_algorithm_ != "lightning")
+        {
+            RCLCPP_FATAL(this->get_logger(),
+                         "slam_algorithm 非法: '%s'（仅支持 cartographer | lightning）",
+                         slam_algorithm_.c_str());
+            throw std::runtime_error("invalid slam_algorithm: " + slam_algorithm_);
+        }
+        use_lightning_ = slam_algorithm_ == "lightning";
 
         // 定位/建图 launch 包名缺省跟随机器人包
         if (localization_launch_package_.empty())
@@ -269,6 +313,32 @@ namespace agv_bridge
                         "再 /agv/save_map 保存后自动进入定位（navigation launch 请传 "
                         "include_localization:=false，避免 cartographer 双开）");
         }
+
+        // /tracked_pose 探活：lightning 定位就绪判定 + lightning 建图期位姿来源
+        //（SLAM 模式无 map→base TF，save_map 的初始位姿从这里取）。
+        // best_effort 订阅与 reliable 发布端兼容（反向不兼容，故不用默认 QoS）。
+        tracked_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+            "/tracked_pose", rclcpp::SensorDataQoS(),
+            [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+            {
+                std::lock_guard<std::mutex> lock(tracked_pose_mutex_);
+                last_tracked_pose_ = *msg;
+                last_tracked_pose_time_ = std::chrono::steady_clock::now();
+                tracked_pose_count_.fetch_add(1, std::memory_order_relaxed);
+            });
+
+        // F2:SLAM 健康自检 —— /map 新鲜度。volatile 订阅与周期发布端
+        //（lightning 1Hz / cartographer occupancy_grid）和 latched 端均兼容
+        map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+            "/map", rclcpp::QoS(5),
+            [this](const nav_msgs::msg::OccupancyGrid::SharedPtr)
+            {
+                last_map_wall_sec_.store(
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
+                        .count(),
+                    std::memory_order_relaxed);
+            });
     }
 
     void AgvNavServerNode::create_status_publishers()
@@ -633,11 +703,20 @@ namespace agv_bridge
             response->message = "地图名非法（非空且不含路径分隔符）: '" + name + "'";
             return;
         }
-        if (!map_file_manager_ || !map_file_manager_->hasPbstream(name))
+        if (!map_file_manager_)
         {
             response->success = false;
-            response->message = "地图目录下不存在 " + name +
-                                ".pbstream（load_map 需要 pbstream，可用 /agv/list_maps 查看）";
+            response->message = "地图管理未初始化（maps_dir 参数无效）";
+            return;
+        }
+        if (!hasMapArtifact(name))
+        {
+            response->success = false;
+            response->message = use_lightning_
+                ? "地图目录 " + map_file_manager_->mapDirectory(name) +
+                  " 不完整（lightning 需 map.yaml 与 global.pcd，可用 /agv/list_maps 查看）"
+                : "地图目录下不存在 " + name +
+                  ".pbstream（load_map 需要 pbstream，可用 /agv/list_maps 查看）";
             return;
         }
 
@@ -692,12 +771,12 @@ namespace agv_bridge
             map_name_ = name;
         }
 
-        const std::string pbstream_abs = map_file_manager_->pbstreamPath(name);
+        const std::string map_artifact = mapArtifactPath(name);
         if (transition_thread_.joinable())
         {
             transition_thread_.join();
         }
-        transition_thread_ = std::thread([this, pbstream_abs, name]()
+        transition_thread_ = std::thread([this, map_artifact, name]()
         {
             RCLCPP_INFO(this->get_logger(), "load_map(%s)：停止旧定位进程...", name.c_str());
             stop_child_process(localization_pid_, "定位");
@@ -708,7 +787,7 @@ namespace agv_bridge
             RCLCPP_INFO(this->get_logger(), "load_map(%s)：以%s初始位姿重启定位...",
                         name.c_str(), has_pose ? "记忆的" : "全局搜索");
             if (!start_managed_localization(
-                    pbstream_abs, name, has_pose ? &remembered_pose : nullptr, error))
+                    map_artifact, name, has_pose ? &remembered_pose : nullptr, error))
             {
                 RCLCPP_ERROR(this->get_logger(),
                              "load_map(%s)：定位进程重启失败: %s", name.c_str(), error.c_str());
@@ -739,10 +818,12 @@ namespace agv_bridge
             response->message = "地图名或 x/y/yaw 非法";
             return;
         }
-        if (!map_file_manager_ || !map_file_manager_->hasPbstream(name))
+        if (!map_file_manager_ || !hasMapArtifact(name))
         {
             response->success = false;
-            response->message = "地图不存在或缺少 pbstream: " + name;
+            response->message = use_lightning_
+                ? "lightning 地图不存在或不完整（需 map.yaml 与 global.pcd）: " + name
+                : "地图不存在或缺少 pbstream: " + name;
             return;
         }
         {
@@ -772,7 +853,7 @@ namespace agv_bridge
         pose.position.y = request->y;
         pose.position.z = 0.0;
         pose.orientation = TransformUtils::yaw_to_quaternion(request->yaw);
-        const std::string pbstream_abs = map_file_manager_->pbstreamPath(name);
+        const std::string map_artifact = mapArtifactPath(name);
 
         {
             std::lock_guard<std::mutex> lock(mode_mutex_);
@@ -780,11 +861,11 @@ namespace agv_bridge
             mode_ = MODE_RELOCALIZING;
         }
         if (transition_thread_.joinable()) transition_thread_.join();
-        transition_thread_ = std::thread([this, name, pbstream_abs, pose]()
+        transition_thread_ = std::thread([this, name, map_artifact, pose]()
         {
             stop_child_process(localization_pid_, "定位");
             std::string error;
-            if (!start_managed_localization(pbstream_abs, name, &pose, error))
+            if (!start_managed_localization(map_artifact, name, &pose, error))
             {
                 RCLCPP_ERROR(this->get_logger(), "relocalize(%s) 失败: %s",
                              name.c_str(), error.c_str());
@@ -865,14 +946,26 @@ namespace agv_bridge
             stop_child_process(localization_pid_, "定位");
 
             RCLCPP_INFO(this->get_logger(), "start_mapping：拉起建图进程...");
-            if (!spawn_ros_launch(
-                    slam_launch_package_, slam_launch_file_,
-                    {useSimTimeArg(use_sim_time_)},
-                    slam_pid_, "/tmp/agv_slam.log"))
+            std::string package, file;
+            std::vector<std::string> extra{useSimTimeArg(use_sim_time_)};
+            if (use_lightning_)
+            {
+                // lightning 建图：save_dir 指到地图根目录，save_map 落盘
+                // <maps_dir>/<map_id>/（map_id 即 /agv/save_map 的 map_name）
+                package = slam_launch_package_;
+                file = lightning_slam_launch_file_;
+                extra.insert(extra.begin(), "save_dir:=" + map_file_manager_->mapsDir());
+            }
+            else
+            {
+                package = slam_launch_package_;
+                file = slam_launch_file_;
+            }
+            if (!spawn_ros_launch(package, file, extra, slam_pid_, "/tmp/agv_slam.log"))
             {
                 RCLCPP_ERROR(this->get_logger(),
                              "start_mapping：建图进程启动失败，请检查 %s / %s 与日志 /tmp/agv_slam.log",
-                             slam_launch_package_.c_str(), slam_launch_file_.c_str());
+                             package.c_str(), file.c_str());
                 std::lock_guard<std::mutex> lock(mode_mutex_);
                 mode_ = MODE_NAVIGATION;
             }
@@ -926,18 +1019,25 @@ namespace agv_bridge
             return;
         }
 
-        std::string directory_error;
-        if (!map_file_manager_->ensureMapDirectory(name, directory_error))
+        // cartographer：预先建目录（map_saver/write_state 只写文件不自建）；
+        // lightning：目录由 /lightning/save_map 自建（上游对已存在目录的行为未验证，
+        // 不预创建）。
+        std::string stem;
+        std::string pbstream_abs;
+        if (!use_lightning_)
         {
-            transition_in_progress_.store(false);
-            response->success = false;
-            response->message = directory_error;
-            return;
+            std::string directory_error;
+            if (!map_file_manager_->ensureMapDirectory(name, directory_error))
+            {
+                transition_in_progress_.store(false);
+                response->success = false;
+                response->message = directory_error;
+                return;
+            }
+            // 新地图统一保存到 maps/<name>/<name>.*，不再平铺到 maps 根目录。
+            stem = map_file_manager_->mapStem(name);
+            pbstream_abs = stem + ".pbstream";
         }
-
-        // 新地图统一保存到 maps/<name>/<name>.*，不再平铺到 maps 根目录。
-        const std::string stem = map_file_manager_->mapStem(name);
-        const std::string pbstream_abs = stem + ".pbstream";
         // 建图结束时 map→base_link 已知；保存这份位姿并用它启动新图定位，
         // 避免新轨迹错误地从地图原点开始。
         const auto mapping_pose = localization_monitor_ ?
@@ -946,6 +1046,67 @@ namespace agv_bridge
         if (transition_thread_.joinable())
         {
             transition_thread_.join();
+        }
+        if (use_lightning_)
+        {
+            transition_thread_ = std::thread([this, name]()
+            {
+                // 建图末期位姿要在调用保存服务之前取：保存（pcd 落盘+栅格渲染）
+                // 可能持续数十秒，取早了就超龄了。lightning 无 map→base TF，
+                // 位姿来源是 /tracked_pose（SLAM 亦发布）；缺失时退回建图起点。
+                const auto mapping_pose = freshTrackedPose(10.0);
+                if (!mapping_pose.has_value())
+                {
+                    RCLCPP_WARN(this->get_logger(),
+                                "save_map(%s)：无新鲜 /tracked_pose，定位将以建图起点（单位位姿）启动",
+                                name.c_str());
+                }
+
+                // 1. 调 /lightning/save_map 落盘：分块 pcd + global.pcd + map.pgm/map.yaml
+                std::string error;
+                RCLCPP_INFO(this->get_logger(), "save_map(%s)：调用 /lightning/save_map ...", name.c_str());
+                if (!call_lightning_save_map(name, error))
+                {
+                    RCLCPP_ERROR(this->get_logger(),
+                                 "save_map(%s)：lightning 保存失败: %s（mode 保持 MAPPING，可重试）",
+                                 name.c_str(), error.c_str());
+                    transition_in_progress_.store(false);
+                    return;
+                }
+
+                // 2. 停建图，用新图拉起定位
+                RCLCPP_INFO(this->get_logger(), "save_map(%s)：停止建图进程，拉起定位...", name.c_str());
+                stop_child_process(slam_pid_, "建图");
+
+                {
+                    std::lock_guard<std::mutex> lock(mode_mutex_);
+                    map_name_ = name;
+                    mode_ = MODE_RELOCALIZING;
+                }
+                const geometry_msgs::msg::Pose *initial_pose =
+                    mapping_pose.has_value() ? &mapping_pose->pose : nullptr;
+                if (!start_managed_localization(mapArtifactPath(name), name, initial_pose, error))
+                {
+                    RCLCPP_ERROR(this->get_logger(),
+                                 "save_map(%s)：定位进程启动失败: %s", name.c_str(), error.c_str());
+                    std::lock_guard<std::mutex> lock(mode_mutex_);
+                    mode_ = MODE_NAVIGATION;
+                }
+                else if (initial_pose && !save_remembered_pose(name, *initial_pose, error))
+                {
+                    RCLCPP_WARN(this->get_logger(), "新图定位已启动，但保存初始位姿失败: %s", error.c_str());
+                }
+                transition_in_progress_.store(false);
+                // 收敛后由 update_localization_monitor 把 RELOCALIZING 切回 NAVIGATION
+            });
+
+            response->success = true;
+            response->map_name = name;
+            response->message = "保存与定位重启已发起：保存失败时 mode 保持 MAPPING，"
+                                "成功则 RELOCALIZING -> NAVIGATION";
+
+            RCLCPP_INFO(this->get_logger(), "save_map(%s) -> 已发起（lightning）", name.c_str());
+            return;
         }
         transition_thread_ = std::thread([this, name, pbstream_abs, stem, mapping_pose]()
         {
@@ -1121,6 +1282,21 @@ namespace agv_bridge
             msg.active_node_id = active_node_id_;
         }
 
+        // F2:SLAM 健康自检（上位机仅提示用;建图期 /map 间隔契约 ≤5s）
+        const int64_t last_map = last_map_wall_sec_.load(std::memory_order_relaxed);
+        if (last_map > 0)
+        {
+            const int64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            msg.map_age_sec = static_cast<int32_t>(std::max<int64_t>(now_sec - last_map, 0));
+            msg.slam_alive = msg.map_age_sec <= 5;
+        }
+        else
+        {
+            msg.map_age_sec = -1;
+            msg.slam_alive = false;
+        }
+
         status_pub_->publish(msg);
     }
 
@@ -1170,21 +1346,21 @@ namespace agv_bridge
             }
             name = map_name_;
         }
-        if (!map_file_manager_ || !map_file_manager_->hasPbstream(name))
+        if (!map_file_manager_ || !hasMapArtifact(name))
         {
-            RCLCPP_ERROR(this->get_logger(), "自动重启跳过：地图 %s 无 pbstream", name.c_str());
+            RCLCPP_ERROR(this->get_logger(), "自动重启跳过：地图 %s 的定位工件缺失", name.c_str());
             return;
         }
         if (transition_in_progress_.exchange(true))
         {
             return; // 已有模式切换在途（可能是正常 load_map/save_map），不打扰
         }
-        const std::string pbstream_abs = map_file_manager_->pbstreamPath(name);
+        const std::string map_artifact = mapArtifactPath(name);
         if (transition_thread_.joinable())
         {
             transition_thread_.join();
         }
-        transition_thread_ = std::thread([this, pbstream_abs, name]()
+        transition_thread_ = std::thread([this, map_artifact, name]()
         {
             RCLCPP_WARN(this->get_logger(), "自动重启定位（地图 %s）...", name.c_str());
             geometry_msgs::msg::Pose remembered_pose;
@@ -1195,7 +1371,7 @@ namespace agv_bridge
                 mode_ = MODE_RELOCALIZING;
             }
             if (!start_managed_localization(
-                    pbstream_abs, name, has_pose ? &remembered_pose : nullptr, error))
+                    map_artifact, name, has_pose ? &remembered_pose : nullptr, error))
             {
                 RCLCPP_ERROR(this->get_logger(), "自动重启失败: %s，5s 后重试一次", error.c_str());
                 if (!sleepInterruptible(5s, shutting_down_))
@@ -1204,7 +1380,7 @@ namespace agv_bridge
                     return;
                 }
                 if (!start_managed_localization(
-                        pbstream_abs, name, has_pose ? &remembered_pose : nullptr, error))
+                        map_artifact, name, has_pose ? &remembered_pose : nullptr, error))
                 {
                     RCLCPP_ERROR(this->get_logger(),
                                  "自动重启二次失败: %s，放弃（需人工介入，mode=NAVIGATION）", error.c_str());
@@ -1795,11 +1971,16 @@ namespace agv_bridge
     }
 
     bool AgvNavServerNode::start_managed_localization(
-        const std::string &pbstream_abs_path,
+        const std::string &map_artifact,
         const std::string &map_name,
         const geometry_msgs::msg::Pose *initial_pose,
         std::string &error)
     {
+        if (use_lightning_)
+        {
+            return start_lightning_localization(map_artifact, map_name, initial_pose, error);
+        }
+        const std::string &pbstream_abs_path = map_artifact;
         stop_managed_navigation();
         if (localization_monitor_) localization_monitor_->reset();
         if (!spawn_ros_launch(
@@ -2073,6 +2254,216 @@ namespace agv_bridge
             return false;
         }
         return true;
+    }
+
+    bool AgvNavServerNode::run_child_sync(const std::vector<std::string> &argv,
+                                          const char *log_path, int timeout_sec,
+                                          std::string &error)
+    {
+        std::string persistent_log;
+        if (const char *directory = std::getenv("AGV_PROCESS_LOG_DIR"))
+        {
+            if (*directory)
+            {
+                const std::string original(log_path);
+                persistent_log = std::string(directory) + "/" +
+                    original.substr(original.find_last_of('/') + 1);
+                log_path = persistent_log.c_str();
+            }
+        }
+        const pid_t pid = ::fork();
+        if (pid < 0)
+        {
+            error = std::string("fork 失败: ") + std::strerror(errno);
+            return false;
+        }
+        if (pid == 0)
+        {
+            ::setpgid(0, 0);
+            const int fd = ::open(log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd >= 0)
+            {
+                ::dup2(fd, STDOUT_FILENO);
+                ::dup2(fd, STDERR_FILENO);
+                if (fd > STDERR_FILENO)
+                {
+                    ::close(fd);
+                }
+            }
+            ::signal(SIGINT, SIG_DFL);
+            ::signal(SIGTERM, SIG_DFL);
+            std::vector<char *> raw;
+            raw.reserve(argv.size() + 1);
+            for (const auto &arg : argv)
+            {
+                raw.push_back(const_cast<char *>(arg.c_str()));
+            }
+            raw.push_back(nullptr);
+            ::execvp(raw[0], raw.data());
+            ::_exit(127);
+        }
+        ::setpgid(pid, pid);
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
+        int status = 0;
+        bool reaped = false;
+        while (!shutting_down_.load() && rclcpp::ok() && !reaped &&
+               std::chrono::steady_clock::now() < deadline)
+        {
+            const pid_t r = ::waitpid(pid, &status, WNOHANG);
+            if (r == pid || (r < 0 && errno == ECHILD))
+            {
+                reaped = true;
+                break;
+            }
+            std::this_thread::sleep_for(100ms);
+        }
+        if (!reaped)
+        {
+            RCLCPP_WARN(this->get_logger(), "子进程超时（%ds），逐级终止: %s",
+                        timeout_sec, argv.empty() ? "" : argv[0].c_str());
+            ::kill(-pid, SIGINT);
+            for (int i = 0; i < 30 && ::waitpid(pid, &status, WNOHANG) == 0; ++i)
+            {
+                std::this_thread::sleep_for(100ms);
+            }
+            ::kill(-pid, SIGTERM);
+            for (int i = 0; i < 20 && ::waitpid(pid, &status, WNOHANG) == 0; ++i)
+            {
+                std::this_thread::sleep_for(100ms);
+            }
+            ::kill(-pid, SIGKILL);
+            while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+            error = "子进程超时被终止（详见 " + std::string(log_path) + "）";
+            return false;
+        }
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        {
+            return true;
+        }
+        error = "子进程退出码 " +
+                std::to_string(WIFEXITED(status) ? WEXITSTATUS(status) : -1) +
+                "（详见 " + std::string(log_path) + "）";
+        return false;
+    }
+
+    bool AgvNavServerNode::call_lightning_save_map(const std::string &map_name,
+                                                   std::string &error)
+    {
+        // 不引入编译期依赖：通过 ros2 CLI 调用。slam_algorithm:=lightning 时
+        // lightning 包必然已编译安装（定位/建图 launch 都依赖其可执行文件），
+        // 接口类型 lightning/srv/SaveMap 在运行环境可用。
+        if (!run_child_sync({"ros2", "service", "call", "/lightning/save_map",
+                             "lightning/srv/SaveMap", "{map_id: " + map_name + "}"},
+                            "/tmp/agv_lightning_save.log", 300, error))
+        {
+            return false;
+        }
+        const std::string directory = map_file_manager_->mapDirectory(map_name);
+        struct stat st {};
+        if (::stat((directory + "/map.yaml").c_str(), &st) != 0 || st.st_size <= 0 ||
+            ::stat((directory + "/global.pcd").c_str(), &st) != 0 || st.st_size <= 0)
+        {
+            error = "save_map 服务已返回，但 " + directory +
+                    " 下 map.yaml/global.pcd 缺失或为空（响应码见 /tmp/agv_lightning_save.log）";
+            return false;
+        }
+        return true;
+    }
+
+    bool AgvNavServerNode::start_lightning_localization(
+        const std::string &map_dir,
+        const std::string &map_name,
+        const geometry_msgs::msg::Pose *initial_pose,
+        std::string &error)
+    {
+        stop_managed_navigation();
+        if (localization_monitor_) localization_monitor_->reset();
+
+        double x = 0.0, y = 0.0, z = 0.0, yaw = 0.0;
+        if (initial_pose != nullptr)
+        {
+            x = initial_pose->position.x;
+            y = initial_pose->position.y;
+            z = initial_pose->position.z;
+            yaw = TransformUtils::quaternion_to_yaw(initial_pose->orientation);
+        }
+        // lightning 无全局重定位：无初始位姿时等于建图起点（与上游行为一致）
+        const int64_t baseline = tracked_pose_count_.load();
+        if (!spawn_ros_launch(
+                localization_launch_package_, lightning_localization_launch_file_,
+                {"map_dir:=" + map_dir,
+                 "init_x:=" + std::to_string(x),
+                 "init_y:=" + std::to_string(y),
+                 "init_z:=" + std::to_string(z),
+                 "init_yaw:=" + std::to_string(yaw),
+                 "with_map_server:=true",
+                 useSimTimeArg(use_sim_time_)},
+                localization_pid_, "/tmp/agv_localization.log"))
+        {
+            error = "无法拉起 lightning 定位 launch（详见 /tmp/agv_localization.log）";
+            return false;
+        }
+
+        // 就绪判定：launch 秒退（map_dir 非法等）→ 失败；否则等 /tracked_pose
+        // 出现新消息（点云地图分块加载可能较慢，放宽到 120s）。
+        // 直接盯 spawn 返回的 pid：监督定时器可能先收割并清空槽位，
+        // waitpid 返回 ECHILD 同样说明进程已死。
+        pid_t spawned = -1;
+        {
+            std::lock_guard<std::mutex> lock(proc_mutex_);
+            spawned = localization_pid_;
+        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
+        while (rclcpp::ok() && !shutting_down_.load() &&
+               std::chrono::steady_clock::now() < deadline)
+        {
+            if (spawned > 0)
+            {
+                const pid_t r = ::waitpid(spawned, nullptr, WNOHANG);
+                if (r == spawned || (r < 0 && errno == ECHILD))
+                {
+                    error = "lightning 定位进程启动后即退出（详见 /tmp/agv_localization.log）";
+                    return false;
+                }
+            }
+            if (tracked_pose_count_.load() > baseline)
+            {
+                RCLCPP_INFO(this->get_logger(), "地图 %s lightning 定位已启动%s",
+                            map_name.c_str(), initial_pose ? "（使用指定初始位姿）" : "（默认建图起点）");
+                return true;
+            }
+            if (!sleepInterruptible(1s, shutting_down_)) break;
+        }
+        if (shutting_down_.load() || !rclcpp::ok()) return false;
+        error = "lightning 定位 120 秒内未发布 /tracked_pose（地图加载失败或点云话题无数据，"
+                "详见 /tmp/agv_localization.log）";
+        stop_child_process(localization_pid_, "定位");
+        return false;
+    }
+
+    bool AgvNavServerNode::hasMapArtifact(const std::string &map_name) const
+    {
+        if (!map_file_manager_) return false;
+        return use_lightning_ ? map_file_manager_->hasLightningMap(map_name)
+                              : map_file_manager_->hasPbstream(map_name);
+    }
+
+    std::string AgvNavServerNode::mapArtifactPath(const std::string &map_name) const
+    {
+        return use_lightning_ ? map_file_manager_->mapDirectory(map_name)
+                              : map_file_manager_->pbstreamPath(map_name);
+    }
+
+    std::optional<geometry_msgs::msg::PoseStamped> AgvNavServerNode::freshTrackedPose(
+        double max_age_sec) const
+    {
+        std::lock_guard<std::mutex> lock(tracked_pose_mutex_);
+        if (last_tracked_pose_time_.time_since_epoch().count() == 0) return std::nullopt;
+        const auto age = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - last_tracked_pose_time_);
+        if (age.count() > max_age_sec) return std::nullopt;
+        return last_tracked_pose_;
     }
 
 } // namespace agv_bridge

@@ -58,6 +58,9 @@ namespace agv_bridge
         /// @brief pbstream 文件是否存在（load_map 的前置条件）
         bool hasPbstream(const std::string &map_name) const;
 
+        /// @brief lightning 地图是否齐备（<name>/map.yaml + <name>/global.pcd）
+        bool hasLightningMap(const std::string &map_name) const;
+
         /// @brief pbstream 绝对路径（优先子目录，兼容旧平铺文件）
         std::string pbstreamPath(const std::string &map_name) const;
 

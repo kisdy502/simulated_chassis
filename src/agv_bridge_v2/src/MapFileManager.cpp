@@ -144,12 +144,15 @@ namespace agv_bridge
             }
 
             // 新结构：maps/<name>/<name>.{yaml,pgm,pbstream}
+            // lightning 布局：maps/<name>/{map.yaml,map.pgm,...}（文件名字面固定）
             const std::string child_path = joinPath(maps_dir_, filename);
             if (isValidMapName(filename) && directoryExists(child_path))
             {
-                if (fileExists(joinPath(child_path, filename + ".yaml")))
+                if (fileExists(joinPath(child_path, filename + ".yaml")) ||
+                    fileExists(joinPath(child_path, "map.yaml")))
                     yaml_names.insert(filename);
-                if (fileExists(joinPath(child_path, filename + ".pgm")))
+                if (fileExists(joinPath(child_path, filename + ".pgm")) ||
+                    fileExists(joinPath(child_path, "map.pgm")))
                     pgm_names.insert(filename);
                 if (fileExists(joinPath(child_path, filename + ".pbstream")))
                     pbstream_names.insert(filename);
@@ -246,6 +249,14 @@ namespace agv_bridge
         return fileExists(pbstreamPath(map_name));
     }
 
+    bool MapFileManager::hasLightningMap(const std::string &map_name) const
+    {
+        const std::string directory = mapDirectory(map_name);
+        // map.yaml（g2p5 栅格，get_map/map_server 用）+ global.pcd（定位用点云地图）
+        return fileExists(joinPath(directory, "map.yaml")) &&
+               fileExists(joinPath(directory, "global.pcd"));
+    }
+
     bool MapFileManager::isValidMapName(const std::string &map_name)
     {
         if (map_name.empty() || map_name.size() > 128)
@@ -273,17 +284,20 @@ namespace agv_bridge
         bool has_resolution = false;
         bool has_origin = false;
         std::string line;
-        while (std::getline(in, line))
-        {
-            const std::string text = trim(line);
+
+        // 解析单行 key: value；返回 true 表示是有效字段行。
+        // origin 的行内数组形式（cartographer 风格）在这里处理，
+        // 块序列形式（lightning 风格）由外层消费后转成行内形式再进来。
+        const auto parseKeyValue = [&](const std::string &raw, std::string &parse_error) -> bool {
+            const std::string text = trim(raw);
             if (text.empty() || text[0] == '#')
             {
-                continue;
+                return true;
             }
             const auto colon = text.find(':');
             if (colon == std::string::npos)
             {
-                continue;
+                return true;
             }
             const std::string key = trim(text.substr(0, colon));
             const std::string value = trim(text.substr(colon + 1));
@@ -302,7 +316,7 @@ namespace agv_bridge
                 {
                     if (!parseOrigin(value, meta.origin_x, meta.origin_y, meta.origin_yaw))
                     {
-                        error = "origin 字段格式非法: " + value;
+                        parse_error = "origin 字段格式非法: " + value;
                         return false;
                     }
                     has_origin = true;
@@ -322,7 +336,84 @@ namespace agv_bridge
             }
             catch (const std::exception &e)
             {
-                error = "yaml 字段解析失败 (" + key + "): " + e.what();
+                parse_error = "yaml 字段解析失败 (" + key + "): " + e.what();
+                return false;
+            }
+            return true;
+        };
+
+        while (std::getline(in, line))
+        {
+            const std::string text = trim(line);
+            if (text.empty() || text[0] == '#')
+            {
+                continue;
+            }
+            const auto colon = text.find(':');
+            if (colon == std::string::npos)
+            {
+                continue;
+            }
+            const std::string key = trim(text.substr(0, colon));
+            const std::string value = trim(text.substr(colon + 1));
+
+            if (key == "origin" && value.empty())
+            {
+                // lightning map.yaml 的 origin 写成块序列（每行一个 "- x"）：
+                //   origin:
+                //     - -19.45
+                //     - -17.4
+                //     - 0
+                // 收集数字；遇到非 "-" 开头的行说明序列结束，该行是下一个字段，
+                // 直接按普通字段行解析（putback 整行并不可靠）。
+                std::vector<double> parts;
+                std::string block_line;
+                while (std::getline(in, block_line))
+                {
+                    const std::string block_text = trim(block_line);
+                    if (block_text.empty())
+                    {
+                        continue;
+                    }
+                    if (block_text[0] != '-')
+                    {
+                        std::string block_error;
+                        if (!parseKeyValue(block_line, block_error))
+                        {
+                            error = block_error;
+                            return false;
+                        }
+                        break;
+                    }
+                    try
+                    {
+                        parts.push_back(std::stod(trim(block_text.substr(1))));
+                    }
+                    catch (const std::exception &)
+                    {
+                        break;
+                    }
+                    if (parts.size() >= 3)
+                    {
+                        break;
+                    }
+                }
+                if (parts.size() < 2)
+                {
+                    error = "origin 字段格式非法（块序列元素不足）";
+                    return false;
+                }
+                meta.origin_x = parts[0];
+                meta.origin_y = parts[1];
+                meta.origin_yaw = parts.size() >= 3 ? parts[2] : 0.0;
+                has_origin = true;
+                continue;
+            }
+
+            std::string parse_error;
+            if (!parseKeyValue(line, parse_error))
+            {
+                error = parse_error;
                 return false;
             }
         }
@@ -429,9 +520,20 @@ namespace agv_bridge
             return false;
         }
         const std::string nested_yaml = mapStem(map_name) + ".yaml";
-        const std::string yaml_path = fileExists(nested_yaml)
-                                          ? nested_yaml
-                                          : joinPath(maps_dir_, map_name + ".yaml");
+        std::string yaml_path;
+        if (fileExists(nested_yaml))
+        {
+            yaml_path = nested_yaml;
+        }
+        else if (fileExists(joinPath(mapDirectory(map_name), "map.yaml")))
+        {
+            // lightning 布局：<name>/map.yaml（image: map.pgm 与 yaml 同目录）
+            yaml_path = joinPath(mapDirectory(map_name), "map.yaml");
+        }
+        else
+        {
+            yaml_path = joinPath(maps_dir_, map_name + ".yaml");
+        }
         YamlMeta meta;
         if (!parseYaml(yaml_path, meta, error))
         {
