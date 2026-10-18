@@ -144,20 +144,34 @@ flowchart LR
 
 ### 3.1 业务接口总表
 
-`agv_nav_server` 是 rosbridge 架构下的「瘦节点」，对外只有 3 个业务接口 + 1 条 TF：
+`agv_nav_server` 是 rosbridge 架构下的「瘦节点」，对外接口：
 
 | 接口 | 类型 | 方向 | 说明 |
 |---|---|---|---|
 | `/agv/follow_edge` | action（`agv_bridge_v2_interfaces/action/FollowEdge`） | 下发 | **移动控制唯一入口**：直线 / 贝塞尔曲线 / 倒车，带指令 ID 对账、400ms 位姿反馈、可取消 |
 | `/agv/set_control` | service（`agv_bridge_v2_interfaces/srv/SetControl`） | 下发 | `start`（恢复接单）/ `stop`（停车+暂停接单）/ `reset`（复位） |
-| `/agv/status` | topic（`agv_bridge_v2_interfaces/msg/AgvStatus`，1Hz） | 上报 | 业务状态（含「定位是否收敛」门控） |
+| `/agv/status` | topic（`agv_bridge_v2_interfaces/msg/AgvStatus`，1Hz） | 上报 | 业务状态（含 mode 地图机、slam_alive 健康提示） |
+| `/agv/pose` | topic（`geometry_msgs/msg/PoseStamped`，10Hz） | 上报 | map 系位姿（与 TF 同源，免解析 /tf 混帧） |
+| `/agv/start_mapping` | service（`srv/StartMapping`） | 下发 | 进入建图：mode→MAPPING，导航任务被拒、`/cmd_vel` 遥控可用 |
+| `/agv/save_map` | service（`srv/SaveMap`，`{map_name}`） | 下发 | 保存建图并自动用新图重启定位（MAPPING 态才可调） |
+| `/agv/load_map` | service（`srv/LoadMap`，`{map_name}`） | 下发 | 切换定位地图（重启定位，mode: RELOCALIZING→NAVIGATION） |
+| `/agv/list_maps` | service（`srv/ListMaps`） | 上报查询 | 列出 maps 目录下可加载地图 |
+| `/agv/get_map` | service（`srv/GetMap`，`{map_name}`） | 上报查询 | 导出某张地图 OccupancyGrid（保存成功后档案入库用） |
+| `/agv/relocalize` | service（`srv/Relocalize`，`{map_name,x,y,yaw}`） | 下发 | 在地图坐标中重启定位 |
+| `/agv/arm_move` | service（`srv/ArmMove`，`{arm,joints[],duration_sec}`） | 下发 | 双臂/腰关节插值运动（仅 `simulated_dual_arm` profile 提供，F1 契约） |
 | TF `map → AGV001/base_link` | tf（10Hz） | 上报 | 机器人全局位姿（走 `/tf` 话题透出） |
+
+**mode 状态机**（`/agv/status.mode` 是建图链路唯一事实源，上位机勿用其他信号判定）：
+`NAVIGATION`（默认）↔ `MAPPING`（start_mapping 进入）↔ `RELOCALIZING`（save_map/load_map
+切换中，收敛后自动回 NAVIGATION）。MAPPING/RELOCALIZING 下 follow_edge 直接 REJECT。
 
 ### 3.2 原生话题透传（白名单内）
 
 bridge 未加工、rosbridge 直接透传的标准话题：
 
-- 上报（subscribe）：`/odom`、`/tf`、`/tf_static`、`/map`、`/plan`、`/local_plan`、`/joint_states`
+- 上报（subscribe）：`/odom`、`/tf`、`/tf_static`、`/map`、`/plan`、`/local_plan`、
+  `/joint_states`、`/scan_1`、`/scan_2`、`/agv/pose`
+  （`simulated_dual_arm` profile 另含 `/tracked_pose`）
 - 下发（publish）：`/cmd_vel`（由 cmd_vel_relay 转发到底盘控制器）、`/initialpose`、`/goal_pose`
 
 ### 3.3 旧私有协议 → rosbridge 命令映射（迁移参考）
@@ -191,12 +205,19 @@ bridge 未加工、rosbridge 直接透传的标准话题：
   "battery":100.0,
   "pose_initialized":true,
   "active_command_id":"move_0ca1e7b0-9a9f-470e-9a16-10035ac4237c",
-  "active_node_id":"I006"
+  "active_node_id":"I006",
+  "mode":"NAVIGATION",
+  "map_name":"map0921",
+  "slam_alive":true,
+  "map_age_sec":1
 }}
 ```
 
 `state` 取值：`IDLE / PRE_ROTATING / EXECUTING / BACKING_UP / END_ROTATING / COMPLETED / FAILED / CANCELLED / STOPPED`。
 `pose_initialized=false` 时**不要下发导航指令**（节点会直接 abort）。
+`mode`：`NAVIGATION / MAPPING / RELOCALIZING`（建图链路唯一判定源，见 §3.1 状态机）；
+`map_name`：当前定位地图名；`slam_alive`/`map_age_sec`：最近一帧 `/map` 新鲜度
+（建图活跃提示用，**不作判定条件**；从未收到过 /map 时 map_age_sec=-1）。
 该话题使用 `transient_local` QoS：rosbridge 的订阅会持续收到 1Hz 数据流，客户端接入后最多等一个周期即可拿到状态。
 
 ### 4.2 `/tf` —— 机器人实时位姿（10Hz，推荐的位置来源）
@@ -231,9 +252,11 @@ yaw 解算：`theta = 2*atan2(qz, qw)`（平面机器人 roll/pitch≈0 时成�
 含位姿 + 线/角速度，频率高。注意它是 **odom 坐标系**，与地图存在定位漂移偏差；
 要在地图上画车，用 4.2 的 map 系 TF 最准。
 
-### 4.4 `/map` —— 栅格地图（Cartographer，约 1Hz）
+### 4.4 `/map` —— 栅格地图（建图期 ≤5s 周期 / 定位期 latched）
 
-`nav_msgs/OccupancyGrid`：
+`nav_msgs/OccupancyGrid`。SLAM 后端可切（`slam_algorithm:=cartographer|lightning`），
+两者行为契约一致：**MAPPING 期间周期发布（间隔 ≤5s，lightning 为 1Hz）**；
+定位期由 map_server latched 发布（TRANSIENT_LOCAL，接入即得最后一帧）。
 
 ```json
 {"op":"publish","topic":"/map","msg":{
@@ -247,6 +270,7 @@ yaw 解算：`theta = 2*atan2(qz, qw)`（平面机器人 roll/pitch≈0 时成�
 - `data` 为 int8 数组，行优先；`-1`=未知，`0`=空闲，`1~100`=占据
 - 尺寸估算：400×400=16 万个数字 ≈ 400~600KB JSON。
   **订阅时加 `"throttle_rate":5000,"queue_length":1,"fragment_size":500000`**
+- 建图结束后取最终栅格入库：调 `/agv/get_map {map_name}`（save_map 成功后必可得）
 - 渲染公式见 7.2
 
 ### 4.5 `/plan`、`/local_plan` —— 导航路径
@@ -254,9 +278,18 @@ yaw 解算：`theta = 2*atan2(qz, qw)`（平面机器人 roll/pitch≈0 时成�
 `nav_msgs/Path`：`{"poses":[{header:{frame_id:"map"}, pose:{position, orientation}}, ...]}`。
 页面上依次连线，配合 `/map` 展示「机器人要走/在走的路线」。
 
-### 4.6 `/joint_states` —— 底盘关节（可选）
+### 4.6 `/joint_states` —— 底盘舵轮 + 上装关节（3D 模型驱动用）
 
-三舵轮转向角，调试用，业务页面可忽略。
+`sensor_msgs/msg/JointState`，10~20Hz。内容随 profile 不同：
+
+| profile | 内容 | 关节命名 |
+|---|---|---|
+| 纯底盘 | 三舵轮转向+滚动（6 个） | `wheel_*_steering_joint`（含 `steer`）、`wheel_*_wheel_joint` |
+| `simulated_chassis_ur5e` | + UR5e 单臂 6 轴 | `ur5e_*_joint`（评估链路，非 F1 契约） |
+| `simulated_dual_arm`（F1） | + 双臂 14 + 腰 2（合并单帧发布） | `arm_left_joint_1..7` / `arm_right_joint_1..7` / `waist_joint_1..2` |
+
+URDF 读取：`/rosapi/get_param {node:"/robot_state_publisher", param:"robot_description"}`
+（params_glob 已放行）；mesh 经 `http://<host>:8090/<pkg>/<相对路径>` 静态服务获取。
 
 ### 4.7 `/rosapi/*` —— 图元数据与 DTO 自动生成
 

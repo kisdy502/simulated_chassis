@@ -7,21 +7,46 @@ HTTP 通信代码，只暴露标准 ROS 2 接口，由 `rosbridge_server` 对外
 
 ## 对外接口
 
+`agv_nav_server` 业务接口全表（rosbridge 架构「瘦节点」，白名单见 launch）：
+
 | 接口 | 类型 | 说明 |
 |---|---|---|
 | `/agv/follow_edge` | `agv_bridge_v2_interfaces/action/FollowEdge` | 直线 / 贝塞尔曲线 / 倒车移动 |
 | `/agv/set_control` | `agv_bridge_v2_interfaces/srv/SetControl` | start / stop / reset |
-| `/agv/status` | `agv_bridge_v2_interfaces/msg/AgvStatus` | 1Hz 状态上报（transient_local） |
-| `map -> <agv_id>/base_link` | TF | 车体位姿 |
+| `/agv/status` | `agv_bridge_v2_interfaces/msg/AgvStatus` | 1Hz 状态上报（transient_local；含 mode/map_name/slam_alive/map_age_sec） |
+| `/agv/pose` | `geometry_msgs/msg/PoseStamped` | 10Hz 位姿（map 系，与 TF 同源，免解析 /tf） |
+| `/agv/start_mapping` | `srv/StartMapping` | 进入建图（mode=MAPPING） |
+| `/agv/save_map` | `srv/SaveMap` | 保存建图并自动回到定位 |
+| `/agv/load_map` | `srv/LoadMap` | 切换定位地图 |
+| `/agv/list_maps` | `srv/ListMaps` | 列出可加载地图 |
+| `/agv/get_map` | `srv/GetMap` | 导出某张地图栅格（建图后入库用） |
+| `/agv/relocalize` | `srv/Relocalize` | 指定坐标重启定位 |
+| `/agv/arm_move` | `srv/ArmMove` | 双臂/腰关节运动（`simulated_dual_arm` profile 提供，F1 契约） |
+| TF `map → <agv_id>/base_link` | TF | 车体位姿 |
 
-上位机同时通过 rosbridge 直接访问仿真侧的标准话题（白名单在 launch 中配置）：
+上位机同时通过 rosbridge 直接访问仿真侧的标准话题（默认白名单）：
 
-- 上报（subscribe）：`/odom`、`/tf`、`/tf_static`、`/map`、`/plan`、`/local_plan`、`/joint_states`
+- 上报（subscribe）：`/odom`、`/tf`、`/tf_static`、`/map`、`/plan`、`/local_plan`、
+  `/joint_states`、`/scan_1`、`/scan_2`、`/agv/status`、`/agv/pose`
 - 下发（publish）：`/cmd_vel`、`/initialpose`、`/goal_pose`
+- 参数读取（params_glob）：`/agv_nav_server/*`、`/robot_state_publisher/*`
+  （后者用于 `GET /api/v1/robot/urdf` 读 `robot_description`，F1.3）
+
+**profile 差异**（同一 bridge,launch 入口不同附加能力）：
+
+| 入口 | 附加内容 |
+|---|---|
+| `agv_bridge_v2 agv_rosbridge.launch.py` | 无附加（纯底盘） |
+| `simulated_chassis_ur5e bridge.launch.py` | + MoveIt/arm_manager（`/arm_manager/*` 接口、`/arm_manager/status` 话题） |
+| `simulated_dual_arm bridge.launch.py` | + `/agv/arm_move`、合并 `/joint_states`（舵轮+双臂 14+腰 2）、8090 mesh 静态服务 |
+
+**SLAM 后端**：`slam_algorithm:=cartographer|lightning`（默认 cartographer）。
+两后端 `/agv/*` 接口与 mode 语义完全一致；建图期契约（/map ≤5s、TF ≥10Hz）由
+lightning 补丁 #8 保证。地图根目录固定为工作区 `maps/`，每图独立子目录。
 
 ⚠️ **不开放**：`/points2_1`、`/points2_2`（双 3D 雷达点云，JSON 编码数 MB/帧）、
 `/imu`（>100Hz）、`/clock`。本仿真栈**没有** `/scan` 和 `/amcl_pose`
-（3D 雷达 + Cartographer 纯定位，非 AMCL）。详见 `docs/rosbridge_integration.md` 第 4.8 节。
+（3D 雷达纯定位，非 AMCL）。详见 `docs/rosbridge_integration.md` 第 4.8 节。
 
 ## 目录
 
