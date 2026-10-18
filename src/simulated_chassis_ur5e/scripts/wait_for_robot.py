@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Bounded readiness check, using wall clock even if simulation is paused."""
+import re
 import time
 import xml.etree.ElementTree as ET
 import rclpy
@@ -11,6 +12,10 @@ from std_msgs.msg import String
 
 
 def geometry(xml):
+    # mesh URI 归一化:Gazebo 版描述用 file://绝对路径,robot_state_publisher 版用
+    # package://(上位机 mesh 重写需要),两者仅此差异不代表模型不同,比对前统一
+    xml = re.sub(r'file://[^"\']*?/share/([\w.-]+)/', r'pkg://\1/', xml)
+    xml = xml.replace('package://', 'pkg://')
     root = ET.fromstring(xml)
     for tag in ('gazebo', 'ros2_control'):
         for element in list(root.findall(tag)):

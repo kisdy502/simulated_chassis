@@ -1,6 +1,7 @@
 """Build one combined model and derive prefixed MoveIt parameters from upstream."""
 import copy
 import os
+import re
 import yaml
 import xacro
 from ament_index_python.packages import get_package_share_directory as share
@@ -23,16 +24,22 @@ def merged_controllers():
     return result
 
 
-def robot_description(controllers_file=None, mounting_file=None, sim_ignition=True):
+def robot_description(controllers_file=None, mounting_file=None, package_meshes=False):
     """组合模型描述。
 
-    sim_ignition=True: mesh 为 file:// 绝对路径(Gazebo 拉起用);
-    sim_ignition=False: package:// 形式(robot_state_publisher 用,上位机前端
-    按 VITE_URDF_MESH_BASE 重写后经 8090 静态服务拉取)。"""
+    始终以 sim_ignition=true 生成:官方 ur 宏把「硬件插件选择」与「mesh 路径
+    形式」绑在同一开关上(sim_ignition=false 会选用真机驱动
+    ur_robot_driver/URPositionHardwareInterface,gz 侧加载失败、机械臂无硬件
+    接口)。robot_state_publisher 用的 package:// mesh 版通过 package_meshes
+    对 file:// 前缀做受控改写获得(上位机前端按 VITE_URDF_MESH_BASE 重写),
+    硬件块保持 IgnitionSystem 不变。"""
     mappings = {'controllers_file': controllers_file or path('config', 'controllers.yaml'),
                 'mounting_file': mounting_file or path('config', 'mounting.yaml'),
-                'sim_ignition': 'true' if sim_ignition else 'false'}
-    return {'robot_description': xacro.process_file(path('urdf', 'robot.urdf.xacro'), mappings=mappings).toxml()}
+                'sim_ignition': 'true'}
+    xml = xacro.process_file(path('urdf', 'robot.urdf.xacro'), mappings=mappings).toxml()
+    if package_meshes:
+        xml = re.sub(r'file://[^"\'<>]*?/share/([\w.-]+)/', r'package://\1/', xml)
+    return {'robot_description': xml}
 
 
 def moveit_parameters():

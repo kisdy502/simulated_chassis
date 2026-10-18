@@ -6,7 +6,7 @@ from launch.actions import (
     DeclareLaunchArgument, ExecuteProcess, TimerAction,
     RegisterEventHandler, SetEnvironmentVariable,
 )
-from launch.event_handlers import OnProcessStart
+from launch.event_handlers import OnProcessStart, OnShutdown
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, EnvironmentVariable, Command
 from launch.actions import OpaqueFunction
@@ -85,16 +85,44 @@ def generate_launch_description():
         output="screen",
     )
 
-    spawn_robot = Node(
-        package="ros_ign_gazebo",
-        executable="create",
-        arguments=[
-            "-name", robot_name,
-            "-topic", "/robot_description",
-            "-x", "0.0", "-y", "0.0", "-z", "0.01",
-        ],
-        output="screen",
-    )
+    # gz 生成改用 -file + 运行时展开的 URDF:此前 -topic /robot_description 依赖
+    # RSP 话题内容,而组合 profile 的 RSP 现发布 package:// mesh 版(上位机需要),
+    # 会让 gz 侧 ros2_control/加载链路受 mesh URI 形式影响;-file 与 RSP 彻底解耦
+    def materialize_description(context):
+        import tempfile
+        import xacro
+        source = LaunchConfiguration('description_file').perform(context)
+        if source.endswith('.xacro'):
+            handle = tempfile.NamedTemporaryFile(
+                prefix='three-wheel-gz-', suffix='.urdf', delete=False)
+            handle.write(xacro.process_file(source).toxml().encode('utf-8'))
+            handle.close()
+            cleanup = RegisterEventHandler(OnShutdown(on_shutdown=[
+                OpaqueFunction(function=lambda ctx: (os.unlink(handle.name), None)[1])]))
+            actions = [cleanup, Node(
+                package="ros_ign_gazebo",
+                executable="create",
+                arguments=[
+                    "-name", robot_name,
+                    "-file", handle.name,
+                    "-x", "0.0", "-y", "0.0", "-z", "0.01",
+                ],
+                output="screen",
+            )]
+        else:
+            actions = [Node(
+                package="ros_ign_gazebo",
+                executable="create",
+                arguments=[
+                    "-name", robot_name,
+                    "-file", source,
+                    "-x", "0.0", "-y", "0.0", "-z", "0.01",
+                ],
+                output="screen",
+            )]
+        return actions
+
+    spawn_robot = OpaqueFunction(function=materialize_description)
 
     spawn_after_gazebo = RegisterEventHandler(
         OnProcessStart(

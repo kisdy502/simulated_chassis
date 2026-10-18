@@ -15,17 +15,18 @@ def setup(context):
     # Materialize only the merged controller YAML and expanded model, not copies of chassis tuning.
     temporary = tempfile.TemporaryDirectory(prefix='three-wheel-ur5e-')
     controllers = os.path.join(temporary.name, 'controllers.yaml')
-    # 两份描述:gz 拉起用 file:// mesh;robot_state_publisher 用 package:// mesh
-    # (上位机前端按 VITE_URDF_MESH_BASE 重写 package:// 后经 8090 静态服务拉取)
+    # 两份描述:均以 sim_ignition=true 生成(硬件块=IgnitionSystem);RSP 版仅把
+    # mesh 前缀改写为 package://(上位机经 8090 拉取;gz 的 ros2_control 插件
+    # 也读 RSP 参数,硬件块必须保持仿真插件,详见 configuration.robot_description)
     description = os.path.join(temporary.name, 'robot.urdf')
     description_rsp = os.path.join(temporary.name, 'robot_rsp.urdf')
     with open(controllers, 'w', encoding='utf-8') as stream:
         yaml.safe_dump(merged_controllers(), stream)
     mounting = LaunchConfiguration('mounting_file').perform(context)
     with open(description, 'w', encoding='utf-8') as stream:
-        stream.write(robot_description(controllers, mounting, sim_ignition=True)['robot_description'])
+        stream.write(robot_description(controllers, mounting)['robot_description'])
     with open(description_rsp, 'w', encoding='utf-8') as stream:
-        stream.write(robot_description(controllers, mounting, sim_ignition=False)['robot_description'])
+        stream.write(robot_description(controllers, mounting, package_meshes=True)['robot_description'])
     cleanup = RegisterEventHandler(OnShutdown(on_shutdown=[OpaqueFunction(
         function=lambda context: temporary.cleanup())]))
     return [cleanup, IncludeLaunchDescription(PythonLaunchDescriptionSource(
