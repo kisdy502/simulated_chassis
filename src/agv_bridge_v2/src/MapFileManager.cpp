@@ -118,6 +118,12 @@ namespace agv_bridge
         {
             maps_dir_.pop_back();
         }
+        // 地图根目录不存在则创建(新建工作区/首次运行时,免得 save_map 找不到落盘处)
+        if (::mkdir(maps_dir_.c_str(), 0755) != 0 && errno != EEXIST)
+        {
+            RCLCPP_WARN(rclcpp::get_logger("MapFileManager"),
+                        "无法创建地图根目录 %s: %s", maps_dir_.c_str(), std::strerror(errno));
+        }
     }
 
     std::vector<MapFileManager::MapEntry> MapFileManager::listMaps(std::string *error) const

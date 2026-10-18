@@ -53,7 +53,9 @@ ros2 launch simulated_chassis_ur5e bridge.launch.py \
     slam_algorithm:=lightning pbstream_file:=$PWD/maps/my_map rviz:=true
 ```
 
-`pbstream_file` 两种后端的写法（`maps_dir` 缺省由它推导）：
+`pbstream_file` 两种后端的写法（`maps_dir` 缺省**固定为工作区根的 `maps/` 目录**，
+不随 bridge 启动目录漂移；可用环境变量 `SIM_WS_ROOT` 覆盖工作区定位，或显式传
+`maps_dir:=` 换位置。每次建图在 `maps/<地图名>/` 下生成独立子目录）：
 
 | 后端 | 写法 | 说明 |
 |---|---|---|

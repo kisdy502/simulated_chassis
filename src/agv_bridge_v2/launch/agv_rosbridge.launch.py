@@ -36,12 +36,35 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
+def _workspace_root():
+    """定位 colcon 工作区根目录(地图等运行时产物的固定锚点)。
+
+    优先级:环境变量 SIM_WS_ROOT(显式覆盖) > 从本 launch 文件真实路径向上
+    找同时含 src/ 与 install/ 的目录(symlink-install 时解析到 src 包路径,
+    拷贝安装时停在 install 一样能命中)。找不到返回 None。"""
+    env = os.environ.get("SIM_WS_ROOT")
+    if env:
+        return env
+    try:
+        here = os.path.dirname(os.path.realpath(__file__))
+    except Exception:
+        return None
+    for _ in range(6):
+        here = os.path.dirname(here)
+        if here in ("", "/"):
+            break
+        if os.path.isdir(os.path.join(here, "src")) and os.path.isdir(os.path.join(here, "install")):
+            return here
+    return None
+
+
 def _resolve_maps_dir(context):
-    """maps_dir 显式指定时用之；否则从 pbstream_file 推导绝对路径。
-    （cartographer: <...>/maps/<name>/<name>.pbstream -> <...>/maps；
-     lightning: <...>/maps/<name>/ 或目录内任意文件 -> <...>/maps）。
-    相对默认值 "maps" 会跟随启动时的 cwd，换目录启动会让 list_maps
-    扫到错误位置（地图管理/导入列表为空的根因）。"""
+    """地图根目录解析(决定 save_map 落盘与 list_maps 扫描位置)。
+
+    优先级:显式 maps_dir 参数 > 从 pbstream_file 推导 > 工作区根 maps/
+    （固定路径,不随 bridge 启动 cwd 漂移;历史教训:曾解析成启动目录本身,
+    地图散落到 ~/workspace/<name>)。每次建图在 <maps_dir>/<地图名>/ 下
+    生成独立子目录。"""
     explicit = LaunchConfiguration("maps_dir").perform(context).strip()
     if explicit and explicit != "maps":
         return explicit
@@ -52,6 +75,9 @@ def _resolve_maps_dir(context):
         derived = os.path.dirname(os.path.dirname(pb))
         if derived:
             return derived
+    root = _workspace_root()
+    if root:
+        return os.path.join(root, "maps")
     return "maps"
 
 
