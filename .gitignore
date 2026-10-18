@@ -44,8 +44,8 @@ Thumbs.db
 test_results/
 *.gtest.xml
 
-# Core dumps
-core
+# Core dumps（限定仓库根目录，避免误忽略 src/lightning-lm/src/core/ 等源码目录）
+/core
 *.core
 
 # Bag files (large recording files)

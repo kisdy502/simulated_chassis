@@ -77,6 +77,8 @@ def generate_launch_description():
         map_dir = os.path.abspath(LaunchConfiguration("map_dir").perform(context))
         with_map_server = LaunchConfiguration("with_map_server").perform(context).lower() in ("true", "1")
         use_sim_time = LaunchConfiguration("use_sim_time").perform(context)
+        # launch 字典参数保持 Python 类型：bool 参数必须传 bool
+        use_sim_time_bool = use_sim_time.lower() in ("true", "1")
 
         if not os.path.isdir(map_dir):
             raise RuntimeError(f"map_dir 不存在: {map_dir}（请先用 lightning_slam.launch.py 建图并 save_map）")
@@ -111,7 +113,7 @@ def generate_launch_description():
                         "target_frame": "base_link",
                         "time_mode": "zero",
                         "scan_period_ms": 66.7,
-                        "use_sim_time": use_sim_time,
+                        "use_sim_time": use_sim_time_bool,
                     }
                 ],
             ),
@@ -137,7 +139,7 @@ def generate_launch_description():
                         name="tracked_pose_tf_node",
                         output="screen",
                         parameters=[{
-                            "use_sim_time": use_sim_time,
+                            "use_sim_time": use_sim_time_bool,
                             "map_frame": "map",
                             "odom_frame": "odom",
                             "tracking_frame": "base_link",
@@ -160,14 +162,14 @@ def generate_launch_description():
                             executable="map_server",
                             name="map_server",
                             output="screen",
-                            parameters=[{"yaml_filename": map_yaml, "use_sim_time": use_sim_time}],
+                            parameters=[{"yaml_filename": map_yaml, "use_sim_time": use_sim_time_bool}],
                         ),
                         Node(
                             package="nav2_lifecycle_manager",
                             executable="lifecycle_manager",
                             name="lifecycle_manager_map",
                             output="screen",
-                            parameters=[{"node_names": ["map_server"], "autostart": True, "use_sim_time": use_sim_time}],
+                            parameters=[{"node_names": ["map_server"], "autostart": True, "use_sim_time": use_sim_time_bool}],
                         ),
                     ],
                 )

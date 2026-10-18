@@ -27,7 +27,9 @@ endif ()
 
 if (BUILD_WITH_MARCH_NATIVE)
     add_compile_options(-march=native)
-else ()
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
+    # sim-chassis 补丁：SSE 选项仅 x86 有效；arm64（如鲲鹏/树莓派控制器）下
+    # gcc 不识别 -msse*，直接跳过（NEON 默认开启）
     add_definitions(-msse -msse2 -msse3 -msse4 -msse4.1 -msse4.2)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3 -msse4 -msse4.1 -msse4.2")
 endif ()

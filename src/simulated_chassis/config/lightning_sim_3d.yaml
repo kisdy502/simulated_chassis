@@ -90,8 +90,10 @@ lidar_loc:
   enable_dynamic_polygon: false
   enable_parking_static: true
   enable_icp_adjust: false
-  filter_intensity_max: 100.0
-  filter_intensity_min: 10.0
+  # 仿真点云 intensity 恒为 0：强度过滤下限必须为 0，否则定位端匹配点被全部滤除
+  #（此前 loc 分值长期 0.49 的诱因之一）
+  filter_intensity_max: 1000.0
+  filter_intensity_min: 0.0
   filter_z_max: 30.0
   filter_z_min: -1.0
   force_2d: false

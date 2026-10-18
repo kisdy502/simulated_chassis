@@ -22,7 +22,8 @@
  */
 
 #include <geometry_msgs/msg/transform_stamped.hpp>
-#include <message_filters/approximate_time_policy.hpp>
+// ROS1 风格头文件名在 Humble 不存在，改用 ROS2 实际路径
+#include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <rclcpp/rclcpp.hpp>
@@ -55,8 +56,11 @@ public:
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
     pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(topic_out, 10);
 
-    sub_front_.subscribe(this, topic_front, rclcpp::SensorDataQoS());
-    sub_rear_.subscribe(this, topic_rear, rclcpp::SensorDataQoS());
+    // Humble 的 message_filters::subscribe 需要 rmw qos + options 四参形式
+    sub_front_.subscribe(this, topic_front, rmw_qos_profile_sensor_data,
+                         rclcpp::SubscriptionOptions());
+    sub_rear_.subscribe(this, topic_rear, rmw_qos_profile_sensor_data,
+                        rclcpp::SubscriptionOptions());
     sync_ = std::make_shared<Sync>(SyncPolicy(10), sub_front_, sub_rear_);
     sync_->registerCallback(
         std::bind(&DualLidarMergeNode::onCloudPair, this, std::placeholders::_1, std::placeholders::_2));

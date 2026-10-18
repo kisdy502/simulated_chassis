@@ -6,7 +6,7 @@
 
 | 位置 | 内容 |
 |---|---|
-| `src/lightning-lm/` | 上游 master 的 vendor 副本（去 .git），含 5 处接入补丁（见 §3） |
+| `src/lightning-lm/` | 上游 master 的 vendor 副本（去 .git），含接入补丁（见 §3）；`src/core/` 自上游 `1325fed` 恢复并重放补丁 #2/#3/#5 |
 | `src/simulated_chassis/src/dual_lidar_merge_node.cpp` | 新增：前后双雷达合流节点（lightning 只支持单雷达话题） |
 | `src/simulated_chassis/config/lightning_sim_3d.yaml` | 新增：lightning 仿真配置 |
 | `src/simulated_chassis/launch/lightning_slam.launch.py` | 新增：建图链路（对应 slam.launch.py） |
@@ -14,7 +14,7 @@
 
 Cartographer 侧所有文件零改动，两条链路可随时切换对比。
 
-## 2. 编译（Ubuntu 22.04 / ROS2 Humble，或项目 docker）
+## 2. 编译（Ubuntu 22.04 / ROS2 Humble，arm64 或 x86_64）
 
 ```bash
 # lightning 额外系统依赖（一次性）
@@ -22,12 +22,28 @@ sudo apt install libglog-dev libgflags-dev libyaml-cpp-dev
 # Pangolin-0.9.3（编译期必需；运行无 UI 也需要）
 cd /tmp && unzip $WS/src/lightning-lm/thirdparty/Pangolin-0.9.3.zip
 cd Pangolin && mkdir build && cd build && cmake .. && make -j && sudo make install
+```
 
-# 工作区编译（lightning 内嵌 livox 驱动已加 COLCON_IGNORE，不会重复构建）
-cd $WS
-colcon build --packages-select lightning simulated_chassis
+无 sudo 环境的 arm64 构建记录（Pangolin + epoxy 装到 `~/.local`，rpath 免环境变量）：
+
+```bash
+# 1) libepoxy（Pangolin 0.9.3 依赖，无 root 时 deb 解包到用户目录）
+apt download libepoxy-dev libepoxy0 && for d in *.deb; do dpkg -x "$d" ~/.local/stage; done
+mkdir -p ~/.local/lib ~/.local/include && cp -rn ~/.local/stage/usr/lib/*_linux-gnu/* ~/.local/lib/ && cp -rn ~/.local/stage/usr/include/* ~/.local/include/
+
+# 2) Pangolin（关 OpenEXR：arm64 上 char 无符号触发 -Werror）
+cmake -B build ../Pangolin-0.9.3 -DCMAKE_INSTALL_PREFIX=$HOME/.local -DBUILD_EXAMPLES=OFF \
+  -DBUILD_TESTS=OFF -DBUILD_TOOLS=OFF -DBUILD_PANGOLIN_LIBOPENEXR=OFF \
+  -DCMAKE_INSTALL_RPATH=$HOME/.local/lib -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
+make -j && make install
+
+# 3) 工作区编译（lightning 不支持 --symlink-install：嵌套 livox 子包冲突；
+#    且默认带 COLCON_IGNORE，直接 --packages-select 会报 unknown package）
+cd $WS && ./scripts/build_lightning.sh
 source install/setup.bash
 ```
+
+注意：8GB 内存机器上 lightning 编译需降并行（`make -j2`），-j8 会 OOM。`lightning-lm` 保留 `COLCON_IGNORE`：默认全量 `colcon build` 不依赖 Pangolin 环境（`install/lightning` 一次装好后运行不受影响），改代码后用上面第 3 步命令显式重编（**不能加 `--symlink-install`**，且该模式与其它包的 symlink 构建混用会损坏 `ament_cmake_python` 缓存目录，出现 "existing path cannot be removed: Is a directory" 时删掉对应 `build/<pkg>/ament_cmake_python` 重试）。
 
 ## 3. lightning-lm 接入补丁清单（vendor 内修改，均带 `sim-chassis 补丁` 注释）
 
@@ -39,6 +55,9 @@ source install/setup.bash
 | 4 | `src/app/run_loc_online.cc` | 支持 `loc.init_pose: [x,y,z,qx,qy,qz,qw]` | 上游初始位姿硬编码单位阵；定位重启/换起点需要 |
 | 5 | `src/core/system/{slam,loc_system}.cc` | 传感器订阅 QoS 改为 SensorDataQoS | 上游默认 RELIABLE 订阅与 best_effort 发布端（gz bridge 等）不匹配会静默收不到数据 |
 | 6 | `thirdparty/livox_ros_driver/COLCON_IGNORE` | 阻止 colcon 重复发现内嵌包 | 该包由 lightning 的 CMakeLists add_subdirectory 构建 |
+| 7 | `cmake/packages.cmake` | SSE 编译选项限定 x86；arm64 跳过 | 上游硬编码 `-msse*` 在 arm64 gcc 不识别，直接编译失败 |
+| 8 | `src/core/system/slam.{h,cc}` + `lightning_slam.launch.py` | SLAM 模式实时可视化：发布 `/tracked_pose`（LIO 逐帧位姿）与 `/map`（g2p5 栅格，1Hz 限流，TRANSIENT_LOCAL）；launch 加 tracked_pose_tf_node 重锚定 map→odom | 上游建图期无任何输出话题，RViz 完全看不到进度，问题只能保存后才发现（回环失败导致的鬼影墙等无法在建图中纠正） |
+| 9 | `src/core/lio/imu_processing.hpp` | LIO 初始化时世界系对齐重力：R0 = R(mean_acc→+z)，重力恒 (0,0,-G) | 上游 R0=I 且 grav=-mean_acc，初始化窗口（20 批 IMU）内的瞬态（机器人落体回弹/加减速）被固化为世界系恒定倾角——RViz 机器人与地图垂直、g2p5 沿倾斜轴投影产生花纹噪点、定位初始位姿继承倾角 |
 
 ## 4. 建图对比测试
 
@@ -110,14 +129,32 @@ ros2 launch simulated_chassis localization.launch.py pbstream_file:=...
 1. **无全局重定位**：lightning 必须已知初始位姿（init_pose 或放回建图起点），绑架/丢定位无法自动恢复；Cartographer 有全局约束搜索
 2. **双雷达合流为自研节点**：合并帧 8640 点@15Hz，时间对齐策略 time_mode=zero（快照点云无帧内畸变）；真机接入时需重评（可切 linear）
 3. **建图过程无 /map、无 TF**：Nav2 无法在建图同时导航（Cartographer 可以边建图边导航）
-4. **agv_bridge_v2 未适配**：本分支定位/建图仅支持手动 launch，`/agv/load_map`、`/agv/start_mapping`、save_map 托管仍走 Cartographer；若对比胜出，桥接层适配工作量见 §8
+4. **agv_bridge_v2 已适配（slam_algorithm 参数）**：bridge 通过 `slam_algorithm:=lightning` 切换后端，`/agv/start_mapping`/`/agv/save_map`/`/agv/load_map`/`/agv/relocalize` 全链路走 lightning（详见 §8）；lightning-lm 默认 `COLCON_IGNORE`，不参与 colcon 构建，bridge 通过 ros2 CLI 调 `/lightning/save_map`，无编译期依赖
 5. 仿真点云无每点时间戳、无强度标定（intensity 恒定），`lidar_loc.filter_intensity_*` 等滤波在仿真中意义有限
 
-## 8. 若决定切换：剩余工作预估
+## 8. bridge 集成（slam_algorithm 切换，已实现）
 
-| 模块 | 工作量 | 说明 |
+bridge（agv_nav_server）新增 `slam_algorithm` 参数（`cartographer` 默认 | `lightning`），两个后端共用同一套 `/agv/*` 上位机接口与模式机（NAVIGATION/RELOCALIZING/MAPPING）：
+
+| 环节 | cartographer | lightning |
 |---|---|---|
-| agv_nav_server 适配 | 大 | save_map 改调 /lightning/save_map；load_map 重启改为 map_dir 参数；/start_trajectory 初始位姿注入改为 init_pose 配置；就绪检测从 /get_trajectory_states 改为 TF 探活 |
-| MapFileManager | 中 | pbstream 检查改为地图目录（pcd 分块）检查；pgm/yaml 逻辑复用 |
-| 全局重定位 | 大（可选） | 上游 TODO；或接受"固定起点/人工 init_pose"业务约束 |
-| 真机双 Mid-360 | 中 | merger 输入换 livox CustomMsg 或保留 ROS 点云；time_mode 重评 |
+| 建图 launch | `slam.launch.py` | `lightning_slam.launch.py`（注入 `save_dir:=<maps_dir>`） |
+| 保存 | `/write_state` pbstream + map_saver pgm/yaml | `ros2 service call /lightning/save_map`（CLI 子进程，校验 map.yaml+global.pcd 落盘） |
+| 定位 launch | `localization.launch.py`（pbstream_file） | `lightning_loc.launch.py`（map_dir + init_x/y/z/yaw） |
+| 初始位姿 | `/start_trajectory` 服务注入 | launch 参数注入（重启式，无全局重定位） |
+| 就绪判定 | `/get_trajectory_states` 轮询 | 进程存活 + `/tracked_pose` 新消息（120s 超时） |
+| 建图期位姿 | TF map→base_link | `/tracked_pose` 订阅（SLAM 无 TF） |
+| 地图校验 | `<name>.pbstream` | `<name>/map.yaml` + `<name>/global.pcd` |
+
+`MapFileManager` 同时识别两种布局（`<name>/<name>.yaml|pgm` 与 lightning 的 `<name>/map.yaml|map.pgm`），`/agv/get_map`、`/agv/list_maps` 对两种后端的地图通用。
+
+```bash
+# lightning 全托管（bridge 拉起定位/建图，托管 Nav2）：
+ros2 launch agv_bridge_v2 agv_rosbridge.launch.py robot_package:=simulated_chassis \
+    slam_algorithm:=lightning pbstream_file:=$PWD/maps/lm_map
+# pbstream_file 传 lightning 地图目录（或目录内任意文件）；先建图时可省略。
+# 之后 /agv/start_mapping 建图 → 遥控 → /agv/save_map 保存并自动进入定位，
+# 与 cartographer 流程完全一致。
+```
+
+剩余工作（真机/后续）：全局重定位（上游 TODO，或接受固定起点业务约束）、真机双 Mid-360 的 merger 输入与 time_mode 重评。

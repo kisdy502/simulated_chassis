@@ -61,6 +61,8 @@ def generate_launch_description():
         base_cfg = LaunchConfiguration("config").perform(context)
         save_dir = LaunchConfiguration("save_dir").perform(context)
         with_ui = LaunchConfiguration("with_ui").perform(context).lower() in ("true", "1")
+        # launch 字典参数保持 Python 类型：bool 参数必须传 bool，传字符串会让节点启动即崩
+        use_sim_time_bool = LaunchConfiguration("use_sim_time").perform(context).lower() in ("true", "1")
         use_sim_time = LaunchConfiguration("use_sim_time").perform(context)
 
         with open(base_cfg, "r", encoding="utf-8") as f:
@@ -79,16 +81,19 @@ def generate_launch_description():
                 executable="dual_lidar_merge_node",
                 name="dual_lidar_merge_node",
                 output="screen",
-                parameters=[
-                    {
-                        "target_frame": "base_link",
-                        "time_mode": "zero",
-                        "scan_period_ms": 66.7,
-                        "use_sim_time": use_sim_time,
-                    }
-                ],
+                 parameters=[
+                     {
+                         "target_frame": "base_link",
+                         "time_mode": "zero",
+                         "scan_period_ms": 66.7,
+                         "use_sim_time": use_sim_time_bool,
+                     }
+                 ],
             ),
             # 2. lightning 在线建图（gflags 与 rclcpp 参数共存需 "--" 分隔）
+            #    [补丁] SLAM 亦发布 /tracked_pose（LIO 逐帧位姿），由同款
+            #    tracked_pose_tf_node 重锚定为 map→odom TF —— 建图期间
+            #    RViz/上位机即可看实时位姿与 /map 栅格（与 Cartographer 体验对齐）
             TimerAction(
                 period=1.5,
                 actions=[
@@ -103,7 +108,20 @@ def generate_launch_description():
                             "--ros-args",
                             "-p", "use_sim_time:=" + use_sim_time,
                         ],
-                    )
+                    ),
+                    Node(
+                        package="simulated_chassis",
+                        executable="tracked_pose_tf_node",
+                        name="tracked_pose_tf_node",
+                        output="screen",
+                        parameters=[{
+                            "use_sim_time": use_sim_time_bool,
+                            "map_frame": "map",
+                            "odom_frame": "odom",
+                            "tracking_frame": "base_link",
+                            "tracked_pose_topic": "/tracked_pose",
+                        }],
+                    ),
                 ],
             ),
         ]
