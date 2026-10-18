@@ -22,6 +22,8 @@ def generate_launch_description():
         'back_up_max_heading_error_deg', 'slam_algorithm')}
     bridge_args.update({'robot_package': 'simulated_chassis', 'use_sim_time': 'true',
         'navigation_use_rviz': 'false',
+        # F1.3:放行 robot_state_publisher 参数(上位机 /api/v1/robot/urdf 读 robot_description)
+        'params_glob': "['/agv_nav_server/*', '/robot_state_publisher/*']",
         'topics_sub_glob': "['/odom', '/tf', '/tf_static', '/map', '/plan', '/local_plan', '/joint_states', '/agv/status', '/scan_1', '/scan_2', '/agv/pose', '/arm_manager/status']",
         'services_glob': "['/rosapi/*', '/agv/set_control', '/agv/get_map', '/agv/load_map', '/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize', '/arm_manager/save_teach_point', '/arm_manager/list_teach_points', '/arm_manager/delete_teach_point', '/arm_manager/cancel', '/arm_manager/reset_fault']"})
     declarations = [DeclareLaunchArgument(key, default_value=value, choices=['true', 'false'])
