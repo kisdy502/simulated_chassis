@@ -299,6 +299,26 @@ URDF 读取：`/rosapi/get_param {node:"/robot_state_publisher", param:"robot_de
  "args":{"type":"agv_bridge_v2_interfaces/action/FollowEdge_Goal"}}
 ```
 
+**读参数(U1:robot_description)——Humble 版 rosapi 的 name 是冒号分隔**
+`<节点名>:<参数名>`,斜杠/裸名都会被判定 malformed 返回空串:
+
+```json
+{"op":"call_service","id":"p1","service":"/rosapi/get_param",
+ "args":{"name":"/robot_state_publisher:robot_description"}}
+```
+
+自验命令(注意查 **/rosapi** 节点;`/rosbridge_websocket` 启动时读取
+params_glob 但不声明该参数,`ros2 param get` 永远报 Parameter not set,
+不能用它自检):
+
+```bash
+ros2 param get /rosapi params_glob        # 应含 robot_description
+ros2 service call /rosapi/get_param rosapi_msgs/srv/GetParam \
+  "{name: '/robot_state_publisher:robot_description'}" | head -c 120
+# /rosapi/get_param_names 按节点遍历且用「node:param」串匹配 glob,
+# 裸名 glob 下返回空属预期,不代表 get_param 不通
+```
+
 响应中的 `typedefs` 给出 `fieldnames / fieldtypes / fieldarraylen`，
 Spring Boot 侧可据此自动生成与 `.action` 保持同步的 Java DTO，彻底摆脱手工对字段。
 其他常用：`/rosapi/topics_and_raw_types`、`/rosapi/topics_for_type`、`/rosapi/services`、
