@@ -1,0 +1,316 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="dual_arm_rig">
+  <!--
+    线束质检机器人上装（F1 机械臂仿真接入,视觉级模型）:
+      - 2 轴腰(waist_joint_1 yaw / waist_joint_2 pitch),安装于 base_link
+        上方 x=-0.1, y=0, z=0.15(暂无图纸的默认安装位)
+      - 左右各 7 轴臂,安装于腰部顶端 y=±0.25
+      - 关节命名遵守上位机契约:arm_left_joint_1..7 / arm_right_joint_1..7 /
+        waist_joint_1..2(见 nav-deployer RobotLayer.ts 匹配规则)
+      - 纯几何基元建模(无图纸无 mesh);gazebo 侧高阻尼+摩擦防止自由关节下垂,
+        不做动力学;上位机 3D 动画由 /joint_states + robot_state_publisher 驱动
+  -->
+
+  <xacro:macro name="dual_arm_7dof" params="side y_mount">
+    <!-- side: left / right;y_mount: ±0.25 -->
+    <xacro:property name="r" value="0.05"/>
+    <xacro:property name="l1" value="0.28"/>
+    <xacro:property name="l2" value="0.24"/>
+    <xacro:property name="l3" value="0.12"/>
+
+    <link name="arm_${side}_base_link">
+      <inertial>
+        <origin xyz="0 0 0.02"/>
+        <mass value="2.0"/>
+        <inertia ixx="0.004" ixy="0" ixz="0" iyy="0.004" iyz="0" izz="0.004"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0.02"/>
+        <geometry><cylinder radius="${r+0.01}" length="0.04"/></geometry>
+        <material name="dark_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.02"/>
+        <geometry><cylinder radius="${r+0.01}" length="0.04"/></geometry>
+      </collision>
+    </link>
+    <joint name="arm_${side}_mount_joint" type="fixed">
+      <parent link="waist_link_2"/>
+      <child link="arm_${side}_base_link"/>
+      <origin xyz="0 ${y_mount} 0.06" rpy="0 0 0"/>
+    </joint>
+
+    <!-- j1 肩部回转(z) -->
+    <link name="arm_${side}_link_1">
+      <inertial>
+        <origin xyz="0 0 ${l1/2}"/>
+        <mass value="1.5"/>
+        <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.004"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 ${l1/2}"/>
+        <geometry><cylinder radius="${r}" length="${l1}"/></geometry>
+        <material name="arm_orange"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${l1/2}"/>
+        <geometry><cylinder radius="${r}" length="${l1}"/></geometry>
+      </collision>
+    </link>
+    <joint name="arm_${side}_joint_1" type="revolute">
+      <parent link="arm_${side}_base_link"/>
+      <child link="arm_${side}_link_1"/>
+      <origin xyz="0 0 0.04" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-2.8" upper="2.8" effort="50" velocity="2.0"/>
+      <dynamics damping="1000" friction="1000"/>
+    </joint>
+
+    <!-- j2 肩部俯仰(y) -->
+    <link name="arm_${side}_link_2">
+      <inertial>
+        <origin xyz="0 0 ${l1/2}"/>
+        <mass value="1.2"/>
+        <inertia ixx="0.008" ixy="0" ixz="0" iyy="0.008" iyz="0" izz="0.003"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 ${l1/2}"/>
+        <geometry><cylinder radius="${r}" length="${l1}"/></geometry>
+        <material name="arm_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${l1/2}"/>
+        <geometry><cylinder radius="${r}" length="${l1}"/></geometry>
+      </collision>
+    </link>
+    <joint name="arm_${side}_joint_2" type="revolute">
+      <parent link="arm_${side}_link_1"/>
+      <child link="arm_${side}_link_2"/>
+      <origin xyz="0 0 ${l1}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="-2.4" upper="2.4" effort="50" velocity="2.0"/>
+      <dynamics damping="1000" friction="1000"/>
+    </joint>
+
+    <!-- j3 上臂回转(x,第 7 自由度) -->
+    <link name="arm_${side}_link_3">
+      <inertial>
+        <origin xyz="0 0 ${l2/2}"/>
+        <mass value="1.0"/>
+        <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.002"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 ${l2/2}"/>
+        <geometry><cylinder radius="${r}" length="${l2}"/></geometry>
+        <material name="arm_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${l2/2}"/>
+        <geometry><cylinder radius="${r}" length="${l2}"/></geometry>
+      </collision>
+    </link>
+    <joint name="arm_${side}_joint_3" type="revolute">
+      <parent link="arm_${side}_link_2"/>
+      <child link="arm_${side}_link_3"/>
+      <origin xyz="0 0 ${l1}" rpy="0 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="-2.8" upper="2.8" effort="30" velocity="2.0"/>
+      <dynamics damping="500" friction="500"/>
+    </joint>
+
+    <!-- j4 肘部俯仰(y) -->
+    <link name="arm_${side}_link_4">
+      <inertial>
+        <origin xyz="0 0 ${l2/2}"/>
+        <mass value="0.9"/>
+        <inertia ixx="0.004" ixy="0" ixz="0" iyy="0.004" iyz="0" izz="0.002"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 ${l2/2}"/>
+        <geometry><cylinder radius="${r}" length="${l2}"/></geometry>
+        <material name="arm_orange"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${l2/2}"/>
+        <geometry><cylinder radius="${r}" length="${l2}"/></geometry>
+      </collision>
+    </link>
+    <joint name="arm_${side}_joint_4" type="revolute">
+      <parent link="arm_${side}_link_3"/>
+      <child link="arm_${side}_link_4"/>
+      <origin xyz="0 0 ${l2}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="-2.6" upper="2.6" effort="30" velocity="2.0"/>
+      <dynamics damping="500" friction="500"/>
+    </joint>
+
+    <!-- j5 腕部俯仰(y) -->
+    <link name="arm_${side}_link_5">
+      <inertial>
+        <origin xyz="0 0 ${l3/2}"/>
+        <mass value="0.5"/>
+        <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.0005"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 ${l3/2}"/>
+        <geometry><cylinder radius="${r*0.8}" length="${l3}"/></geometry>
+        <material name="arm_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${l3/2}"/>
+        <geometry><cylinder radius="${r*0.8}" length="${l3}"/></geometry>
+      </collision>
+    </link>
+    <joint name="arm_${side}_joint_5" type="revolute">
+      <parent link="arm_${side}_link_4"/>
+      <child link="arm_${side}_link_5"/>
+      <origin xyz="0 0 ${l2}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="-2.4" upper="2.4" effort="20" velocity="2.5"/>
+      <dynamics damping="200" friction="200"/>
+    </joint>
+
+    <!-- j6 腕部回转(z) -->
+    <link name="arm_${side}_link_6">
+      <inertial>
+        <origin xyz="0 0 ${l3/2}"/>
+        <mass value="0.4"/>
+        <inertia ixx="0.0008" ixy="0" ixz="0" iyy="0.0008" iyz="0" izz="0.0004"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 ${l3/2}"/>
+        <geometry><cylinder radius="${r*0.8}" length="${l3}"/></geometry>
+        <material name="arm_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${l3/2}"/>
+        <geometry><cylinder radius="${r*0.8}" length="${l3}"/></geometry>
+      </collision>
+    </link>
+    <joint name="arm_${side}_joint_6" type="revolute">
+      <parent link="arm_${side}_link_5"/>
+      <child link="arm_${side}_link_6"/>
+      <origin xyz="0 0 ${l3}" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-2.8" upper="2.8" effort="20" velocity="2.5"/>
+      <dynamics damping="200" friction="200"/>
+    </joint>
+
+    <!-- j7 法兰回转(x) + 末端工具示意 -->
+    <link name="arm_${side}_link_7">
+      <inertial>
+        <origin xyz="0 0 0.03"/>
+        <mass value="0.3"/>
+        <inertia ixx="0.0003" ixy="0" ixz="0" iyy="0.0003" iyz="0" izz="0.0003"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0.03"/>
+        <geometry><box size="0.06 0.1 0.06"/></geometry>
+        <material name="dark_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.03"/>
+        <geometry><box size="0.06 0.1 0.06"/></geometry>
+      </collision>
+    </link>
+    <joint name="arm_${side}_joint_7" type="revolute">
+      <parent link="arm_${side}_link_6"/>
+      <child link="arm_${side}_link_7"/>
+      <origin xyz="0 0 ${l3}" rpy="0 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="-3.14" upper="3.14" effort="10" velocity="3.0"/>
+      <dynamics damping="100" friction="100"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="dual_arm_rig" params="">
+    <!-- 安装座:base_link 上方(默认安装位,待整机图纸替换) -->
+    <link name="waist_mount_link">
+      <inertial>
+        <origin xyz="0 0 0.03"/>
+        <mass value="3.0"/>
+        <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0.03"/>
+        <geometry><box size="0.16 0.56 0.06"/></geometry>
+        <material name="dark_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.03"/>
+        <geometry><box size="0.16 0.56 0.06"/></geometry>
+      </collision>
+    </link>
+    <joint name="waist_mount_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="waist_mount_link"/>
+      <origin xyz="-0.1 0 0.15" rpy="0 0 0"/>
+    </joint>
+
+    <!-- 腰 1:回转(z) -->
+    <link name="waist_link_1">
+      <inertial>
+        <origin xyz="0 0 0.06"/>
+        <mass value="4.0"/>
+        <inertia ixx="0.02" ixy="0" ixz="0" iyy="0.02" iyz="0" izz="0.02"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0.06"/>
+        <geometry><cylinder radius="0.09" length="0.12"/></geometry>
+        <material name="arm_orange"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.06"/>
+        <geometry><cylinder radius="0.09" length="0.12"/></geometry>
+      </collision>
+    </link>
+    <joint name="waist_joint_1" type="revolute">
+      <parent link="waist_mount_link"/>
+      <child link="waist_link_1"/>
+      <origin xyz="0 0 0.06" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-2.8" upper="2.8" effort="100" velocity="1.5"/>
+      <dynamics damping="2000" friction="2000"/>
+    </joint>
+
+    <!-- 腰 2:俯仰(y) -->
+    <link name="waist_link_2">
+      <inertial>
+        <origin xyz="0 0 0.04"/>
+        <mass value="3.0"/>
+        <inertia ixx="0.015" ixy="0" ixz="0" iyy="0.015" iyz="0" izz="0.03"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0.04"/>
+        <geometry><box size="0.1 0.5 0.08"/></geometry>
+        <material name="arm_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.04"/>
+        <geometry><box size="0.1 0.5 0.08"/></geometry>
+      </collision>
+    </link>
+    <joint name="waist_joint_2" type="revolute">
+      <parent link="waist_link_1"/>
+      <child link="waist_link_2"/>
+      <origin xyz="0 0 0.12" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="-0.6" upper="0.6" effort="100" velocity="1.5"/>
+      <dynamics damping="2000" friction="2000"/>
+    </joint>
+
+    <xacro:dual_arm_7dof side="left" y_mount="0.25"/>
+    <xacro:dual_arm_7dof side="right" y_mount="-0.25"/>
+
+    <!-- 材质定义(视觉级配色,与底盘 grey 区分) -->
+    <material name="dark_grey">
+      <color rgba="0.25 0.25 0.25 1.0"/>
+    </material>
+    <material name="arm_grey">
+      <color rgba="0.6 0.6 0.62 1.0"/>
+    </material>
+    <material name="arm_orange">
+      <color rgba="0.9 0.45 0.05 1.0"/>
+    </material>
+  </xacro:macro>
+</robot>

@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="dualarm_agv">
+  <!-- 组合描述:底盘宏(复用 simulated_chassis)+ 双 7 轴臂 + 2 轴腰上装 -->
+  <xacro:include filename="$(find simulated_chassis)/urdf/three_wheel_chassis_3d_macro.xacro"/>
+  <xacro:include filename="$(find simulated_dual_arm)/urdf/dual_arm_macro.xacro"/>
+  <xacro:three_wheel_chassis_3d lidar_collisions="true"/>
+  <xacro:dual_arm_rig/>
+</robot>
