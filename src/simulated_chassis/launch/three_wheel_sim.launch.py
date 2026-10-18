@@ -37,9 +37,15 @@ def generate_launch_description():
     # 2D 仿真时：本行改回 three_wheel_chassis_2d.xacro，
     # 并把下方 bridge 的 arguments/remappings 换回 2D 版（gpu_lidar 单波束 LaserScan）。
     xacro_path = LaunchConfiguration('description_file')
+    # robot_state_publisher 可用独立描述(缺省同 description_file):组合 profile 传
+    # package:// mesh 版给上位机读,Gazebo 拉起仍用 file:// 版,互不影响
     world_path = os.path.join(pkg_share, "world", "world_m.sdf")
     robot_description = {
         "robot_description": ParameterValue(Command(["xacro ", xacro_path]), value_type=str)
+    }
+    rsp_robot_description = {
+        "robot_description": ParameterValue(
+            Command(["xacro ", LaunchConfiguration('rsp_description_file')]), value_type=str)
     }
 
     robot_state_pub = Node(
@@ -47,7 +53,7 @@ def generate_launch_description():
         executable="robot_state_publisher",
         output="screen",
         parameters=[
-            robot_description,
+            rsp_robot_description,
             {"use_sim_time": LaunchConfiguration("use_sim_time")},
         ],
     )
@@ -228,6 +234,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('description_file', default_value=os.path.join(pkg_share, 'urdf', 'three_wheel_chassis_3d.xacro')),
+        DeclareLaunchArgument('rsp_description_file', default_value=os.path.join(pkg_share, 'urdf', 'three_wheel_chassis_3d.xacro')),
         DeclareLaunchArgument('extra_controllers', default_value=''),
         DeclareLaunchArgument('extra_resource_path', default_value=''),
         DeclareLaunchArgument("include_cmd_vel_relay", default_value="true"),

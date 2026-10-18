@@ -319,7 +319,7 @@ def generate_launch_description():
                 "topics_sub_glob": topics_sub_glob,
                 "services_glob": services_glob,
                 # 参数只允许访问本节点，防止远端改掉 nav2 关键参数
-                "params_glob": ParameterValue("['/agv_nav_server/*', '/robot_state_publisher/*']", value_type=str),
+                "params_glob": ParameterValue("['robot_description', '/agv_nav_server/*', '/robot_state_publisher/*']", value_type=str),
             }
         ],
     )
@@ -337,7 +337,7 @@ def generate_launch_description():
                 "topics_pub_glob": topics_pub_glob,
                 "topics_sub_glob": topics_sub_glob,
                 "services_glob": services_glob,
-                "params_glob": ParameterValue("['/agv_nav_server/*', '/robot_state_publisher/*']", value_type=str),
+                "params_glob": ParameterValue("['robot_description', '/agv_nav_server/*', '/robot_state_publisher/*']", value_type=str),
                 "params_timeout": 5.0,
             }
         ],

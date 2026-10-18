@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
   <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
-  <xacro:macro name="mounted_ur5e" params="mounting_file">
+  <xacro:macro name="mounted_ur5e" params="mounting_file sim_ignition:=true">
     <xacro:property name="mount" value="${xacro.load_yaml(mounting_file)}"/>
     <xacro:property name="h" value="${mount['pedestal_height']}"/>
     <xacro:property name="r" value="${mount['pedestal_radius']}"/>
@@ -19,12 +19,14 @@
       <parent link="base_link"/><child link="arm_mount_link"/>
       <origin xyz="${mount['xyz']}" rpy="${mount['rpy']}"/>
     </joint>
+    <!-- sim_ignition=true 时官方宏把 mesh 写成 file:// 绝对路径(Gazebo 解析需要);
+         false 时保持 package://(上位机前端按 VITE_URDF_MESH_BASE 重写拉取 mesh) -->
     <xacro:ur_robot name="UR5eSystem" tf_prefix="ur5e_" parent="arm_mount_link" ur_type="ur5e"
       joint_limits_parameters_file="$(find ur_description)/config/ur5e/joint_limits.yaml"
       kinematics_parameters_file="$(find ur_description)/config/ur5e/default_kinematics.yaml"
       physical_parameters_file="$(find ur_description)/config/ur5e/physical_parameters.yaml"
       visual_parameters_file="$(find ur_description)/config/ur5e/visual_parameters.yaml"
-      sim_ignition="true" safety_limits="true"
+      sim_ignition="${sim_ignition}" safety_limits="true"
       initial_positions="${xacro.load_yaml('$(find simulated_ur5e)/config/initial_positions.yaml')}">
       <origin xyz="0 0 ${h}" rpy="0 0 0"/>
     </xacro:ur_robot>

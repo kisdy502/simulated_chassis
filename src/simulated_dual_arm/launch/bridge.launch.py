@@ -42,7 +42,7 @@ def generate_launch_description():
                         'services_glob': "['/rosapi/*', '/agv/set_control', '/agv/get_map', "
                                          "'/agv/load_map', '/agv/list_maps', '/agv/start_mapping', "
                                          "'/agv/save_map', '/agv/relocalize', '/agv/arm_move']",
-                        'params_glob': "['/agv_nav_server/*', '/robot_state_publisher/*']"})
+                        'params_glob': "['robot_description', '/agv_nav_server/*', '/robot_state_publisher/*']"})
     declarations = [DeclareLaunchArgument(key, default_value=value,
                                           choices=['true', 'false'])
                     if key in ('manage_navigation', 'mesh_server')
@@ -56,9 +56,9 @@ def generate_launch_description():
         Node(package='simulated_dual_arm', executable='dual_arm_sim_node.py',
              name='dual_arm_sim_node', output='screen',
              parameters=[{'use_sim_time': True}]),
-        # F1.4/F3:URDF mesh 静态服务(前端 VITE_URDF_MESH_BASE 指向它)
+        # F1.4/F3:URDF mesh 静态服务(脚本已挪至 agv_bridge_v2 共享)
         ExecuteProcess(
-            cmd=['python3', os.path.join(share('simulated_dual_arm'), 'scripts', 'urdf_mesh_server.py'),
+            cmd=['python3', os.path.join(share('agv_bridge_v2'), 'scripts', 'urdf_mesh_server.py'),
                  '--port', LaunchConfiguration('mesh_server_port')],
             condition=IfCondition(LaunchConfiguration('mesh_server')), output='screen'),
     ])

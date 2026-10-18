@@ -77,6 +77,11 @@ install(DIRECTORY launch docs scripts
   DESTINATION share/${PROJECT_NAME}
 )
 
+# URDF mesh 静态服务(8090):可执行安装,profile bridge 以 ExecuteProcess 拉起
+install(PROGRAMS scripts/urdf_mesh_server.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 # ==================== 导出 ====================
 ament_export_dependencies(${AGV_ROS_DEPS})
 

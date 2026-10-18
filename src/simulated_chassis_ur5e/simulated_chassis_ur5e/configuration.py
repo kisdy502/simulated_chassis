@@ -23,9 +23,15 @@ def merged_controllers():
     return result
 
 
-def robot_description(controllers_file=None, mounting_file=None):
+def robot_description(controllers_file=None, mounting_file=None, sim_ignition=True):
+    """组合模型描述。
+
+    sim_ignition=True: mesh 为 file:// 绝对路径(Gazebo 拉起用);
+    sim_ignition=False: package:// 形式(robot_state_publisher 用,上位机前端
+    按 VITE_URDF_MESH_BASE 重写后经 8090 静态服务拉取)。"""
     mappings = {'controllers_file': controllers_file or path('config', 'controllers.yaml'),
-                'mounting_file': mounting_file or path('config', 'mounting.yaml')}
+                'mounting_file': mounting_file or path('config', 'mounting.yaml'),
+                'sim_ignition': 'true' if sim_ignition else 'false'}
     return {'robot_description': xacro.process_file(path('urdf', 'robot.urdf.xacro'), mappings=mappings).toxml()}
 
 
