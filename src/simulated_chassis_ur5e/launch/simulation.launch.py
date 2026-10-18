@@ -28,8 +28,8 @@ def setup(context):
             'description_file': description, 'extra_controllers': 'joint_trajectory_controller',
             'extra_resource_path': os.path.dirname(share('ur_description')),
             'gui': LaunchConfiguration('gui'), 'use_sim_time': 'true',
-            'start_gamepad': LaunchConfiguration('start_gamepad'), 'start_teleop': 'false',
-            'include_cmd_vel_relay': 'false',
+            'start_gamepad': LaunchConfiguration('start_gamepad'), 'start_teleop': 'true',
+            'include_cmd_vel_relay': 'true',
         }.items())]
 
 
