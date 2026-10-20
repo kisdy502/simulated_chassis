@@ -2,6 +2,68 @@
 
 本包只负责仿真组合：安装座、带 `ur5e_` 前缀的机械臂、组合碰撞/控制配置、启动编排。底盘算法继续在 `simulated_chassis`，机械臂业务在 `arm_manager`，单臂调试在 `simulated_ur5e`，通用/真机 bridge 保持独立。
 
+## 上层真机协议与单臂仿真映射
+
+`/agv/arm_move` 由 C++ `arm_move_adapter` 提供，服务类型仍为
+`agv_bridge_v2_interfaces/srv/ArmMove`，JSON/IDL 字段不变。`left` 和 `right`
+均控制同一个 UR5e，后来的请求从最新实测角度重新生成轨迹并替换前一个目标。
+它们不代表仿真中存在两条独立机械臂。
+
+上层可以继续发送真机每臂 7 个角度（joint_1..joint_7）。默认映射如下：
+
+| 输入轴（从 1 开始） | UR5e 实体关节 |
+|---|---|
+| 1 | shoulder_pan |
+| 2 | shoulder_lift |
+| 3 | 额外上臂回转不仿真，响应明确包含 `joint_3 not simulated` |
+| 4 | elbow |
+| 5 | wrist_1 |
+| 6 | wrist_2 |
+| 7 | wrist_3，保留末端回转 |
+
+这是为上层协议联调提供的单臂别名映射，不是 7 轴机械臂的等效运动学。
+索引配置见 `config/arm_move_adapter.yaml` 的 `real_arm_joint_indices`，
+它在 UR5e 字典序中使用零起始索引，默认 `[3,1,0,4,5,6]`。
+如改变配置，未被映射的输入轴会在响应中按实际索引提示。
+
+兼容原 6 轴请求，其顺序为 UR5e **字典序**：
+`elbow, shoulder_lift, shoulder_pan, wrist_1, wrist_2, wrist_3`。
+字典序与机构顺序不同，调用端不可混用。数量为 6/7 以外或包含 NaN/Inf 时拒绝。
+腰部未装备，`arm=waist`（即使给出 2 个角度）返回
+`success=false, message="waist not equipped"`，不伪造腰部动作完成。
+
+回调只做校验并下发两点 `JointTrajectory`，不会等待几秒运动结束。
+JTC 在其控制周期内做线性插值，不需要适配节点再以 50Hz 发布角度。
+`duration_sec<=0` 使用 3 秒；正时长限制为 0.5～300 秒。角度按当前整机 URDF
+限位截断，必要时延长时间，使所生成线性参考轨迹不超过 URDF 关节速度限值。
+这不提供加速度约束、MoveIt 避碰规划或物理到位保证。
+
+接受请求前须收到 2 秒内完整、有限的实测 6 轴状态，并且控制器状态查询显示
+`joint_trajectory_controller` 为 active、查询结果未过期、轨迹话题有订阅者；
+未就绪/失联返回 false，不能用历史状态继续下发。
+`success=true` 表示适配层已受理并发布，不表示控制器确认完成。
+执行情况通过 JTC 日志和实际 `/joint_states` 观察。
+
+上报保持实际 URDF 的 `ur5e_*` 六关节（以及原底盘关节），不额外发布虚构的
+左臂、右臂或腰关节；不修改 ArmMove 响应去拼装虚拟状态。rosbridge 已放行
+`/agv/arm_move` 和 `/joint_states`，上位机通过原链路驱动当前 URDF 模型。
+
+```bash
+# 7轴输入跳过额外上臂回转轴3，保留末端轴7
+ros2 service call /agv/arm_move agv_bridge_v2_interfaces/srv/ArmMove \
+  "{arm: left, joints: [0.5, -1.2, 0.0, 1.0, -0.5, 0.0, 0.0], duration_sec: 4.0}"
+
+# 只有实际 UR5e 和底盘状态，不虚构 16 轴上装
+ros2 topic echo /joint_states
+```
+
+隔离契约测试（ROS domain 88，假控制器，不移动机器人）：
+
+```bash
+colcon test --packages-select simulated_chassis_ur5e --ctest-args -R test_arm_move_adapter --output-on-failure
+colcon test-result --verbose
+```
+
 ## 启动
 
 ```bash
@@ -17,7 +79,9 @@ ros2 launch simulated_chassis_ur5e bridge.launch.py rviz:=true
 
 # 如需加载已有地图，用下面命令替代上一条 bridge 命令；定位就绪后启动托管导航
 ros2 launch simulated_chassis_ur5e bridge.launch.py \
-  pbstream_file:=$PWD/maps/map1008Pro/map1008Pro.pbstream rviz:=true
+  slam_algorithm:=lightning \
+  maps_dir:=$PWD/maps \
+  pbstream_file:=$PWD/maps/map1020
 ```
 
 无界面 GPU 雷达仍需渲染上下文，可用 `xvfb-run -a ros2 launch simulated_chassis_ur5e simulation.launch.py`；Docker 无界面入口已使用 xvfb。

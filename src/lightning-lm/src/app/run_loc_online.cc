@@ -37,7 +37,8 @@ int main(int argc, char** argv) {
         if (yaml["loc"] && yaml["loc"]["init_pose"]) {
             auto v = yaml["loc"]["init_pose"];
             if (v.size() == 7) {
-                init_pose = SE3(Quatd(v[3].as<double>(), v[4].as<double>(), v[5].as<double>(), v[6].as<double>()),
+                // YAML/ROS: x,y,z,w; Eigen constructor: w,x,y,z.
+                init_pose = SE3(Quatd(v[6].as<double>(), v[3].as<double>(), v[4].as<double>(), v[5].as<double>()).normalized(),
                                 Vec3d(v[0].as<double>(), v[1].as<double>(), v[2].as<double>()));
                 LOG(INFO) << "loaded init_pose from yaml";
             } else {

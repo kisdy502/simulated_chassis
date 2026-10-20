@@ -1,9 +1,16 @@
 # agv_bridge_v2
 
-AGV 上位机与仿真机器人之间的对接层。**rosbridge 架构**：本包不再自带 WebSocket /
-HTTP 通信代码，只暴露标准 ROS 2 接口，由 `rosbridge_server` 对外提供 JSON over WebSocket。
+AGV 上位机与仿真机器人之间的对接层。**rosbridge 架构**：业务通信暴露标准 ROS 2
+接口，由 `rosbridge_server` 对外提供 JSON over WebSocket。独立 C++ 程序
+`urdf_mesh_server` 使用 Boost.Beast 提供浏览器需要的 mesh/纹理静态资源。
 
 👉 **上位机对接细节见 [`docs/rosbridge_integration.md`](docs/rosbridge_integration.md)**
+
+机械臂完整契约、关节顺序与连续点动限制见
+[`docs/arm_move_integration.md`](docs/arm_move_integration.md)。
+
+复合机器人组合、Lightning 接入和 C++ HTTP 实现见
+[`docs/composite_robot_architecture.md`](docs/composite_robot_architecture.md)。
 
 ## 对外接口
 
@@ -21,7 +28,7 @@ HTTP 通信代码，只暴露标准 ROS 2 接口，由 `rosbridge_server` 对外
 | `/agv/list_maps` | `srv/ListMaps` | 列出可加载地图 |
 | `/agv/get_map` | `srv/GetMap` | 导出某张地图栅格（建图后入库用） |
 | `/agv/relocalize` | `srv/Relocalize` | 指定坐标重启定位 |
-| `/agv/arm_move` | `srv/ArmMove` | 双臂/腰关节运动（`simulated_dual_arm` profile 提供，F1 契约） |
+| `/agv/arm_move` | `srv/ArmMove` | 机械臂绝对关节目标（UR5e 单臂 C++ 适配、双臂 profile；见机械臂专门文档） |
 | TF `map → <agv_id>/base_link` | TF | 车体位姿 |
 
 上位机同时通过 rosbridge 直接访问仿真侧的标准话题（默认白名单）：
@@ -37,7 +44,7 @@ HTTP 通信代码，只暴露标准 ROS 2 接口，由 `rosbridge_server` 对外
 | 入口 | 附加内容 |
 |---|---|
 | `agv_bridge_v2 agv_rosbridge.launch.py` | 无附加（纯底盘） |
-| `simulated_chassis_ur5e bridge.launch.py` | + MoveIt/arm_manager（`/arm_manager/*` 接口、`/arm_manager/status` 话题） |
+| `simulated_chassis_ur5e bridge.launch.py` | + C++ `/agv/arm_move` 适配器、MoveIt/arm_manager、URDF mesh 服务 |
 | `simulated_dual_arm bridge.launch.py` | + `/agv/arm_move`、合并 `/joint_states`（舵轮+双臂 14+腰 2）、8090 mesh 静态服务 |
 
 **SLAM 后端**：`slam_algorithm:=cartographer|lightning`（默认 cartographer）。
@@ -82,7 +89,7 @@ colcon build --packages-up-to agv_bridge_v2 --cmake-args -DCMAKE_BUILD_TYPE=Rele
 先决条件（已写入 `docker/ros2-base/Dockerfile`）：
 
 ```bash
-sudo apt install ros-humble-rosbridge-suite      # rosbridge_server + rosapi
+sudo apt install ros-humble-rosbridge-suite libboost-system-dev
 ```
 
 > 本包**不再需要** `libwebsockets-dev` / `libcurl4-openssl-dev` / `nlohmann-json3-dev`。

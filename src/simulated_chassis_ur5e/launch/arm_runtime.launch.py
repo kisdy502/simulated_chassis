@@ -18,9 +18,9 @@ def setup(context):
                     parameters=parameters, output='screen',
                     on_exit=[EmitEvent(event=Shutdown(reason='MoveIt runtime exited'))]),
         # /agv/arm_move → JTC 薄适配(上位机机械臂控制契约;受理即答,JTC 插值执行)
-        Node(package='simulated_chassis_ur5e', executable='arm_move_adapter.py',
+        Node(package='simulated_chassis_ur5e', executable='arm_move_adapter',
              name='arm_move_adapter', output='screen',
-             parameters=[{'use_sim_time': True}]),
+             parameters=[path('config', 'arm_move_adapter.yaml'), parameters[0], {'use_sim_time': True}]),
         Node(package='arm_manager', executable='arm_manager_node', name='arm_manager', output='screen',
              sigterm_timeout='12.0', sigkill_timeout='3.0',
              parameters=[manager_parameters(), {

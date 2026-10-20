@@ -22,7 +22,7 @@ ros2 launch simulated_dual_arm bridge.launch.py slam_algorithm:=lightning
 |---|---|
 | `/joint_states` 合并(舵轮 steer + arm_left/right_1..7 + waist_1..2) | `dual_arm_sim_node` 20Hz,自过滤防回环 |
 | `robot_description` 可读 | `/robot_state_publisher/*` 已加 params_glob |
-| mesh 静态服务 | `urdf_mesh_server.py` 默认 8090,`/<pkg>/<相对路径>` → ament share;前端 `VITE_URDF_MESH_BASE=http://<host>:8090` |
+| mesh 静态服务 | C++ `urdf_mesh_server` 默认 8090,`/<pkg>/<相对路径>` → ament share;前端 `VITE_URDF_MESH_BASE=http://<host>:8090` |
 | `/agv/arm_move` | `agv_bridge_v2_interfaces/srv/ArmMove`;s 型插值执行,同组忙时拒绝;不动 `/agv/status.mode` |
 | 模型 | 几何基元(暂无图纸);安装位 x=-0.1, y=±0.25, z=0.15;Gazebo 高阻尼防下垂、无动力学 |
 

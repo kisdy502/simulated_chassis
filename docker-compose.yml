@@ -58,6 +58,7 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     ports:
       - "${WEBSOCKET_PORT:-9090}:${WEBSOCKET_PORT:-9090}"
+      - "${MAP_3D_PORT:-8089}:8089"
     depends_on:
       robot-simulation:
         condition: service_started

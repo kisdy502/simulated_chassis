@@ -22,6 +22,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.substitutions import ExecutableInPackage
 from ament_index_python.packages import get_package_share_directory as share
 
 
@@ -30,10 +31,10 @@ def generate_launch_description():
                 'pbstream_file': '', 'manage_navigation': 'true',
                 'back_up_max_heading_error_deg': '20.0', 'rviz': 'false',
                 'slam_algorithm': 'cartographer',
-                'mesh_server': 'true', 'mesh_server_port': '8090'}
+                'mesh_server': 'true', 'mesh_server_port': '8090', 'enable_map_3d': 'true', 'map_3d_port': '8089'}
     bridge_args = {key: LaunchConfiguration(key) for key in (
         'agv_id', 'port', 'address', 'maps_dir', 'pbstream_file', 'manage_navigation',
-        'back_up_max_heading_error_deg', 'slam_algorithm')}
+        'back_up_max_heading_error_deg', 'slam_algorithm', 'enable_map_3d', 'map_3d_port')}
     bridge_args.update({'robot_package': 'simulated_chassis', 'use_sim_time': 'true',
                         'navigation_use_rviz': 'false',
                         'topics_sub_glob': "['/odom', '/tf', '/tf_static', '/map', '/plan', "
@@ -45,7 +46,7 @@ def generate_launch_description():
                         'params_glob': "['robot_description', '/agv_nav_server/*', '/robot_state_publisher/*']"})
     declarations = [DeclareLaunchArgument(key, default_value=value,
                                           choices=['true', 'false'])
-                    if key in ('manage_navigation', 'mesh_server')
+                    if key in ('manage_navigation', 'mesh_server', 'enable_map_3d')
                     else DeclareLaunchArgument(key, default_value=value)
                     for key, value in defaults.items()]
     return LaunchDescription(declarations + [
@@ -56,9 +57,9 @@ def generate_launch_description():
         Node(package='simulated_dual_arm', executable='dual_arm_sim_node.py',
              name='dual_arm_sim_node', output='screen',
              parameters=[{'use_sim_time': True}]),
-        # F1.4/F3:URDF mesh 静态服务(脚本已挪至 agv_bridge_v2 共享)
+        # F1.4/F3:共享的 C++ URDF mesh 静态服务
         ExecuteProcess(
-            cmd=['python3', os.path.join(share('agv_bridge_v2'), 'scripts', 'urdf_mesh_server.py'),
+            cmd=[ExecutableInPackage(package='agv_bridge_v2', executable='urdf_mesh_server'),
                  '--port', LaunchConfiguration('mesh_server_port')],
             condition=IfCondition(LaunchConfiguration('mesh_server')), output='screen'),
     ])

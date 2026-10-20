@@ -79,6 +79,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libjsoncpp-dev \
+    nlohmann-json3-dev \
+    libpcl-dev \
+    libboost-system-dev \
     libeigen3-dev \
     && rm -rf /var/lib/apt/lists/*
 

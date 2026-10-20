@@ -14,6 +14,8 @@ endif()
 #   对外通信由 rosbridge_server 承担，对外契约由 agv_bridge_v2_interfaces 的 IDL 定义。
 find_package(ament_cmake REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(Boost 1.71 REQUIRED COMPONENTS system)
+find_package(Threads REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -69,7 +71,11 @@ target_include_directories(agv_nav_server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/in
 ament_target_dependencies(agv_nav_server ${AGV_ROS_DEPS})
 
 # ==================== 安装 ====================
-install(TARGETS agv_nav_server
+add_executable(urdf_mesh_server src/urdf_mesh_server.cpp)
+ament_target_dependencies(urdf_mesh_server ament_index_cpp)
+target_link_libraries(urdf_mesh_server Boost::system Threads::Threads)
+
+install(TARGETS agv_nav_server urdf_mesh_server
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -77,15 +83,16 @@ install(DIRECTORY launch docs scripts
   DESTINATION share/${PROJECT_NAME}
 )
 
-# URDF mesh 静态服务(8090):可执行安装,profile bridge 以 ExecuteProcess 拉起
-install(PROGRAMS scripts/urdf_mesh_server.py
-  DESTINATION lib/${PROJECT_NAME}
-)
-
 # ==================== 导出 ====================
 ament_export_dependencies(${AGV_ROS_DEPS})
 
 if(BUILD_TESTING)
+  find_program(BASH_EXECUTABLE bash REQUIRED)
+  find_program(CURL_EXECUTABLE curl REQUIRED)
+  add_test(NAME test_urdf_mesh_server
+    COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_urdf_mesh_server.sh
+      $<TARGET_FILE:urdf_mesh_server>)
+  set_tests_properties(test_urdf_mesh_server PROPERTIES TIMEOUT 45)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_navigation_readiness
     test/test_navigation_readiness.cpp

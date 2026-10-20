@@ -29,7 +29,8 @@ agv_rosbridge.launch.py —— rosbridge 架构下的 AGV 对接 launch
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction, EmitEvent
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, EmitEvent
+from ament_index_python.packages import get_package_prefix
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration, EnvironmentVariable
 from launch_ros.actions import Node
@@ -65,20 +66,64 @@ def _resolve_maps_dir(context):
     （固定路径,不随 bridge 启动 cwd 漂移;历史教训:曾解析成启动目录本身,
     地图散落到 ~/workspace/<name>)。每次建图在 <maps_dir>/<地图名>/ 下
     生成独立子目录。"""
+    root = _workspace_root()
+    ws_maps = os.path.join(root, "maps") if root else None
+
+    def _clamp(path):
+        """防漂移：解析结果必须位于工作区 maps/ 之下。
+
+        历史教训：pbstream_file 传 ../maps 或目录路径时，两级 dirname 推导
+        会落到工作区上一级（地图散落成 D:/github/map1019）。自定义场景用
+        SIM_WS_ROOT 环境变量改锚点，而不是传工作区外的相对路径。"""
+        if not ws_maps:
+            return path
+        ap = os.path.abspath(path)
+        if ap != ws_maps and not ap.startswith(ws_maps + os.sep):
+            print(f"[agv_rosbridge] maps_dir '{ap}' 不在工作区 maps/ 下，已纠正为 '{ws_maps}'"
+                  f"（自定义位置请设置 SIM_WS_ROOT 环境变量）")
+            return ws_maps
+        return ap
+
     explicit = LaunchConfiguration("maps_dir").perform(context).strip()
     if explicit and explicit != "maps":
-        return explicit
+        return _clamp(explicit)
     pb = os.path.abspath(LaunchConfiguration("pbstream_file").perform(context).strip())
     if pb:
         if os.path.isdir(pb):
-            return os.path.dirname(pb) or "maps"
+            return _clamp(os.path.dirname(pb) or "maps")
         derived = os.path.dirname(os.path.dirname(pb))
         if derived:
-            return derived
-    root = _workspace_root()
-    if root:
-        return os.path.join(root, "maps")
-    return "maps"
+            return _clamp(derived)
+    return ws_maps if ws_maps else "maps"
+
+
+def _map_3d_server(context):
+    """三维地图后台导出 + HTTP 文件服务（8089）。
+
+    同时支持 Cartographer pbstream 与 lightning global.pcd 两种地图来源，
+    按 slam_algorithm 选择来源，避免同名旧地图混用；
+    上位机统一通过 /maps/<name>/status 与 /cloud.ply 消费。"""
+    if LaunchConfiguration("enable_map_3d").perform(context).lower() != "true":
+        return []
+    try:
+        executable_dir = os.path.join(get_package_prefix("agv_map_3d"), "lib", "agv_map_3d")
+    except Exception:
+        print("[agv_rosbridge] agv_map_3d 未安装，跳过三维地图服务")
+        return []
+    for executable in ("map_3d_server", "pbstream_to_ply", "pcd_to_ply"):
+        if not os.access(os.path.join(executable_dir, executable), os.X_OK):
+            print("[agv_rosbridge] 三维地图安装不完整，请重新编译 agv_map_3d，跳过三维地图服务")
+            return []
+    return [ExecuteProcess(
+        cmd=[os.path.join(executable_dir, "map_3d_server"),
+             "--exporter", os.path.join(executable_dir, "pbstream_to_ply"),
+             "--exporter-pcd", os.path.join(executable_dir, "pcd_to_ply"),
+             "--source-format", "pcd" if LaunchConfiguration("slam_algorithm").perform(context) == "lightning" else "pbstream",
+             "--maps-dir", _resolve_maps_dir(context),
+             "--address", "0.0.0.0",
+             "--port", LaunchConfiguration("map_3d_port")],
+        output="screen",
+    )]
 
 
 def _agv_nav_server_node(context):
@@ -372,10 +417,18 @@ def generate_launch_description():
         }],
     )
 
+    args += [
+        DeclareLaunchArgument("enable_map_3d", default_value="true",
+                              description="启动三维地图后台导出 + HTTP 文件服务（pbstream/lightning 双格式）"),
+        DeclareLaunchArgument("map_3d_port", default_value="8089",
+                              description="三维地图 HTTP 服务端口"),
+    ]
+
     return LaunchDescription(args + [
         agv_nav_server,
         map_saver,
         map_saver_lifecycle_manager,
         rosbridge,
         rosapi,
+        OpaqueFunction(function=_map_3d_server),
     ])

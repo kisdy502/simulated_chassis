@@ -17,14 +17,28 @@ Cartographer 侧所有文件零改动，两条链路可随时切换对比。
 ## 2. 编译（Ubuntu 22.04 / ROS2 Humble，arm64 或 x86_64）
 
 ```bash
-# lightning 额外系统依赖（一次性）
-sudo apt install libglog-dev libgflags-dev libyaml-cpp-dev
-# Pangolin-0.9.3（编译期必需；运行无 UI 也需要）
-cd /tmp && unzip $WS/src/lightning-lm/thirdparty/Pangolin-0.9.3.zip
-cd Pangolin && mkdir build && cd build && cmake .. && make -j && sudo make install
+# 在仓库根目录执行；首次在每台机器上安装依赖（需要 apt/sudo）
+bash scripts/install_lightning_deps.sh
+# 可单独确认 Pangolin 能否被 CMake 发现
+bash scripts/build_lightning.sh --check-deps
+# 再构建 Lightning（默认两路并行，不使用 --symlink-install）
+bash scripts/build_lightning.sh
+source install/setup.bash
 ```
 
-无 sudo 环境的 arm64 构建记录（Pangolin + epoxy 装到 `~/.local`，rpath 免环境变量）：
+安装脚本使用仓库内固定版本的 `Pangolin-0.9.3.zip`，在当前 CPU 上源码编译，
+不下载或复用另一架构的二进制。系统依赖通过 apt 安装；Pangolin 默认安装到
+`~/.local`，构建目录位于 Linux 用户缓存，并按 `uname -m` 隔离。
+`MAKE_JOBS=2` 可用于两个脚本；内存紧张时降为 1。
+Pangolin 是当前源码的强制编译/链接依赖，`with_ui=false` 不会消除该依赖。
+更换电脑后需重新安装依赖并构建，不能复制 ARM 的 `build/`、`install/` 或库到 x86。
+若曾复制构建产物，应使用当前机器的新构建目录，而不是继续使用另一架构的 CMake 缓存。
+
+构建脚本会在移除 `COLCON_IGNORE` 前检查 Pangolin，退出时恢复忽略标记，
+并过滤环境变量中已经不存在的安装前缀。`pcap will be disabled` 是可选 PCAP
+功能提示，不阻断当前 ROS 点云输入链路；真正失败原因以 CMake Error 为准。
+
+无 sudo 环境的历史 arm64 手动构建记录（有 sudo 的机器优先使用上方脚本）：
 
 ```bash
 # 1) libepoxy（Pangolin 0.9.3 依赖，无 root 时 deb 解包到用户目录）

@@ -845,10 +845,9 @@ bool LidarLoc::Localize(SE3& pose, double& confidence, CloudPtr input, CloudPtr 
     trans = ndt->getFinalTransformation();
     confidence = ndt->getTransformationProbability();
 
-    auto tgt = ndt->getInputTarget();
-    if (!tgt->empty()) {
-        pcl::io::savePCDFile("./data/tgt.pcd", *tgt);
-    }
+    // Matching must not perform debug PCD I/O. Target clouds assembled by the
+    // tiled NDT map need not have organized-cloud width/height metadata; PCL's
+    // writer can throw here and abort the entire localization process.
 
     if (loc_inited_ == false && confidence > options_.min_init_confidence_) {
         loc_success = true;

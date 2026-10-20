@@ -1,0 +1,7 @@
+arm_move_adapter:
+  ros__parameters:
+    # 7-axis request order: joint_1..joint_7 (zero-based indices below).
+    # Output UR5e lexical order: elbow, lift, pan, wrist1, wrist2, wrist3.
+    # Input axes 1,2,4,5,6,7 drive pan/lift/elbow/wrist1..3; upper-arm roll axis 3 is not simulated.
+    # This is a simulation alias, not equivalent 7-axis kinematics.
+    real_arm_joint_indices: [3, 1, 0, 4, 5, 6]

@@ -45,8 +45,16 @@ ros2 launch agv_bridge_v2 agv_rosbridge.launch.py  robot_package:=simulated_chas
 
 ### 有地图加载，
 ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
-        pbstream_file:=$PWD/maps/map1008Pro/map1008Pro.pbstream \
-        robot_package:=simulated_chassis
+    slam_algorithm:=lightning \
+    pbstream_file:=$PWD/maps/map1019 \
+    robot_package:=simulated_chassis
+
+
+# 带 lightning 地图启动 bridge：
+ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
+    slam_algorithm:=lightning \
+    pbstream_file:=$PWD/maps/map1019/map1019.pbstream \
+    robot_package:=simulated_chassis
 
 ## 重启前清场（重要）
 

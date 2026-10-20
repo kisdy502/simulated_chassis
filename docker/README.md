@@ -1,6 +1,6 @@
 # wheel-3d Docker deployment
 
-Two containers are used: robot-simulation runs Gazebo and the chassis; agv-bridge owns localization, online mapping and Nav2. Do not start separate navigation or Cartographer containers alongside these. This branch supports 3D lidar and saves pbstream/PGM/YAML; map-3d frontend and HTTP features are outside this deployment.
+Two containers are used: robot-simulation runs Gazebo and the chassis; agv-bridge owns localization, online mapping and Nav2. Do not start separate navigation or Cartographer containers alongside these. This branch supports 3D lidar and saves pbstream/PGM/YAML; the C++ map-3d HTTP asset service is included in agv-bridge on container port 8089. MAP_3D_PORT selects its published host port; deploy the frontend separately.
 
 The default `ROBOT_PROFILE=chassis_3d_ur5e` now spawns one assembled chassis + folded UR5e model. The bridge container also starts MoveIt and arm_manager after checking the simulation model/controllers. No separate arm container or arm launch is needed. Set `ROBOT_PROFILE=chassis_3d` to retain the original chassis-only deployment. Both containers must use the same profile (Compose passes one shared variable). Rebuild ros2-base and both service images for the new dependencies/packages; do not combine old and new images.
 
@@ -60,60 +60,32 @@ ros2 topic echo /global_costmap/published_footprint --once
 
 Compare footprint stamps with /clock and exercise navigation -> mapping -> save -> localization -> navigation. DDS selection and Nav2 restarts alone do not prove the frozen-footprint issue is fixed.
 
-## Offline delivery
+## Deploy from Git source
+
+Each deployment host clones the repository and builds its own Docker images.
+No offline image archive or delivery directory is required.
 
 ```bash
-bash deploy.sh export
-# Destination machine:
-gunzip -c wheel-3d.docker-images.tar.gz | docker load
-```
-
-Deliver docker-compose.yml, docker/, deploy.sh, .env.example and maps separately. After loading images, deploy.sh up needs no source compilation. Dockerfiles normalize entrypoint line endings for Windows checkouts.
-
-Source files must be plain text as seen by Linux. Windows transparent-encryption software can make a file readable in Windows but unreadable to WSL/Docker; verify Linux can read modified launch/C++ files before building.
-
-The old independent navigation/SLAM profiles and automatic motion exploration command are removed. up-nav aliases up; up-slam starts the two containers and calls bridge's mapping service. Build failures are not ignored.
-
-## Mobile UR5e offline handoff
-
-Run the delivered images on the recipient's own Linux Docker host. Shutting down
-the sender's WSL does not affect a separate host; containers on the sender's WSL
-still require that WSL/Docker engine to stay running.
-
-Rebuild all three images: old base images may lack UR description, MoveIt and the
-joint trajectory controller. Then produce an offline folder:
-
-```bash
+git clone git@github.com:kisdy502/simulated_chassis.git
+cd simulated_chassis
+# Select the branch/commit to deploy before building.
+cp .env.example .env
+# Configure .env for this host, then:
 bash deploy.sh build
-bash deploy.sh bundle
-```
-
-The default output is `delivery/wheel-3d-ur5e/`: images, checksum, image IDs,
-Compose, `.env` template, deployment script, DDS config, instructions and maps.
-Existing output folders are rejected. To omit maps:
-`INCLUDE_MAPS=false bash deploy.sh bundle /path/to/new-folder`.
-Existing live logs, teaching data and `last_pose.yaml` parking memories are not copied.
-Verify initial localization on the new simulation and set the initial pose if needed.
-
-On the recipient's x86_64 Linux Docker host:
-
-```bash
-cd wheel-3d-ur5e
-sha256sum -c SHA256SUMS
-gzip -dc wheel-3d.docker-images.tar.gz | docker load
-# Edit .env; for a supplied map, for example:
-# PBSTREAM_FILE=/ros2_ws/maps/map1008Pro/map1008Pro.pbstream
 bash deploy.sh up
 ```
 
-The receiver needs Docker Engine, Compose v2, bash and gzip, but no ROS or source
-checkout. This folder intentionally has no sources: do not run `deploy.sh build`
-there. The frontend connects to `ws://THIS_HOST_IP:9090` (configured port).
-Frontend/dispatch applications are separate and are not included in these images.
-Maps and arm teach points persist through the existing data mounts.
+The host needs Docker Engine with Compose v2, Git and bash (Linux or WSL).
+ROS and build dependencies are installed inside the images. The Java frontend
+and RMS integration application are deployed from their own project separately.
+Maps and teach points are runtime data; create or restore them separately on the
+new host. Updating source does not update existing images until they are rebuilt.
+Preserve an existing .env when updating a deployment.
 
-Keep `ROBOT_PROFILE=chassis_3d_ur5e` for the assembled robot. The chassis-only
-profile `chassis_3d` remains available. Both containers must use the same profile;
-never start a second arm/world/controller manager. Headless lidar uses Xvfb and
-software rendering; the arm/MoveIt add compute load, so check simulation rate and
-navigation control latency on the destination machine.
+Source files must be plain text as seen by Linux. Windows transparent-encryption
+software can make a file readable in Windows but unreadable to WSL/Docker; verify
+Linux can read modified launch/C++ files before building.
+
+The old independent navigation/SLAM profiles and automatic motion exploration
+command are removed. up-nav aliases up; up-slam starts the two containers and
+calls bridge's mapping service. Build failures are not ignored.

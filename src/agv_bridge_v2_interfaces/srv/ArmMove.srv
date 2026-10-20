@@ -3,12 +3,13 @@
 #   {"op":"call_service","id":"a1","service":"/agv/arm_move",
 #    "args":{"arm":"left","joints":[0,0,0,0,0,0,0],"duration_sec":3.0}}
 #
-# 语义：受理后异步插值执行（s 型加减速，10~20Hz 步进），执行进度通过
-# /joint_states 自然体现；执行期间 /agv/status.mode 维持现状，不引入新模式。
-# 同一组（left/right/waist）上一条指令未完成时受理失败，可先查 /joint_states 判断。
+# 语义：受理即响应；异步执行进度通过 /joint_states 体现，success 不表示到位。
+# 具体执行策略由 profile 决定：UR5e 使用 JTC，left/right 是同一只臂的别名，
+# 6 轴输入为 UR5e 字典序；7 轴输入按 real_arm_joint_indices 映射并明确提示未仿真轴。
+# UR5e 不装备腰；双臂视觉 profile 为 left/right 各7轴、waist 2轴。
 string arm        # "left" | "right" | "waist"
-float64[] joints  # 目标关节角（弧度）。left/right 各 7 个，waist 2 个
-float64 duration_sec  # 插值时长（秒），建议 1.0~30.0，取值范围 [0.05, 300]
+float64[] joints  # 有限的目标角（弧度），数量及映射由 profile 决定
+float64 duration_sec  # 执行时长（秒）；UR5e <=0 默认3秒，可按URDF速度限值延长
 ---
 bool success
 string message

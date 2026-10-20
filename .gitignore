@@ -76,6 +76,3 @@ runtime/
 
 # lightning-lm vendor 演示媒体（不入库，已提交的 tracked 文件不受影响）
 src/lightning-lm/doc/
-
-# Offline Docker delivery artifacts
-delivery/

@@ -29,8 +29,9 @@ import tempfile
 import yaml as pyyaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction, TimerAction
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction, TimerAction, EmitEvent
 from launch.substitutions import LaunchConfiguration
+from launch.events import Shutdown
 from launch_ros.actions import Node
 
 
@@ -126,6 +127,7 @@ def generate_launch_description():
                         executable="run_loc_online",
                         name="lightning_slam",
                         output="screen",
+                        on_exit=[EmitEvent(event=Shutdown(reason="Lightning localization process exited"))],
                         arguments=[
                             "--config", cfg_file,
                             "--",

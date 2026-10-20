@@ -158,7 +158,7 @@ flowchart LR
 | `/agv/list_maps` | service（`srv/ListMaps`） | 上报查询 | 列出 maps 目录下可加载地图 |
 | `/agv/get_map` | service（`srv/GetMap`，`{map_name}`） | 上报查询 | 导出某张地图 OccupancyGrid（保存成功后档案入库用） |
 | `/agv/relocalize` | service（`srv/Relocalize`，`{map_name,x,y,yaw}`） | 下发 | 在地图坐标中重启定位 |
-| `/agv/arm_move` | service（`srv/ArmMove`，`{arm,joints[],duration_sec}`） | 下发 | 双臂/腰关节插值运动（仅 `simulated_dual_arm` profile 提供，F1 契约） |
+| `/agv/arm_move` | service（`srv/ArmMove`，`{arm,joints[],duration_sec}`） | 下发 | 绝对关节目标；UR5e 单臂/双臂 profile 提供，详见 [机械臂接口文档](arm_move_integration.md) |
 | TF `map → AGV001/base_link` | tf（10Hz） | 上报 | 机器人全局位姿（走 `/tf` 话题透出） |
 
 **mode 状态机**（`/agv/status.mode` 是建图链路唯一事实源，上位机勿用其他信号判定）：
