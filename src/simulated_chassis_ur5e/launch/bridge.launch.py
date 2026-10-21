@@ -18,6 +18,7 @@ def generate_launch_description():
         'slam_algorithm': 'cartographer',
         'mesh_server': 'true', 'mesh_server_port': '8090', 'enable_map_3d': 'true', 'map_3d_port': '8089',
         'mounting_file': path('config', 'mounting.yaml'),
+        'camera_file': path('config', 'wrist_camera.yaml'),
         'teach_points_file': '~/.ros/arm_manager/mobile_ur5e_teach_points.json'}
     bridge_args = {key: LaunchConfiguration(key) for key in (
         'agv_id', 'port', 'address', 'maps_dir', 'pbstream_file', 'manage_navigation',
@@ -26,8 +27,8 @@ def generate_launch_description():
         'navigation_use_rviz': 'false',
         # F1.3:放行 robot_state_publisher 参数(上位机 /api/v1/robot/urdf 读 robot_description)
         'params_glob': "['robot_description', '/agv_nav_server/*', '/robot_state_publisher/*']",
-        'topics_sub_glob': "['/odom', '/tf', '/tf_static', '/map', '/plan', '/local_plan', '/joint_states', '/agv/status', '/scan_1', '/scan_2', '/agv/pose', '/arm_manager/status']",
-        'services_glob': "['/rosapi/*', '/agv/set_control', '/agv/get_map', '/agv/load_map', '/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize', '/agv/arm_move', '/arm_manager/save_teach_point', '/arm_manager/list_teach_points', '/arm_manager/delete_teach_point', '/arm_manager/cancel', '/arm_manager/reset_fault']"})
+        'topics_sub_glob': "['/odom', '/tf', '/tf_static', '/map', '/plan', '/local_plan', '/joint_states', '/agv/status', '/scan_1', '/scan_2', '/agv/pose', '/arm_manager/status', '/wrist_camera/image_raw', '/wrist_camera/camera_info']",
+        'services_glob': "['/rosapi/*', '/agv/set_control', '/agv/get_map', '/agv/load_map', '/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize', '/agv/arm_move', '/arm_manager/save_teach_point', '/arm_manager/list_teach_points', '/arm_manager/delete_teach_point', '/arm_manager/cancel', '/arm_manager/reset_fault', '/wrist_camera/take_photo']"})
     declarations = [DeclareLaunchArgument(key, default_value=value, choices=['true', 'false'])
                     if key in ('manage_navigation', 'mesh_server', 'enable_map_3d')
                     else DeclareLaunchArgument(key, default_value=value)
@@ -49,5 +50,5 @@ def generate_launch_description():
                           'use_sim_time': True}], condition=UnlessCondition(LaunchConfiguration('manage_navigation'))),
         IncludeLaunchDescription(PythonLaunchDescriptionSource(path('launch', 'arm_runtime.launch.py')),
             launch_arguments={key: LaunchConfiguration(key) for key in (
-                'rviz', 'mounting_file', 'allow_fault_injection', 'teach_points_file')}.items()),
+                'rviz', 'mounting_file', 'camera_file', 'allow_fault_injection', 'teach_points_file')}.items()),
     ])

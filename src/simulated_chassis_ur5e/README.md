@@ -1,5 +1,52 @@
 # 三舵轮 3D 雷达 + UR5e 整机仿真
 
+## 末端 RGB 相机（新增）
+
+整机默认在 `ur5e_tool0` 安装 RGB 相机（eye-in-hand）。实现位于本包，不修改官方 UR 模型；相机沿用现有 Fortress Sensors 渲染系统，通过独立单向 `ros_gz_bridge` 接入 ROS。Lightning 与 3D 地图继续使用原雷达数据链路。
+
+`urdf/wrist_camera.xacro` 定义带惯量、碰撞体的相机外壳及光学坐标系；`config/wrist_camera.yaml` 配置开关、安装位姿和画面参数。默认 640×480、10 Hz、水平视场约 60°、裁剪距离 0.02～20 m。橙色外壳 50×50×35 mm、质量 0.10 kg；绿色实体支撑杆直径 20 mm、长度 40 mm、质量 0.03 kg，两者按同一刚体建模并包含碰撞几何。默认视线沿 tool0 的 +Z，外壳中心距离 tool0 为 0.065 m，镜头位于外壳 X=0.025 m。默认支撑杆从 tool0 连至相机背面；修改安装位姿时须同步调整支撑杆几何以保持连接，修改实体规格时须同步修改惯量和碰撞体。
+
+TF 链为 `ur5e_tool0 → ur5e_camera_link → ur5e_camera_optical_frame`。光学坐标 Z 向前、X 向右、Y 向下。Fortress 的 scoped sensor frame 经 `wrist_camera_node` 统一为此光学 frame。原规划 TCP 仍是 `ur5e_tool0`，相机不会自动成为 MoveIt 目标坐标。
+
+| 公共接口 | 类型/用途 |
+|---|---|
+| `/wrist_camera/image_raw` | `sensor_msgs/msg/Image`，sensor-data QoS |
+| `/wrist_camera/camera_info` | `sensor_msgs/msg/CameraInfo`，渲染相机内参 |
+| `/wrist_camera/take_photo` | `std_srvs/srv/Trigger`，等待请求后的新帧并保存 PNG |
+
+```bash
+# Ubuntu/WSL Humble 环境，首次安装依赖
+sudo apt-get install ros-humble-cv-bridge ros-humble-ros-gz-bridge ros-humble-std-srvs python3-opencv
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select simulated_chassis_ur5e
+source install/setup.bash
+
+# 终端一，无显示器时外层加 xvfb-run -a
+ros2 launch simulated_chassis_ur5e simulation.launch.py gui:=true photos_dir:=$HOME/robot_photos
+# 终端二，可继续附加现有建图/定位参数
+ros2 launch simulated_chassis_ur5e bridge.launch.py slam_algorithm:=lightning
+# 终端三，停车并确认机械臂实际到位后拍照
+ros2 service call /wrist_camera/take_photo std_srvs/srv/Trigger '{}'
+ros2 topic hz /wrist_camera/image_raw
+ros2 topic echo /wrist_camera/camera_info --once --qos-reliability best_effort
+ros2 run tf2_ros tf2_echo ur5e_tool0 ur5e_camera_optical_frame
+```
+
+RViz 增加 Image 显示，话题选择 `/wrist_camera/image_raw`，Reliability 选择 Best Effort。服务成功时 `message` 返回机器人侧 PNG 绝对路径；默认存储在 `~/.ros/wrist_camera/photos`。每次创建唯一子目录，包含 `image.png` 与 `metadata.json`。元数据保存图像仿真时间戳、frame_id、分辨率及最近一份匹配分辨率的内参；内参包含自己的时间戳，尚未收到时为 null，不声称两者严格同步。
+
+服务默认最多等待 5 秒墙上时间，仅接受时间戳晚于请求的图像。无图像、仿真暂停或断流时返回 false，保存失败时清理该次目录。节点参数 `capture_timeout_sec` 可调整等待时间。此服务不等待机械臂到位，也未保存关节或全局位姿；后续用于测量/目标定位时应按图像时间戳获取并保存 TF，真机还需要手眼标定。仿真图像不模拟曝光、运动模糊、USB 延迟和真实镜头畸变。
+
+自定义时复制 YAML，仿真和 bridge 必须同时传入同一 `camera_file:=/absolute/path/wrist_camera.yaml`。`enabled: false` 关闭相机。两端模型不一致时，现有 readiness 检查会拒绝启动机械臂 runtime。修改模型后重启仿真和 bridge。
+
+rosbridge 已允许公共图像/内参订阅及拍照服务，上位机可通过原 WebSocket 调用 Trigger。PNG 保存在机器人/容器内，返回路径不是下载 URL，当前未增加 HTTP 下载或网页预览。Docker 已补充运行依赖，需要重建 simulated-robot 镜像，并将照片目录挂载到宿主机以持久保存。640×480×3×10 的原始图像约 9.2 MB/s，JSON/base64 传输还有额外开销；持续远程预览建议后续增加压缩图像或专用视频服务。
+
+```bash
+# 无帧超时、旧帧拒绝、新帧保存；不启动机器人
+ROS_DOMAIN_ID=93 python3 src/simulated_chassis_ur5e/test/test_wrist_camera.py
+# 真实 Fortress：图像/内参、两次拍照及原底盘、机械臂、碰撞回归
+python3 src/simulated_chassis_ur5e/test/integration_fortress.py
+```
+
 本包只负责仿真组合：安装座、带 `ur5e_` 前缀的机械臂、组合碰撞/控制配置、启动编排。底盘算法继续在 `simulated_chassis`，机械臂业务在 `arm_manager`，单臂调试在 `simulated_ur5e`，通用/真机 bridge 保持独立。
 
 ## 上层真机协议与单臂仿真映射

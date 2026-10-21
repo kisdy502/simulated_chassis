@@ -15,6 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rviz2 \
     ros-humble-joint-state-publisher-gui \
     ros-humble-pointcloud-to-laserscan \
+    ros-humble-cv-bridge \
+    ros-humble-std-srvs \
+    python3-opencv \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros2_ws/src

@@ -15,7 +15,10 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import JointState, PointCloud2
+from sensor_msgs.msg import JointState, PointCloud2, Image, CameraInfo
+from std_srvs.srv import Trigger
+import json
+import cv2
 from nav_msgs.msg import Odometry
 from nav_msgs.msg import OccupancyGrid
 from geometry_msgs.msg import Twist
@@ -64,19 +67,22 @@ def run():
             if token: tokens[proc.pid] = token
             processes.append(proc)
             return proc
-        launch(['xvfb-run', '-a', 'ros2', 'launch', 'simulated_chassis_ur5e', 'simulation.launch.py'])
+        launch(['xvfb-run', '-a', 'ros2', 'launch', 'simulated_chassis_ur5e', 'simulation.launch.py', f'photos_dir:={directory}/photos'])
         launch(['ros2', 'launch', 'simulated_chassis_ur5e', 'bridge.launch.py', 'port:=19092',
                 f'manage_navigation:={str(navigation).lower()}', f'rviz:={str(shutdown_check).lower()}',
                 f'maps_dir:={directory}/maps', f'teach_points_file:={directory}/points.json'])
         rclpy.init()
         node = Node('mobile_ur5e_integration')
-        data = {'joint': None, 'status': None, 'odom': None, 'points': 0, 'map': None, 'agv': None}
+        data = {'joint': None, 'status': None, 'odom': None, 'points': 0, 'map': None, 'agv': None, 'image': None, 'camera_info': None}
         node.create_subscription(JointState, '/joint_states', lambda msg: data.update(joint=msg), qos_profile_sensor_data)
         node.create_subscription(ArmStatus, '/arm_manager/status', lambda msg: data.update(status=msg), 10)
         node.create_subscription(Odometry, '/odom', lambda msg: data.update(odom=msg), 10)
         node.create_subscription(PointCloud2, '/points2_1', lambda msg: data.update(points=data['points'] + 1), qos_profile_sensor_data)
         node.create_subscription(OccupancyGrid, '/map', lambda msg: data.update(map=msg), 1)
         node.create_subscription(AgvStatus, '/agv/status', lambda msg: data.update(agv=msg), 10)
+
+        node.create_subscription(Image, '/wrist_camera/image_raw', lambda msg: data.update(image=msg), qos_profile_sensor_data)
+        node.create_subscription(CameraInfo, '/wrist_camera/camera_info', lambda msg: data.update(camera_info=msg), qos_profile_sensor_data)
 
         def until(condition, timeout=100):
             deadline = time.monotonic() + timeout
@@ -103,6 +109,22 @@ def run():
 
         try:
             until(lambda: data['status'] is not None and data['status'].ready and data['points'] > 2)
+            until(lambda: data['image'] is not None and data['camera_info'] is not None)
+            image, info = data['image'], data['camera_info']
+            assert (image.width, image.height) == (640, 480)
+            assert image.header.frame_id == info.header.frame_id == 'ur5e_camera_optical_frame'
+            assert info.k[0] > 0 and info.k[4] > 0
+            for _ in range(2):
+                reply = service(Trigger, '/wrist_camera/take_photo', Trigger.Request())
+                assert reply.success, reply.message
+                filename = Path(reply.message)
+                assert filename.is_relative_to(Path(directory) / 'photos'), filename
+                pixels = cv2.imread(str(filename))
+                assert pixels.shape == (480, 640, 3)
+                metadata = json.loads(filename.with_name('metadata.json').read_text())
+                assert metadata['camera_info'] is not None
+            assert len(list((Path(directory) / 'photos').glob('*/image.png'))) == 2
+            print('PASS wrist RGB image, optical frame, intrinsics and two unique PNG snapshots', flush=True)
             initial = read_yaml(os.path.join(share('simulated_ur5e'), 'config', 'initial_positions.yaml'))
             q = dict(zip(data['joint'].name, data['joint'].position))
             assert len(q) == 12, q

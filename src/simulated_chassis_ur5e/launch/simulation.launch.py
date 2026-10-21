@@ -8,7 +8,8 @@ from launch.event_handlers import OnShutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from ament_index_python.packages import get_package_share_directory as share
-from simulated_chassis_ur5e.configuration import path, merged_controllers, robot_description
+from simulated_chassis_ur5e.configuration import path, merged_controllers, robot_description, read_yaml
+from launch_ros.actions import Node
 
 
 def setup(context):
@@ -23,13 +24,29 @@ def setup(context):
     with open(controllers, 'w', encoding='utf-8') as stream:
         yaml.safe_dump(merged_controllers(), stream)
     mounting = LaunchConfiguration('mounting_file').perform(context)
+    camera_file = LaunchConfiguration('camera_file').perform(context)
+    camera = read_yaml(camera_file)
     with open(description, 'w', encoding='utf-8') as stream:
-        stream.write(robot_description(controllers, mounting)['robot_description'])
+        stream.write(robot_description(controllers, mounting, camera_file=camera_file)['robot_description'])
     with open(description_rsp, 'w', encoding='utf-8') as stream:
-        stream.write(robot_description(controllers, mounting, package_meshes=True)['robot_description'])
+        stream.write(robot_description(controllers, mounting, package_meshes=True, camera_file=camera_file)['robot_description'])
     cleanup = RegisterEventHandler(OnShutdown(on_shutdown=[OpaqueFunction(
         function=lambda context: temporary.cleanup())]))
-    return [cleanup, IncludeLaunchDescription(PythonLaunchDescriptionSource(
+    camera_nodes = []
+    if camera['enabled']:
+        camera_nodes = [
+            Node(package='ros_gz_bridge', executable='parameter_bridge', name='wrist_camera_bridge',
+                 arguments=[
+                     '/wrist_camera/image@sensor_msgs/msg/Image[ignition.msgs.Image',
+                     '/wrist_camera/camera_info@sensor_msgs/msg/CameraInfo[ignition.msgs.CameraInfo'],
+                 remappings=[('/wrist_camera/image', '/wrist_camera/raw/image'),
+                             ('/wrist_camera/camera_info', '/wrist_camera/raw/camera_info')],
+                 parameters=[{'use_sim_time': True}], output='screen'),
+            Node(package='simulated_chassis_ur5e', executable='wrist_camera_node',
+                 parameters=[{'use_sim_time': True,
+                              'output_dir': LaunchConfiguration('photos_dir')}], output='screen'),
+        ]
+    return camera_nodes + [cleanup, IncludeLaunchDescription(PythonLaunchDescriptionSource(
         os.path.join(share('simulated_chassis'), 'launch', 'three_wheel_sim.launch.py')),
         launch_arguments={
             'description_file': description,
@@ -44,6 +61,8 @@ def setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('camera_file', default_value=path('config', 'wrist_camera.yaml')),
+        DeclareLaunchArgument('photos_dir', default_value='~/.ros/wrist_camera/photos'),
         DeclareLaunchArgument('gui', default_value='false'),
         DeclareLaunchArgument('start_gamepad', default_value='true'),
         DeclareLaunchArgument('mounting_file', default_value=path('config', 'mounting.yaml')),

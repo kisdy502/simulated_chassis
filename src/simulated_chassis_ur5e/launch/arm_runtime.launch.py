@@ -11,7 +11,8 @@ from simulated_chassis_ur5e.configuration import path, robot_description, moveit
 
 def setup(context):
     parameters = moveit_parameters()
-    parameters[0] = robot_description(mounting_file=LaunchConfiguration('mounting_file').perform(context))
+    parameters[0] = robot_description(mounting_file=LaunchConfiguration('mounting_file').perform(context),
+        camera_file=LaunchConfiguration('camera_file').perform(context))
     gate = Node(package='simulated_chassis_ur5e', executable='wait_for_robot',
                 parameters=[parameters[0], {'timeout_sec': 90.0}], output='screen')
     runtime = [Node(package='moveit_ros_move_group', executable='move_group', name='move_group',
@@ -41,6 +42,7 @@ def setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('camera_file', default_value=path('config', 'wrist_camera.yaml')),
         DeclareLaunchArgument('rviz', default_value='false'),
         DeclareLaunchArgument('mounting_file', default_value=path('config', 'mounting.yaml')),
         DeclareLaunchArgument('allow_fault_injection', default_value='false', choices=['true', 'false']),

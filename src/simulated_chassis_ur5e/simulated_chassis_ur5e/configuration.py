@@ -24,7 +24,7 @@ def merged_controllers():
     return result
 
 
-def robot_description(controllers_file=None, mounting_file=None, package_meshes=False):
+def robot_description(controllers_file=None, mounting_file=None, package_meshes=False, camera_file=None):
     """组合模型描述。
 
     始终以 sim_ignition=true 生成:官方 ur 宏把「硬件插件选择」与「mesh 路径
@@ -35,7 +35,8 @@ def robot_description(controllers_file=None, mounting_file=None, package_meshes=
     硬件块保持 IgnitionSystem 不变。"""
     mappings = {'controllers_file': controllers_file or path('config', 'controllers.yaml'),
                 'mounting_file': mounting_file or path('config', 'mounting.yaml'),
-                'sim_ignition': 'true'}
+                'sim_ignition': 'true',
+                'camera_file': camera_file or path('config', 'wrist_camera.yaml')}
     xml = xacro.process_file(path('urdf', 'robot.urdf.xacro'), mappings=mappings).toxml()
     if package_meshes:
         xml = re.sub(r'file://[^"\'<>]*?/share/([\w.-]+)/', r'package://\1/', xml)
