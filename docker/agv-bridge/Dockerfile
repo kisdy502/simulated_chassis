@@ -13,6 +13,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /ros2_ws/src
 
+# Cache dependency compilation separately from application sources.
+COPY src/lightning-lm/thirdparty/Pangolin-0.9.3.zip /ros2_ws/src/lightning-lm/thirdparty/Pangolin-0.9.3.zip
+COPY scripts/install_lightning_deps.sh /ros2_ws/scripts/install_lightning_deps.sh
+RUN sed -i 's/\r$//' /ros2_ws/scripts/install_lightning_deps.sh \
+    && MAKE_JOBS=${BUILD_JOBS} PANGOLIN_INSTALL_PREFIX=/usr/local bash /ros2_ws/scripts/install_lightning_deps.sh \
+    && ldconfig \
+    && rm -rf /root/.cache/simulated_chassis/lightning-deps /var/lib/apt/lists/*
+
 COPY src/agv_bridge_v2/ ./agv_bridge_v2/
 COPY src/agv_map_3d/ ./agv_map_3d/
 COPY src/agv_bridge_v2_interfaces/ ./agv_bridge_v2_interfaces/
@@ -21,8 +29,15 @@ COPY src/simulated_ur5e/ ./simulated_ur5e/
 COPY src/arm_manager_interfaces/ ./arm_manager_interfaces/
 COPY src/arm_manager/ ./arm_manager/
 COPY src/simulated_chassis_ur5e/ ./simulated_chassis_ur5e/
+COPY src/lightning-lm/ ./lightning-lm/
+COPY scripts/build_lightning.sh /ros2_ws/scripts/build_lightning.sh
 
 WORKDIR /ros2_ws
+
+# Build bundled Pangolin for the image CPU, never reuse host binaries.
+RUN sed -i 's/\r$//' scripts/build_lightning.sh \
+    && MAKE_JOBS=${BUILD_JOBS} bash scripts/build_lightning.sh \
+    && rm -rf build log
 
 # 先编译接口包（agv_bridge_v2 依赖它生成 action/srv/msg）
 RUN mkdir -p src/simulated_chassis/maps \
@@ -35,6 +50,6 @@ COPY docker/agv-bridge/launch_bridge.sh /launch_bridge.sh
 RUN sed -i 's/\r$//' /launch_bridge.sh && chmod +x /launch_bridge.sh
 RUN mkdir -p /ros2_ws/maps /ros2_ws/process_logs
 
-EXPOSE 9090 8089
+EXPOSE 9090 8089 8090
 
 ENTRYPOINT ["/launch_bridge.sh"]

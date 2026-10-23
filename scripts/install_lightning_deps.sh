@@ -19,7 +19,7 @@ if [[ $(id -u) -ne 0 ]]; then privilege=(sudo); fi
     build-essential cmake unzip pkg-config \
     libepoxy-dev libeigen3-dev libgl1-mesa-dev libegl1-mesa-dev libx11-dev libglew-dev \
     libgoogle-glog-dev libgflags-dev libyaml-cpp-dev libtbb-dev libpcl-dev libopencv-dev \
-    ros-humble-pcl-conversions ros-humble-rosbag2-cpp
+    ros-humble-pcl-conversions ros-humble-rosbag2-cpp ros-humble-ament-cmake-auto
 
 mkdir -p "$cache"
 # Extract in a Linux directory, not the Windows mount, to avoid slow metadata I/O.

@@ -3,12 +3,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p maps runtime/bridge/ros runtime/bridge/process runtime/simulation/ros
 usage() {
-    echo "Usage: $0 {build|up|up-nav|up-slam|start-mapping|save-map NAME|down|restart|logs [SERVICE]|status|shell [SERVICE]}"
+    echo "Usage: $0 {build|export [FILE.tar]|load FILE.tar|up|up-nav|up-slam|start-mapping|save-map NAME|down|restart|logs [SERVICE]|status|shell [SERVICE]}"
 }
 check_source_files() {
     local path signature source_dir
     local source_dirs=(src/jzt_robot src/simulated_chassis src/agv_bridge_v2 src/agv_bridge_v2_interfaces
-        src/arm_manager_interfaces src/arm_manager src/simulated_ur5e src/simulated_chassis_ur5e src/agv_map_3d docker)
+        src/arm_manager_interfaces src/arm_manager src/simulated_ur5e src/simulated_chassis_ur5e src/agv_map_3d src/lightning-lm scripts docker)
     for source_dir in "${source_dirs[@]}"; do
         [[ -d "$source_dir" ]] || { echo "Missing build source directory: $source_dir" >&2; return 1; }
     done
@@ -38,6 +38,15 @@ case "${1:-}" in
         check_source_files
         docker build -t ros2-base:latest -f docker/ros2-base/Dockerfile .
         docker compose build robot-simulation agv-bridge
+        ;;
+    export)
+        archive=${2:-dist/simulated-chassis-images.tar}
+        mkdir -p "$(dirname "$archive")"
+        docker image save -o "$archive" ros2-base:latest simulated-robot:wheel-3d agv-bridge:wheel-3d
+        echo "Images exported to $archive. Copy docker-compose.yml, docker/cyclonedds.xml and .env separately."
+        ;;
+    load)
+        docker image load -i "${2:?Specify an image archive .tar}"
         ;;
     up|up-nav) docker compose up -d robot-simulation agv-bridge ;;
     up-slam)

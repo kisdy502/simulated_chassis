@@ -276,7 +276,16 @@ namespace three_wheel_controller
         // 都必须使用这份状态，不能使用上一周期的目标命令。
         if (!readCurrentWheelStates())
         {
-            return controller_interface::return_type::ERROR;
+            // 软故障兜底：绝不让 update() 返回 ERROR —— controller_manager
+            // 会把返回 ERROR 的控制器 deactivate，此后 odom→base TF 彻底停发，
+            // 而 /clock 仍在前进，导航侧表现为 TF 时间戳差距持续增大
+            // （曾出现 >8000s 的 diff）。这里保持里程计输出（位姿冻结、
+            // 时间戳前进）并限流告警，等待接口恢复。
+            RCLCPP_ERROR_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 5000,
+                                  "wheel state interfaces unavailable; holding odometry output "
+                                  "(odom→base TF must keep publishing)");
+            publishOdometry(time, 0.0, 0.0, 0.0);
+            return controller_interface::return_type::OK;
         }
 
         double vx = 0.0;

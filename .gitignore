@@ -72,6 +72,7 @@ my_bag_sm
 # Docker local deployment data
 .env
 runtime/
+dist/
 *.docker-images.tar.gz
 
 # lightning-lm vendor 演示媒体（不入库，已提交的 tracked 文件不受影响）

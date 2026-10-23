@@ -144,6 +144,31 @@ namespace agv_bridge
             RCLCPP_DEBUG_THROTTLE(logger_, *parent_node_->get_clock(), 15000,
                                   "Available TF frames:\n%s", tf_string.c_str());
 
+            // 分层新鲜度检查：先查底盘里程计层 odom→base_link。
+            // published_footprint/local_costmap 的 stamp 同样跟随这条边：
+            // 该层停更时 /clock 仍在走，导航只会报巨大的 TF 时间戳差，
+            // 根因在 robot-simulation 容器的 three_wheel_base_controller
+            // （或跨容器 /tf 传输），而不是定位输出，先行指明避免误诊。
+            const rclcpp::Time now = parent_node_->now();
+            geometry_msgs::msg::TransformStamped odom_tf = tf_buffer_.lookupTransform(
+                "odom", "base_link", tf2::TimePointZero, tf2::durationFromSec(0.0));
+            const double odom_diff =
+                std::abs(rclcpp::Time(odom_tf.header.stamp).seconds() - now.seconds());
+            if (odom_diff >= 1.0)
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                tf_stable_count_ = 0;
+                tf_initialized_ = false;
+                RCLCPP_WARN_THROTTLE(logger_, *parent_node_->get_clock(), 5000,
+                                     "底盘里程计 TF 过期 (odom→base_link stamp=%.3f, now=%.3f, "
+                                     "diff=%.3fs)：three_wheel_base_controller 已停更或 /tf 未送达，"
+                                     "检查 robot-simulation 容器（ros2 control list_controllers / "
+                                     "docker compose logs robot-simulation）",
+                                     rclcpp::Time(odom_tf.header.stamp).seconds(),
+                                     now.seconds(), odom_diff);
+                return;
+            }
+
             // 检查 map→base_footprint 链路是否完整
             if (!tf_buffer_.canTransform("map", "base_footprint", tf2::TimePointZero, tf2::durationFromSec(0.0)))
             {
@@ -157,7 +182,6 @@ namespace agv_bridge
                 tf2::durationFromSec(0.0));
 
             rclcpp::Time transform_time(transform.header.stamp);
-            rclcpp::Time now = parent_node_->now();
             double time_diff = std::abs(transform_time.seconds() - now.seconds());
 
             RCLCPP_INFO_THROTTLE(logger_, *parent_node_->get_clock(), 15000,

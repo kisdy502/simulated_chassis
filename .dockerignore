@@ -14,3 +14,11 @@ my_bag*
 serverProjects
 runtime
 .env
+dist
+src/lightning-lm/bin
+src/lightning-lm/build
+src/lightning-lm/install
+src/lightning-lm/log
+src/lightning-lm/.git
+src/lightning-lm/doc
+src/lightning-lm/pcd

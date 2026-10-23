@@ -82,7 +82,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nlohmann-json3-dev \
     libpcl-dev \
     libboost-system-dev \
+    libboost-filesystem-dev \
     libeigen3-dev \
+    ros-humble-cv-bridge \
+    ros-humble-std-srvs \
+    python3-opencv \
     && rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
