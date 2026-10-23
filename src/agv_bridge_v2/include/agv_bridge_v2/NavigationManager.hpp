@@ -170,6 +170,7 @@ namespace agv_bridge
         void setSpeedLimit(double speed);
         bool isReady() const;
         bool isStackActive() const;
+        bool requiresServerRestart() const;
         std::string readinessError() const;
         void resetAfterServerShutdown();
 

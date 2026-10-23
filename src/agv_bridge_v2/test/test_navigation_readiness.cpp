@@ -5,6 +5,15 @@
 
 namespace agv_bridge {
 struct NavigationManagerTestPeer {
+  static void timeoutAction(NavigationManager &m, bool cancel) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    MoveToMessage task; task.commandId = "timed-out-goal"; m.current_task_ = task;
+    ++m.action_generation_;
+    m.awaiting_response_ = !cancel;
+    m.cancel_pending_ = cancel;
+    m.action_deadline_ = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    m.checkActionProgress();
+  }
   static void expireSmoother(NavigationManager &m) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
     for (auto &c : m.lifecycle_checks_) if (c.name == "velocity_smoother") {
@@ -124,5 +133,39 @@ TEST_F(NavigationReadinessTest, ServerShutdownClearsPendingTaskWithoutReplayingI
   EXPECT_EQ(callbacks.results, 1);
   EXPECT_NE(callbacks.message.find("重新下发任务"), std::string::npos);
   EXPECT_EQ(spin_goals.load(), 0);
+}
+
+TEST_F(NavigationReadinessTest, CancelTimeoutRequiresRestartEvenWithActiveServers) {
+  smoother_active = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  NavigationManagerTestPeer::timeoutAction(*manager, true);
+  EXPECT_TRUE(manager->isStackActive());
+  EXPECT_TRUE(manager->requiresServerRestart());
+  EXPECT_FALSE(manager->isReady());
+  EXPECT_EQ(spin_goals.load(), 0);
+  EXPECT_NE(callbacks.message.find("取消结果等待超时"), std::string::npos);
+  // Lifecycle polling alone cannot prove the old action stopped.
+  ASSERT_TRUE(waitFor([this] { return manager->isStackActive(); }));
+  EXPECT_TRUE(manager->requiresServerRestart());
+  manager->resetAfterServerShutdown();
+  EXPECT_FALSE(manager->requiresServerRestart());
+  EXPECT_FALSE(manager->isReady());
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  EXPECT_EQ(spin_goals.load(), 0);  // no automatic replay
+  ASSERT_TRUE(NavigationManagerTestPeer::submitSpin(*manager));
+  ASSERT_TRUE(waitFor([this] { return spin_goals.load() == 1; }));
+}
+
+TEST_F(NavigationReadinessTest, GoalResponseTimeoutAlsoRequiresRestart) {
+  smoother_active = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  NavigationManagerTestPeer::timeoutAction(*manager, false);
+  EXPECT_TRUE(manager->requiresServerRestart());
+  EXPECT_TRUE(manager->isStackActive());
+  EXPECT_FALSE(manager->isReady());
+  EXPECT_NE(callbacks.message.find("目标响应超时"), std::string::npos);
+  manager->resetAfterServerShutdown();
+  EXPECT_FALSE(manager->requiresServerRestart());
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
 }
 } // namespace agv_bridge

@@ -1,5 +1,9 @@
 # agv_bridge_v2
 
+当前接口契约（2026-10-23 核对）：[3D 地图 HTTP、URDF/mesh 和地图业务参数/响应](docs/map_model_api.md)。
+
+[腕部相机与按需拍照](docs/camera_api.md)：触发参数/响应、元数据、预览与照片展示能力边界。
+
 AGV 上位机与仿真机器人之间的对接层。**rosbridge 架构**：业务通信暴露标准 ROS 2
 接口，由 `rosbridge_server` 对外提供 JSON over WebSocket。独立 C++ 程序
 `urdf_mesh_server` 使用 Boost.Beast 提供浏览器需要的 mesh/纹理静态资源。

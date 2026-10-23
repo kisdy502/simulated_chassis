@@ -9,30 +9,26 @@
 
 ---
 
-## 0. 开始前必读：先修白名单配置（否则什么都收不到）
+## 0. 当前版本与白名单（2026-10-23 核对）
 
-`launch/agv_rosbridge.launch.py` 中 `topics_pub_glob` / `topics_sub_glob` 的填法**当前是反的**。
-rosbridge 的真实语义（以 humble 分支源码为准，`advertise.py` / `subscribe.py`）：
+新增的 3D 地图 HTTP、URDF 读取、模型资源下载和地图 service 字段详见
+[3D 地图、URDF 与地图业务接口](map_model_api.md)，含请求/响应、错误码和调用顺序。
+相机拍照、预览与照片结果展示另见 [相机接口](camera_api.md)。
+本文为 rosbridge 交互指南；接口字段以仓库 `.srv/.action/.msg` 与 launch 为准。
+`package.xml` 仍为 0.2.0，不能只凭包版本认定本文是否最新。
 
-| rosbridge 参数 | 真实含义 | 本项目应该填 |
-|---|---|---|
-| `topics_sub_glob` | 上位机**能订阅**（收数据）的 topic | `/odom /tf /tf_static /map /plan /local_plan /joint_states /agv/status`（加雷达后补 `/scan`） |
-| `topics_pub_glob` | 上位机**能发布**（下数据）的 topic | `/cmd_vel /initialpose /goal_pose` |
+当前通用 launch 已修正白名单方向，无需交换列表：
 
-如果保持现状（pub=上报列表、sub=下发列表），后果是：
+| 参数 | 当前含义与配置 |
+| --- | --- |
+| `topics_sub_glob` | 上位机能订阅：`/odom /tf /tf_static /map /plan /local_plan /joint_states /agv/status /scan_1 /scan_2 /agv/pose` |
+| `topics_pub_glob` | 上位机能发布：`/cmd_vel /initialpose /goal_pose` |
+| `services_glob` | `/rosapi/*`，建图/地图/重定位、控制和 `/agv/arm_move` 等，详见当前 launch |
+| `params_glob` | `robot_description`、`/agv_nav_server/*`、`/robot_state_publisher/*` |
 
-- 上位机 subscribe `/agv/status`、`/map`、`/tf` → rosbridge **静默拒绝订阅**（只在服务端日志打 warn，客户端无任何报错）
-- 上位机 publish `/cmd_vel`、`/goal_pose` → 被拒绝
-- 而 action / service 不受这两个参数限制，会出现「能下发移动、收不到任何数据」的迷惑现象
-
-**修法：把 launch 里两个列表互换**，同时建议补充 `actions_glob: ['/agv/*']`
-（否则上位机可以直接调 nav2 原生 action 绕过业务层）。
-
-确认安装的 rosbridge 版本支持 pub/sub 分离白名单（老版本只认 `topics_glob`，这两个参数会被静默忽略）：
-
-```bash
-ros2 param get /rosbridge_websocket topics_sub_glob   # 能取到列表即支持
-```
+组合机械臂 profile 会扩展相机和机械臂相关白名单。当前 launch 未设置 `actions_glob`，
+不要把动作访问隔离当作已生效的能力。业务导航优先使用 `/agv/follow_edge`，
+原生 `/goal_pose` 会绕过 bridge 业务状态及任务对账。
 
 ---
 
@@ -215,6 +211,8 @@ bridge 未加工、rosbridge 直接透传的标准话题：
 
 `state` 取值：`IDLE / PRE_ROTATING / EXECUTING / BACKING_UP / END_ROTATING / COMPLETED / FAILED / CANCELLED / STOPPED`。
 `pose_initialized=false` 时**不要下发导航指令**（节点会直接 abort）。
+该字段主要反映 TF 可用且新鲜，不证明地图匹配准确，也不等于 Nav2 已就绪。
+当前状态消息没有 `nav_ready` 字段；启动期间仍可能返回 Nav2 未就绪的 action 失败。
 `mode`：`NAVIGATION / MAPPING / RELOCALIZING`（建图链路唯一判定源，见 §3.1 状态机）；
 `map_name`：当前定位地图名；`slam_alive`/`map_age_sec`：最近一帧 `/map` 新鲜度
 （建图活跃提示用，**不作判定条件**；从未收到过 /map 时 map_age_sec=-1）。
@@ -241,7 +239,7 @@ yaw 解算：`theta = 2*atan2(qz, qw)`（平面机器人 roll/pitch≈0 时成�
 ```json
 {"op":"publish","topic":"/odom","msg":{
   "header":{"stamp":{"sec":1772445676,"nanosec":314000000},"frame_id":"odom"},
-  "child_frame_id":"base_link",
+  "child_frame_id":"base_footprint",
   "pose":{"pose":{"position":{"x":1.23,"y":-4.56,"z":0.0},
                   "orientation":{"x":0.0,"y":0.0,"z":0.089,"w":0.996}}},
   "twist":{"twist":{"linear":{"x":0.42,"y":0.0,"z":0.0},
@@ -288,7 +286,7 @@ yaw 解算：`theta = 2*atan2(qz, qw)`（平面机器人 roll/pitch≈0 时成�
 | `simulated_chassis_ur5e` | + UR5e 单臂 6 轴 | `ur5e_*_joint`（评估链路，非 F1 契约） |
 | `simulated_dual_arm`（F1） | + 双臂 14 + 腰 2（合并单帧发布） | `arm_left_joint_1..7` / `arm_right_joint_1..7` / `waist_joint_1..2` |
 
-URDF 读取：`/rosapi/get_param {node:"/robot_state_publisher", param:"robot_description"}`
+URDF 读取：`/rosapi/get_param {name:"/robot_state_publisher:robot_description"}`
 （params_glob 已放行）；mesh 经 `http://<host>:8090/<pkg>/<相对路径>` 静态服务获取。
 
 ### 4.7 `/rosapi/*` —— 图元数据与 DTO 自动生成
@@ -333,7 +331,7 @@ Spring Boot 侧可据此自动生成与 `.action` 保持同步的 Java DTO，彻
 | `/clock` | 仿真时钟高频，用消息自带 `header.stamp` 即可 |
 | `/scan`、`/amcl_pose` | 本仿真栈**不产生**：底盘是 3D 雷达 + Cartographer 纯定位，非 AMCL；`/scan` 可按 7.3 自行添加 |
 | `/speed_limit` | 全局话题，多客户端并发会互相覆盖，由节点内部独占，**绝不加白名单** |
-| ROS 参数（除 `/agv_nav_server/*`） | `params_glob` 白名单限制，防止远端改掉 nav2 关键参数 |
+| 其他 ROS 参数 | `params_glob` 仅放行 robot_description 与上述节点参数模式；不应将此视为只读权限控制 |
 
 ---
 
@@ -372,7 +370,7 @@ Goal 字段速查：
 | `end_point` | bool | 最后一段才传 true（到达后做最终旋转），见 10.1 |
 | `control_points` | array | 二阶曲线 1 个点、三阶 2 个点；≥3 个会**静默退化成直线** |
 
-执行时序：角度差 >45° 时先原地预旋转（`PRE_ROTATING`）→ 沿直线/曲线行驶（`EXECUTING`）→
+执行时序：角度差 >20° 时先原地预旋转（`PRE_ROTATING`）→ 沿直线/曲线行驶（`EXECUTING`）→
 （`end_point=true` 时）到点旋转对准 theta（`END_ROTATING`）→ 返回 result。
 全程每 400ms 一次 feedback：
 
@@ -475,7 +473,7 @@ nav2_msgs/action/FollowPath
    给 3 个及以上会**静默退化成直线插值**。请在规划侧就把曲线归约到二阶/三阶。
 2. **贝塞尔起点是机器人当前位姿，不是 `source_id`**。曲线从 `localization_monitor_` 的实时位姿出发，
    因此**机器人必须已经站在边的起点附近**。偏差较大时节点会先按曲线起点切线方向做一次
-   `Spin` 预旋转（角度差 >45° 才触发，`PRE_ROTATING` 状态）。
+   `Spin` 预旋转（角度差 >20° 才触发，`PRE_ROTATING` 状态）。
 
 ### 6.3 倒车（`back_up=true`）
 
@@ -562,46 +560,20 @@ py = height - (y - origin.y) / resolution
 
 4. 机器人位姿、路径、雷达点画在同一个 canvas 上
 
-### 7.3 显示雷达 ⚠️ 需先在 ROS 侧加一个轻量话题
+### 7.3 显示雷达（当前三舵轮已有双 LaserScan）
 
-当前栈只有 3D 点云 `/points2_1 /points2_2`，被白名单刻意挡掉（单帧数 MB，WS 扛不住）。
-**推荐做法：加 `pointcloud_to_laserscan`，把点云压成 2D 激光 `/scan` 再放行**
-（单帧约 720 个 float，几十 KB）：
-
-```bash
-sudo apt install ros-humble-pointcloud-to-laserscan
-
-ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node \
-  --ros-args -r cloud_in:=/points2_1 -r scan:=/scan \
-  -p target_frame:=base_link -p min_height:=-0.1 -p max_height:=0.5 \
-  -p angle_min:=-3.14159 -p angle_max:=3.14159 -p angle_increment:=0.0087
-```
-
-然后把 `/scan` 加进 launch 的上报白名单（`topics_sub_glob`）。上位机侧：
+当前三舵轮仿真已桥接 `/scan_1`、`/scan_2`，通用 bridge 的订阅白名单也已放行，
+无需再启动同名转换节点。原始 3D 点云 `/points2_1`、`/points2_2` 不在默认 WebSocket 白名单中。
 
 ```json
 {"op":"subscribe","id":"sub_scan_1","topic":"/scan_1","type":"sensor_msgs/msg/LaserScan","throttle_rate":200,"queue_length":1}
 {"op":"subscribe","id":"sub_scan_2","topic":"/scan_2","type":"sensor_msgs/msg/LaserScan","throttle_rate":200,"queue_length":1}
 ```
 
-```json
-{"msg":{"header":{"frame_id":"base_link"},
-        "angle_min":-3.14159,"angle_max":3.14159,"angle_increment":0.0087,
-        "range_min":0.1,"range_max":25.0,
-        "ranges":[2.31, 2.30, null, ...],
-        ...}}
-```
-
-`ranges` 里 `null/inf` = 该方向无回波。渲染：每个点 `angle = angle_min + i*angle_increment`，
-极坐标转 `lx = r*cos(angle), ly = r*sin(angle)`（base 系），再用当前位姿 `(x,y,yaw)` 变换到 map 系：
-
-```text
-mx = x + lx*cos(yaw) - ly*sin(yaw)
-my = y + lx*sin(yaw) + ly*cos(yaw)
-```
-
-> 局域网内若一定要 3D 点云效果，也可对 `/points2_*` 用 `"compression":"cbor"` 订阅
-> （二进制帧 + jackson-dataformat-cbor 解码），但吞吐和前端渲染压力都大，不建议第一期做。
+每点角度为 `angle_min + i * angle_increment`，过滤非有限值和超出 range_min/range_max 的量测。
+用消息 `header.frame_id` 查询 TF 后变换到 map 系，不能假定两部雷达都位于 base_link 原点。
+若其他机器人 profile 不发布双 LaserScan，再按实际话题接入转换器并补白名单。
+保存地图的三维查看使用 [8089 点云下载](map_model_api.md)，与实时雷达显示是两条链路。
 
 ### 7.4 导航到目标点（交互流）
 
@@ -700,10 +672,10 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
 | 参数 | 作用 |
 |---|---|
 | `topics_sub_glob` | 上位机**只能订阅**白名单内的 topic（rosbridge 语义：gates `subscribe`），避免整张 ROS 图暴露 |
-| `topics_pub_glob` | 上位机**只能发布**白名单内的 topic（gates `advertise`/`publish`），防止误发 `/speed_limit`、`/goal_pose` 等 |
-| `services_glob` | 服务白名单，除 `/rosapi/*` 和 `/agv/set_control` 外一律拒绝 |
-| `actions_glob` | 动作白名单，建议设 `['/agv/*']`，否则上位机可直接调 nav2 原生 action 绕过业务层 |
-| `params_glob` | 只放开 `/agv_nav_server/*`，防止远端改掉 nav2 关键参数 |
+| `topics_pub_glob` | 上位机只能发布当前白名单内的话题；`/goal_pose` 当前允许，`/speed_limit` 未放行 |
+| `services_glob` | 当前放行 `/rosapi/*`、地图/建图/重定位、控制和 arm_move；完整列表见 launch，组合 profile 还会扩展 |
+| `actions_glob` | 当前 launch 未设置，不应假定只开放 `/agv/*` |
+| `params_glob` | 放行 `robot_description`、`/agv_nav_server/*`、`/robot_state_publisher/*`；不是只读 ACL |
 | `websocket_ping_interval` / `websocket_ping_timeout` | 取代手写心跳：5s ping / 15s 超时断链 |
 | `unregister_timeout` | 断线后 10s 才回收订阅，容忍上位机闪断重连 |
 | `use_compression` | permessage-deflate，压缩 `/map`、`/plan` 这类文本 JSON |
@@ -721,9 +693,9 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
    「是否接收新任务」开关，不再直接改写导航状态机；暂停后 `/agv/status` 固定上报 `STOPPED`。
 3. **`/agv/follow_edge` 同时只允许一个 goal**。已有任务在跑时新 goal 会被 `REJECT`；
    请先 `cancel_action_goal` 再发新 goal。
-4. **必须使用多线程执行器**：`NavigationManager::cancelNavigation()` 会在回调线程内阻塞等待
-   nav2 的取消响应 future，单线程执行器会死锁。`agv_nav_server_main.cpp` 已使用 3 线程
-   `MultiThreadedExecutor`（改代码时勿改回单线程）。
+4. **执行与取消是异步闭环**：当前使用 3 线程 `MultiThreadedExecutor`。取消请求不等于底层立即停止；
+   目标响应或取消结果超时会设置动作保护标记。托管导航会停止确认旧 Nav2 进程组退出后
+   清理状态并重新启动；不会自动重放旧任务。恢复期间应等待，不能靠 start/reset 强行清标记。
 5. **倒车限速在原生 MPPI 上的已知问题**：节点对倒车发布负的 `/speed_limit`，但 nav2 原生
    MPPI 的 `setSpeedLimit()` 会把负值线性缩放进 vx 上下界（`vx_max` 变负、`vx_min` 变正，区间翻转），
    不会实现「按负线速度后退」。在修复前，请把倒车任务的 `max_speed` 压到
@@ -735,7 +707,8 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
 
 ### AgvStatus（/agv/status）
 `header` · `agv_id:string` · `state:string`（见 4.1 枚举）· `battery:float64` ·
-`pose_initialized:bool` · `active_command_id:string` · `active_node_id:string`
+`pose_initialized:bool` · `active_command_id:string` · `active_node_id:string` ·
+`mode:string` · `map_name:string` · `slam_alive:bool` · `map_age_sec:int32`
 
 ### FollowEdge action（/agv/follow_edge）
 - **Goal**：`command_id` `node_id` `x` `y` `theta` `edge_id` `edge_type`
@@ -768,6 +741,6 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
 
 ---
 
-*文档对应代码版本：agv_bridge_v2 0.2.0（rosbridge 架构）。
+*文档核对日期：2026-10-23，依据当前工作区代码（包声明版本仍为 0.2.0）。
 协议规范全文见 rosbridge_suite 仓库 `ROSBRIDGE_PROTOCOL.md`；
 协议操作参考实现见 `scripts/agv_client_demo.py`。*

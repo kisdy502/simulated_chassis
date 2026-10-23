@@ -1851,7 +1851,9 @@ namespace agv_bridge
             std::lock_guard<std::mutex> guard(mode_mutex_);
             if (mode_ != MODE_NAVIGATION || map_name_.empty()) return;
         }
-        if (!localization_monitor_->isInitialized()) return;
+        // An uncertain action must be stopped even if localization is currently unavailable.
+        const bool action_unsafe = navigation_manager_->requiresServerRestart();
+        if (!localization_monitor_->isInitialized() && !action_unsafe) return;
         std::lock_guard<std::mutex> guard(navigation_proc_mutex_);
         if (shutting_down_.load() || transition_in_progress_.load()) return;
         const auto now = std::chrono::steady_clock::now();
@@ -1859,17 +1861,17 @@ namespace agv_bridge
         {
             const pid_t result = ::waitpid(navigation_pid_, nullptr, WNOHANG);
             if (result == 0) {
-                if (navigation_manager_->isStackActive()) {
+                if (!action_unsafe && navigation_manager_->isStackActive()) {
                     navigation_unhealthy_since_ = {};
                     return;
                 }
                 // Allow bringup to finish and tolerate a short lifecycle transition.
-                if (now - navigation_started_at_ < std::chrono::seconds(60)) return;
+                if (!action_unsafe && now - navigation_started_at_ < std::chrono::seconds(60)) return;
                 if (navigation_unhealthy_since_ == std::chrono::steady_clock::time_point{}) {
                     navigation_unhealthy_since_ = now;
-                    return;
+                    if (!action_unsafe) return;
                 }
-                if (now - navigation_unhealthy_since_ < std::chrono::seconds(10)) return;
+                if (!action_unsafe && now - navigation_unhealthy_since_ < std::chrono::seconds(10)) return;
                 RCLCPP_ERROR(get_logger(), "托管 Nav2 持续未就绪: %s；停止整组后重新启动，不自动重放任务",
                              navigation_manager_->readinessError().c_str());
                 navigation_recovery_in_progress_.store(true);
@@ -1877,7 +1879,11 @@ namespace agv_bridge
                     try {
                         {
                             std::lock_guard<std::mutex> recovery_guard(navigation_proc_mutex_);
-                            stop_child_process(navigation_pid_, "导航恢复");
+                            if (!stop_child_process(navigation_pid_, "导航恢复")) {
+                                RCLCPP_ERROR(get_logger(), "导航恢复失败：旧进程组尚未退出，保留动作保护状态");
+                                navigation_recovery_in_progress_.store(false);
+                                return;
+                            }
                             navigation_unhealthy_since_ = {};
                             next_navigation_start_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
                         }
@@ -1892,13 +1898,13 @@ namespace agv_bridge
             }
             if (result < 0 && errno != ECHILD) return;
             // Clean up only the process group created by this bridge.
-            stop_child_process(navigation_pid_, "导航");
+            if (!stop_child_process(navigation_pid_, "导航")) return;
             navigation_manager_->resetAfterServerShutdown();
             next_navigation_start_ = now + std::chrono::seconds(5);
             RCLCPP_ERROR(get_logger(), "托管导航 launch 已退出，5 秒后重试（/tmp/agv_navigation.log）");
             return;
         }
-        if (now < next_navigation_start_) return;
+        if (!localization_monitor_->isInitialized() || now < next_navigation_start_) return;
         for (const auto &name : get_node_graph_interface()->get_node_names())
         {
             if (name == "controller_server" || name == "planner_server" || name == "behavior_server" ||
@@ -1920,18 +1926,17 @@ namespace agv_bridge
         }
     }
 
-    void AgvNavServerNode::stop_child_process(pid_t &pid_slot, const char *what)
+    bool AgvNavServerNode::stop_child_process(pid_t &pid_slot, const char *what)
     {
         if (&pid_slot == &localization_pid_) stop_managed_navigation();
         pid_t pid = -1;
         {
             std::lock_guard<std::mutex> lock(proc_mutex_);
             pid = pid_slot;
-            pid_slot = -1;
         }
         if (pid <= 0)
         {
-            return;
+            return true;
         }
 
         bool reaped = false;
@@ -1955,19 +1960,29 @@ namespace agv_bridge
             return false;
         };
         signal_group(SIGINT);
-        if (!wait_group(50))
+        bool stopped = wait_group(50);
+        if (!stopped)
         {
             RCLCPP_WARN(get_logger(), "%s进程组 %d 仍在退出，发送 SIGTERM", what, pid);
             signal_group(SIGTERM);
-            if (!wait_group(20))
+            stopped = wait_group(20);
+            if (!stopped)
             {
                 RCLCPP_WARN(get_logger(), "%s进程组 %d 停止超时，发送 SIGKILL", what, pid);
                 signal_group(SIGKILL);
-                wait_group(10);
+                stopped = wait_group(10);
             }
         }
-        if (!reaped) while (::waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {}
+        if (!stopped) {
+            RCLCPP_ERROR(get_logger(), "%s进程组 pid=%d 未确认退出，保留进程记录", what, pid);
+            return false;
+        }
+        {
+            std::lock_guard<std::mutex> lock(proc_mutex_);
+            if (pid_slot == pid) pid_slot = -1;
+        }
         RCLCPP_INFO(get_logger(), "%s进程组 pid=%d 回收完成", what, pid);
+        return true;
     }
 
     bool AgvNavServerNode::start_managed_localization(

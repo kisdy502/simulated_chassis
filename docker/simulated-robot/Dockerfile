@@ -3,6 +3,10 @@ FROM ros2-base:latest
 SHELL ["/bin/bash", "-c"]
 ARG BUILD_JOBS=2
 
+COPY docker/check_tf2_version.sh /usr/local/bin/check-tf2-version
+RUN sed -i 's/\r$//' /usr/local/bin/check-tf2-version \
+    && bash /usr/local/bin/check-tf2-version
+
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

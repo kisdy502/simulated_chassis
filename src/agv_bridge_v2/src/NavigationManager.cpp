@@ -944,6 +944,12 @@ namespace agv_bridge
         return {};
     }
 
+    bool NavigationManager::requiresServerRestart() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        return unsafe_generation_ != 0;
+    }
+
     bool NavigationManager::isStackActive() const
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);

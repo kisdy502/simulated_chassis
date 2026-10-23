@@ -33,13 +33,24 @@ call_bridge() {
         return 1
     fi
 }
+check_image_tf2() {
+    local image
+    for image in ros2-base:latest simulated-robot:wheel-3d agv-bridge:wheel-3d; do
+        echo "Checking TF2 in $image"
+        # Use the host checker: old images missing the checker must also be inspected.
+        docker run --rm -i --network none --entrypoint /bin/bash "$image" \
+            < docker/check_tf2_version.sh
+    done
+}
 case "${1:-}" in
     build)
         check_source_files
         docker build -t ros2-base:latest -f docker/ros2-base/Dockerfile .
         docker compose build robot-simulation agv-bridge
+        check_image_tf2
         ;;
     export)
+        check_image_tf2
         archive=${2:-dist/simulated-chassis-images.tar}
         mkdir -p "$(dirname "$archive")"
         docker image save -o "$archive" ros2-base:latest simulated-robot:wheel-3d agv-bridge:wheel-3d

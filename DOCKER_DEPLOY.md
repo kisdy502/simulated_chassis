@@ -227,6 +227,9 @@ Lightning 当前定位接入不保证任意初始位置的全局重定位，首�
 包含 `image.png`、`metadata.json`；这个文件路径不是浏览器下载 URL，
 8090 也不是照片文件服务器。照片可从下节的宿主挂载目录取出。
 
+当前传感器持续出图，但只有调用 take_photo 才保存PNG；尚无照片HTTP下载接口。
+请求/响应、预览、元数据和末端按需拍照流程见 [相机接口文档](src/agv_bridge_v2/docs/camera_api.md)。
+
 仿真和机械臂运行时须使用相同相机模型配置。
 `camera_file`、`photos_dir` 是 launch 参数，当前 Docker 包装脚本未直接暴露为 `.env`
 变量；自定义应修改镜像配置并重建，或同时扩展两端挂载和启动参数。

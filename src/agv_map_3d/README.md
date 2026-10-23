@@ -1,5 +1,8 @@
 # 3D 地图服务
 
+完整请求参数、响应字段、状态码与 URDF/模型接口联调见
+[当前接口契约（2026-10-23）](../agv_bridge_v2/docs/map_model_api.md)。
+
 机器人侧生产功能使用 C++17：`map_3d_server`（Boost.Beast/Asio HTTP、Boost.Process 导出任务）、`pbstream_to_ply`（Cartographer）、`pcd_to_ply`（PCL）。Python 仅用于测试；ROS Python launch 保留为启动配置。
 
 ## 数据链路与边界

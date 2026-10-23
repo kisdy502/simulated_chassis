@@ -22,3 +22,9 @@
 从仓库根目录运行 `bash deploy.sh build` 构建三个镜像，
 运行 `bash deploy.sh up` 启动两个服务。配置以根目录
 [`docker-compose.yml`](../docker-compose.yml) 和 [`.env.example`](../.env.example) 为准。
+
+TF2/geometry2 最低版本为 `0.25.24`，用于修复局部代价地图内部 TF 接收死锁。
+基础镜像会安装并检查该版本；业务镜像构建时也会检查，旧基础镜像会导致构建失败。
+`deploy.sh build` 构建后、`deploy.sh export` 导出前都会检查三个镜像中的实际安装版本。
+按 `bash deploy.sh build` 重新构建即可使新增安装层生效，无需清除所有构建缓存。
+已有容器需在安排好的停机窗口重新创建，重启旧容器不会切换到新镜像。

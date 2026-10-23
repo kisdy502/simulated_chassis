@@ -114,7 +114,7 @@ namespace three_wheel_controller
 
     double max_linear_velocity_{1.5};        // m/s
     double max_angular_velocity_{1.0};       // rad/s
-    double max_wheel_speed_{15.0};           // rad/s (约1.5m/s / 0.1m)
+    double max_wheel_speed_{18.0};           // rad/s (约1.8m/s / 0.1m)
     double cmd_timeout_{0.8};                // s
     bool enable_reverse_optimization_{true}; // 是否启用后退优化
     double steering_hold_velocity_threshold_{0.01}; // 轮心线速度低于此值时保持当前舵角 (m/s)

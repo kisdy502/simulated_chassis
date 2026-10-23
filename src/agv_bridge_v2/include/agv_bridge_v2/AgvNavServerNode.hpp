@@ -191,7 +191,7 @@ namespace agv_bridge
                               pid_t &pid_slot, const char *log_path);
 
         /// @brief 停止 spawn_ros_launch 拉起的子进程（SIGINT 优雅退出，超时 SIGKILL 整组）
-        void stop_child_process(pid_t &pid_slot, const char *what);
+        bool stop_child_process(pid_t &pid_slot, const char *what);
 
         /// @brief 调 cartographer /write_state 保存 pbstream（超时 15s）
         bool call_write_state(const std::string &pbstream_abs_path, std::string &error);

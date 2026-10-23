@@ -41,8 +41,8 @@ three_wheel_base_controller:
     wheel_radius: 0.1
     max_linear_velocity: 1.5      # m/s
     max_angular_velocity: 1.0     # rad/s
-    # 与 URDF 驱动轮关节的 velocity="10.0" 上限保持一致，避免各轮被单独截断。
-    max_wheel_speed: 10.0         # rad/s (=1.0 m/s / 0.1 m)
+    # 与 URDF 驱动轮关节的 velocity="18.0" 上限保持一致，避免各轮被单独截断。
+    max_wheel_speed: 18.0         # rad/s (=1.8 m/s / 0.1 m)
 
     # 控制参数
     cmd_timeout: 0.5             # s

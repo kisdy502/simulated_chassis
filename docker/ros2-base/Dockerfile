@@ -103,6 +103,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rviz2 \
     && rm -rf /var/lib/apt/lists/*
 
+# Keep this after all dependency installs so an old cached ROS layer cannot ship TF2 0.25.23.
+COPY docker/check_tf2_version.sh /usr/local/bin/check-tf2-version
+RUN sed -i 's/\r$//' /usr/local/bin/check-tf2-version \
+    && chmod +x /usr/local/bin/check-tf2-version \
+    && apt-get update && apt-get install -y --no-install-recommends \
+       ros-humble-geometry2 ros-humble-tf2 ros-humble-tf2-bullet \
+       ros-humble-tf2-eigen ros-humble-tf2-eigen-kdl ros-humble-tf2-geometry-msgs \
+       ros-humble-tf2-kdl ros-humble-tf2-msgs ros-humble-tf2-py \
+       ros-humble-tf2-ros ros-humble-tf2-ros-py ros-humble-tf2-sensor-msgs ros-humble-tf2-tools \
+    && /usr/local/bin/check-tf2-version \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN rosdep init || true && rosdep update
 
 ENV ROS_DOMAIN_ID=0
