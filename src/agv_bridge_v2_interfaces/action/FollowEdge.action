@@ -25,8 +25,8 @@ float64 y
 float64 theta
 
 # 边的元信息
-string edge_id
-string edge_type        # STRAIGHT | CURVE | ELEVATION
+string edge_id          # STRAIGHT/CURVE/ELEVATION 必须非空且不全为空白；FREE 不校验
+string edge_type        # 必填，不再推断：STRAIGHT | CURVE | ELEVATION | FREE（自主规划绕障，theta 始终作为最终朝向）
 string source_id        # 边的起点节点，用于自动判定行驶方向；可留空
 string target_id        # 边的终点节点，用于自动判定行驶方向；可留空
 float64 max_speed       # m/s，会通过 /speed_limit 下发给 nav2 控制器
@@ -43,7 +43,7 @@ bool end_point
 
 # 贝塞尔曲线控制点（edge_type == CURVE 时使用）
 # ⚠️ 采样逻辑仅支持 1 个控制点（二阶）或 2 个控制点（三阶）；
-#    给 3 个及以上会退化成直线插值，请在规划侧就归约到二阶/三阶。
+#    0 个或 3 个及以上明确失败，其他模式必须为空；x/y 必须为有限数值。
 geometry_msgs/Point[] control_points
 
 ---

@@ -1,6 +1,7 @@
 #include "agv_bridge_v2/AgvNavServerNode.hpp"
 
 #include "agv_bridge_v2/utils/TransformUtils.hpp"
+#include "agv_bridge_v2/NavigationValidation.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -534,6 +535,23 @@ namespace agv_bridge
         active_command_id_ = goal->command_id;
         active_node_id_ = goal->node_id;
 
+        const auto parameter_error = validateNavigationMode(
+            goal->edge_type, goal->edge_id, goal->control_points, goal->back_up, goal->reverse);
+        if (!parameter_error.empty()) {
+            abort_current_goal(parameter_error);
+            return;
+        }
+        for (const auto &field : {std::make_pair("x", goal->x), std::make_pair("y", goal->y),
+                                  std::make_pair("theta", goal->theta),
+                                  std::make_pair("max_speed", goal->max_speed),
+                                  std::make_pair("step", goal->step)}) {
+            if (!std::isfinite(field.second)) {
+                abort_current_goal(std::string("参数错误：") + field.first +
+                    " 不是有限数值；请填写有效数字，不得传 NaN 或 Infinity");
+                return;
+            }
+        }
+
         // 定位未收敛时不允许下发导航（与原 handle_move_command 的检查一致）
         if (!localization_monitor_->isInitialized())
         {
@@ -553,7 +571,11 @@ namespace agv_bridge
         MoveToMessage move_msg = to_move_to_message(*goal);
 
         bool started = false;
-        if (move_msg.edgeInfo.isBezierCurve())
+        if (move_msg.edgeInfo.type == EdgeType::FREE)
+        {
+            started = navigation_manager_->startNavigation(move_msg);
+        }
+        else if (move_msg.edgeInfo.type == EdgeType::CURVE)
         {
             RCLCPP_INFO(this->get_logger(), "贝塞尔曲线阶数: %d, 控制点数量: %zu",
                         move_msg.edgeInfo.getBezierOrder(),
@@ -1666,8 +1688,12 @@ namespace agv_bridge
             msg.edgeInfo.controlPoints.emplace_back(cp.x, cp.y);
         }
 
-        // edge_type 允许上位机省略：有控制点即为曲线，否则视为直线
-        if (goal.edge_type == "CURVE")
+        // edge_type 已在执行入口严格校验，禁止省略及隐式推断
+        if (goal.edge_type == "FREE")
+        {
+            msg.edgeInfo.type = EdgeType::FREE;
+        }
+        else if (goal.edge_type == "CURVE")
         {
             msg.edgeInfo.type = EdgeType::CURVE;
         }
@@ -1679,13 +1705,8 @@ namespace agv_bridge
         {
             msg.edgeInfo.type = EdgeType::STRAIGHT;
         }
-        else
-        {
-            msg.edgeInfo.type = goal.control_points.empty() ? EdgeType::STRAIGHT : EdgeType::CURVE;
-        }
-
         // 与原 handle_move_command 一致：目标节点是边的起点则反向行驶
-        if (!msg.nodeId.empty())
+        if (msg.edgeInfo.type != EdgeType::FREE && !msg.nodeId.empty())
         {
             if (!msg.edgeInfo.sourceId.empty() && msg.nodeId == msg.edgeInfo.sourceId)
             {

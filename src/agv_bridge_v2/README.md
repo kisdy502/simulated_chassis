@@ -178,3 +178,5 @@ ros2 action send_goal /agv/follow_edge \
 curl -X POST http://127.0.0.1:8090/api/v1/scheduler/release-charger 
 -H 'Content-Type: application/json' 
 -d '{"robot_code": "RB_20260922_00024"}'
+
+- [自由绕障到点 FREE 接口](docs/free_navigation_api.md)

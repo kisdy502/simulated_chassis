@@ -1,4 +1,5 @@
 #include "agv_bridge_v2/NavigationManager.hpp"
+#include "agv_bridge_v2/NavigationValidation.hpp"
 
 #include <cmath>
 using namespace agv_bridge;
@@ -112,13 +113,33 @@ namespace agv_bridge
 
     bool NavigationManager::startNavigation(const std::string &command_id, const std::string &node_id, double x, double y, double theta)
     {
-        if (!initialized_)
-        {
-            RCLCPP_ERROR(logger_, "Navigation manager not initialized");
+        MoveToMessage task;
+        task.commandId = command_id;
+        task.nodeId = node_id;
+        task.x = x; task.y = y; task.theta = theta;
+        task.edgeInfo.type = EdgeType::FREE;
+        return startNavigation(task);
+    }
+
+    bool NavigationManager::startNavigation(const agv_bridge::MoveToMessage &task)
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!isReady() || current_task_) return false;
+        current_task_ = task;
+        if (!std::isfinite(task.x) || !std::isfinite(task.y) ||
+            !std::isfinite(task.theta) || !std::isfinite(task.edgeInfo.maxSpeed) ||
+            task.edgeInfo.maxSpeed <= 0.0 || task.edgeInfo.backUp ||
+            task.edgeInfo.reverse || !task.edgeInfo.controlPoints.empty()) {
+            failTask("FAILED", "FREE 参数非法：目标和速度必须有效，且不能设置倒车、反向或控制点");
             return false;
         }
-
-        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!nav_action_client_->action_server_is_ready()) {
+            failTask("FAILED", "Nav2 navigate_to_pose 动作服务尚未就绪");
+            return false;
+        }
+        const auto &command_id = task.commandId;
+        const double x = task.x, y = task.y, theta = task.theta;
+        setSpeedLimit(task.edgeInfo.maxSpeed);
         // 创建导航目标
         auto goal_msg = NavigateToPose::Goal();
         goal_msg.pose.header.stamp = node_->now();
@@ -503,6 +524,14 @@ namespace agv_bridge
         std::lock_guard<std::recursive_mutex> task_lock(mutex_);
         if (!isReady()) return false;
         current_task_ = moveToMessage;
+        const auto parameter_error = validateNavigationMode(
+            "STRAIGHT", moveToMessage.edgeInfo.id, moveToMessage.edgeInfo.controlPoints,
+            moveToMessage.edgeInfo.backUp, moveToMessage.edgeInfo.reverse);
+        if (!parameter_error.empty()) {
+            failTask("FAILED", parameter_error);
+            return false;
+        }
+
 
         auto current_pose_opt = pose_provider_->getCurrentPose();
         if (!current_pose_opt.has_value())
@@ -641,6 +670,14 @@ namespace agv_bridge
         std::lock_guard<std::recursive_mutex> task_lock(mutex_);
         if (!isReady()) return false;
         current_task_ = moveToMessage;
+        const auto parameter_error = validateNavigationMode(
+            "CURVE", moveToMessage.edgeInfo.id, moveToMessage.edgeInfo.controlPoints,
+            moveToMessage.edgeInfo.backUp, moveToMessage.edgeInfo.reverse);
+        if (!parameter_error.empty()) {
+            failTask("FAILED", parameter_error);
+            return false;
+        }
+
 
         auto current_pose_opt = pose_provider_->getCurrentPose();
         if (!current_pose_opt.has_value())
@@ -816,6 +853,13 @@ namespace agv_bridge
     std::vector<geometry_msgs::msg::PoseStamped> NavigationManager::generateBezierPath(
         const geometry_msgs::msg::Pose robot_pose, const agv_bridge::MoveToMessage &move_msg)
     {
+        const auto parameter_error = validateNavigationMode(
+            "CURVE", move_msg.edgeInfo.id, move_msg.edgeInfo.controlPoints,
+            move_msg.edgeInfo.backUp, move_msg.edgeInfo.reverse);
+        if (!parameter_error.empty()) {
+            RCLCPP_ERROR(logger_, "%s", parameter_error.c_str());
+            return {};
+        }
         bool reverse_path = move_msg.nodeId == move_msg.edgeInfo.sourceId; // 目标点和通道起点相同，说明是reverse的，主要用途就是反转切点
         // double start_theta = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
         std::vector<geometry_msgs::msg::PoseStamped> path;

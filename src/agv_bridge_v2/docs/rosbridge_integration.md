@@ -353,7 +353,7 @@ Spring Boot 侧可据此自动生成与 `.action` 保持同步的 Java DTO，彻
    "back_up":false,"reverse":false,
    "step":0.1,                    // 路径采样步长
    "end_point":true,              // true = 到点后再旋转对准 theta
-   "control_points":[]            // 贝塞尔控制点 [{x,y},...]，1~2 个；空 = 直线
+   "control_points":[]            // 贝塞尔控制点 [{x,y},...]；CURVE 必须 1~2 个，其他类型必须为空
  }}
 ```
 
@@ -363,12 +363,13 @@ Goal 字段速查：
 |---|---|---|
 | `command_id` / `node_id` | string | 原样回传，对账用 |
 | `x` `y` `theta` | float64 | map 系目标位姿，theta 为弧度 |
-| `edge_type` | string | `STRAIGHT` / `CURVE` / `ELEVATION`（按直线处理）；有 control_points 不写也会按 CURVE |
+| `edge_type` | string | 必填：STRAIGHT / CURVE / ELEVATION（按直线处理）/ FREE，不再推断 |
+| `edge_id` | string | STRAIGHT/CURVE/ELEVATION 必须非空且不全为空白；FREE 不校验 |
 | `max_speed` | float64 | 倒车建议压到 0.15~0.3（不超过底盘 `vx_min` 绝对值），step 可取 0.05 |
 | `back_up` | bool | true=保持朝向直线后退，**绝不自动旋转**；偏差超限直接 FAILED（见 6.3） |
 | `reverse` | bool | 沿边反向（控制点顺序自动反转，一般配合 source_id/target_id 用） |
 | `end_point` | bool | 最后一段才传 true（到达后做最终旋转），见 10.1 |
-| `control_points` | array | 二阶曲线 1 个点、三阶 2 个点；≥3 个会**静默退化成直线** |
+| `control_points` | array | CURVE 必须为 1 或 2 个点，错误数量明确失败；其他模式必须为 [] |
 
 执行时序：角度差 >20° 时先原地预旋转（`PRE_ROTATING`）→ 沿直线/曲线行驶（`EXECUTING`）→
 （`end_point=true` 时）到点旋转对准 theta（`END_ROTATING`）→ 返回 result。
@@ -470,7 +471,7 @@ nav2_msgs/action/FollowPath
 ### 6.2 两个硬限制
 
 1. **控制点只能是 1 个或 2 个**。贝塞尔采样只实现了二阶（1 个控制点）和三阶（2 个控制点），
-   给 3 个及以上会**静默退化成直线插值**。请在规划侧就把曲线归约到二阶/三阶。
+   0 个或 3 个及以上会明确失败。请在规划侧把曲线归约到二阶/三阶。
 2. **贝塞尔起点是机器人当前位姿，不是 `source_id`**。曲线从 `localization_monitor_` 的实时位姿出发，
    因此**机器人必须已经站在边的起点附近**。偏差较大时节点会先按曲线起点切线方向做一次
    `Spin` 预旋转（角度差 >20° 才触发，`PRE_ROTATING` 状态）。
@@ -744,3 +745,7 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
 *文档核对日期：2026-10-23，依据当前工作区代码（包声明版本仍为 0.2.0）。
 协议规范全文见 rosbridge_suite 仓库 `ROSBRIDGE_PROTOCOL.md`；
 协议操作参考实现见 `scripts/agv_client_demo.py`。*
+
+自由规划绕障到点使用同一 action 的 edge_type: FREE，详见 [FREE 接口说明](free_navigation_api.md)。
+
+导航参数现按严格规则校验：edge_type 必填；STRAIGHT/CURVE/ELEVATION 的 edge_id 不得为空或仅含空白；CURVE 必须提供 1 或 2 个控制点，其他模式控制点必须为空。FREE 不校验 edge_id。错误详情见 action_result 的 values.message；曲线错误不再退化为直线。

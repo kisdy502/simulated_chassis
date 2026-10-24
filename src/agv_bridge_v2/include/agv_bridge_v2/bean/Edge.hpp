@@ -26,7 +26,8 @@ namespace agv_bridge
     {
         STRAIGHT,  // 直线
         CURVE,     // 贝塞尔曲线
-        ELEVATION  // 坡道（当前按直线处理）
+        ELEVATION, // 坡道（当前按直线处理）
+        FREE       // Nav2 自主规划、绕障到点
     };
 
     // 边：一次移动任务对应的地图拓扑信息
@@ -42,13 +43,13 @@ namespace agv_bridge
         bool backUp = false;    // true = 倒车（保持当前朝向平移后退，绝不旋转）
 
         // 贝塞尔曲线控制点（type == CURVE 时使用）
-        // ⚠️ 仅支持 1 个（二阶）或 2 个（三阶）；更多会退化成直线
+        // 必须为 1 个（二阶）或 2 个（三阶）；错误数量明确失败
         std::vector<ControlPoint> controlPoints;
 
         /// @brief 是否为可用的贝塞尔曲线（有类型且有控制点）
         bool isBezierCurve() const
         {
-            return type == EdgeType::CURVE && !controlPoints.empty();
+            return type == EdgeType::CURVE && (controlPoints.size() == 1 || controlPoints.size() == 2);
         }
 
         /// @brief 贝塞尔阶数：0 = 非曲线，1 = 二阶，2 = 三阶

@@ -2,6 +2,9 @@
 #include <gtest/gtest.h>
 #include <atomic>
 #include <thread>
+#include <cmath>
+#include <limits>
+#include "agv_bridge_v2/NavigationValidation.hpp"
 
 namespace agv_bridge {
 struct NavigationManagerTestPeer {
@@ -13,6 +16,10 @@ struct NavigationManagerTestPeer {
     m.cancel_pending_ = cancel;
     m.action_deadline_ = std::chrono::steady_clock::now() - std::chrono::seconds(1);
     m.checkActionProgress();
+  }
+  static bool navAccepted(NavigationManager &m) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    return bool(m.nav_goal_handle_);
   }
   static void expireSmoother(NavigationManager &m) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
@@ -41,11 +48,12 @@ struct NavigationManagerTestPeer {
 };
 
 struct TestCallbacks : NavigationCallbacks {
-  int results = 0; std::string message;
+  std::atomic<int> results{0}; std::string message;
+  std::string command_id, node_id; bool success = false;
   void onNavigationStateChanged(NavigationState, const std::string &) override {}
   void onNavigationFeedback(double, double, double) override {}
-  void onNavigationResult(bool, const std::string &text, const std::string &, const std::string &) override {
-    ++results; message = text;
+  void onNavigationResult(bool ok, const std::string &text, const std::string &command, const std::string &node) override {
+    message = text; command_id = command; node_id = node; success = ok; ++results;
   }
   void onCommandAck(const std::string &, const std::string &, const std::string &, const std::string &) override {}
 };
@@ -72,8 +80,13 @@ protected:
       [](auto, auto) { return rclcpp_action::GoalResponse::REJECT; },
       [](auto) { return rclcpp_action::CancelResponse::ACCEPT; }, [](auto) {});
     nav_server = rclcpp_action::create_server<NavigationManager::NavigateToPose>(node, "navigate_to_pose",
-      [](auto, auto) { return rclcpp_action::GoalResponse::REJECT; },
-      [](auto) { return rclcpp_action::CancelResponse::ACCEPT; }, [](auto) {});
+      [this](auto, auto) { ++nav_goals; return accept_nav ?
+        rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE : rclcpp_action::GoalResponse::REJECT; },
+      [](auto) { return rclcpp_action::CancelResponse::ACCEPT; },
+      [this](auto handle) {
+        std::lock_guard<std::mutex> lock(nav_mutex);
+        nav_handle = handle;
+      });
     executor.add_node(node); worker = std::thread([this] { executor.spin(); });
     manager = std::make_shared<NavigationManager>(node.get(), &callbacks, nullptr);
     ASSERT_TRUE(manager->initialize());
@@ -89,6 +102,14 @@ protected:
     }
     return false;
   }
+  using NavHandle = rclcpp_action::ServerGoalHandle<NavigationManager::NavigateToPose>;
+  std::shared_ptr<NavHandle> navigationHandle() {
+    std::lock_guard<std::mutex> lock(nav_mutex); return nav_handle;
+  }
+  std::mutex nav_mutex;
+  std::shared_ptr<NavHandle> nav_handle;
+  std::atomic<bool> accept_nav{false};
+  std::atomic<int> nav_goals{0};
   std::atomic<bool> smoother_active{false}; std::atomic<int> spin_goals{0};
   rclcpp::Node::SharedPtr node;
   std::vector<rclcpp::Service<lifecycle_msgs::srv::GetState>::SharedPtr> services;
@@ -122,7 +143,7 @@ TEST_F(NavigationReadinessTest, DoesNotSendRotationWhenTranslationChainIsInactiv
   ASSERT_TRUE(waitFor([this] { return manager->readinessError().find("velocity_smoother") != std::string::npos; }));
   EXPECT_FALSE(NavigationManagerTestPeer::submitSpin(*manager));
   EXPECT_EQ(spin_goals.load(), 0);
-  EXPECT_EQ(callbacks.results, 1);
+  EXPECT_EQ(callbacks.results.load(), 1);
   EXPECT_NE(callbacks.message.find("velocity_smoother"), std::string::npos);
   EXPECT_EQ(manager->getCurrentState(), NavigationState::IDLE);
 }
@@ -130,7 +151,7 @@ TEST_F(NavigationReadinessTest, DoesNotSendRotationWhenTranslationChainIsInactiv
 TEST_F(NavigationReadinessTest, ServerShutdownClearsPendingTaskWithoutReplayingIt) {
   smoother_active = true; ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
   NavigationManagerTestPeer::resetPendingTask(*manager);
-  EXPECT_EQ(callbacks.results, 1);
+  EXPECT_EQ(callbacks.results.load(), 1);
   EXPECT_NE(callbacks.message.find("重新下发任务"), std::string::npos);
   EXPECT_EQ(spin_goals.load(), 0);
 }
@@ -167,5 +188,145 @@ TEST_F(NavigationReadinessTest, GoalResponseTimeoutAlsoRequiresRestart) {
   manager->resetAfterServerShutdown();
   EXPECT_FALSE(manager->requiresServerRestart());
   ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+}
+
+TEST_F(NavigationReadinessTest, FreeNavigationRequiresReadyStack) {
+  EXPECT_FALSE(manager->startNavigation("free", "target", 2.0, 3.0, 0.4));
+  EXPECT_EQ(nav_goals.load(), 0);
+}
+
+TEST_F(NavigationReadinessTest, FreeNavigationPreservesGoalAndCompletesTask) {
+  smoother_active = true; accept_nav = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  MoveToMessage task; task.commandId = "free-success"; task.nodeId = "destination";
+  task.x = 2.0; task.y = -3.0; task.theta = 0.4;
+  task.edgeInfo.type = EdgeType::FREE; task.edgeInfo.maxSpeed = 0.6;
+  ASSERT_TRUE(manager->startNavigation(task));
+  ASSERT_TRUE(waitFor([this] { return bool(navigationHandle()); }));
+  auto handle = navigationHandle();
+  const auto goal = handle->get_goal();
+  EXPECT_EQ(goal->pose.header.frame_id, "map");
+  EXPECT_DOUBLE_EQ(goal->pose.pose.position.x, 2.0);
+  EXPECT_DOUBLE_EQ(goal->pose.pose.position.y, -3.0);
+  EXPECT_NEAR(goal->pose.pose.orientation.z, std::sin(0.2), 1e-9);
+  EXPECT_TRUE(goal->behavior_tree.empty());
+  EXPECT_EQ(spin_goals.load(), 0);
+  handle->succeed(std::make_shared<NavigationManager::NavigateToPose::Result>());
+  ASSERT_TRUE(waitFor([this] { return callbacks.results.load() == 1; }));
+  EXPECT_TRUE(callbacks.success);
+  EXPECT_EQ(callbacks.command_id, "free-success");
+  EXPECT_EQ(callbacks.node_id, "destination");
+  ASSERT_TRUE(waitFor([this] { return manager->getCurrentState() == NavigationState::IDLE; }));
+}
+
+TEST_F(NavigationReadinessTest, FreeNavigationRejectionReleasesTask) {
+  smoother_active = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(manager->startNavigation("free-rejected", "target", 1.0, 0.0, 0.0));
+  ASSERT_TRUE(waitFor([this] { return callbacks.results.load() == 1; }));
+  EXPECT_FALSE(callbacks.success);
+  EXPECT_EQ(callbacks.command_id, "free-rejected");
+  EXPECT_FALSE(manager->requiresServerRestart());
+}
+
+TEST_F(NavigationReadinessTest, FreeNavigationCancelConfirmsStopAndAllowsNewTask) {
+  smoother_active = true; accept_nav = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(manager->startNavigation("free-cancel", "target", 1.0, 0.0, 0.0));
+  ASSERT_TRUE(waitFor([this] { return bool(navigationHandle()); }));
+  // Wait for the client's accepted callback before requesting cancellation.
+  ASSERT_TRUE(waitFor([this] { return manager->getCurrentState() == NavigationState::EXECUTING; }));
+  ASSERT_TRUE(waitFor([this] { return NavigationManagerTestPeer::navAccepted(*manager); }));
+  auto handle = navigationHandle();
+  ASSERT_TRUE(manager->cancelNavigation());
+  ASSERT_TRUE(waitFor([handle] { return handle->is_canceling(); }));
+  handle->canceled(std::make_shared<NavigationManager::NavigateToPose::Result>());
+  ASSERT_TRUE(waitFor([this] { return manager->getCurrentState() == NavigationState::IDLE; }));
+  EXPECT_EQ(callbacks.results.load(), 1);
+  EXPECT_FALSE(manager->requiresServerRestart());
+  accept_nav = false;
+  ASSERT_TRUE(manager->startNavigation("free-next", "target", 2.0, 0.0, 0.0));
+  ASSERT_TRUE(waitFor([this] { return callbacks.results.load() == 2; }));
+}
+
+TEST_F(NavigationReadinessTest, FreeNavigationRejectsConflictingPathOptions) {
+  smoother_active = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  MoveToMessage task; task.commandId = "invalid-free"; task.edgeInfo.backUp = true;
+  EXPECT_FALSE(manager->startNavigation(task));
+  EXPECT_EQ(callbacks.results.load(), 1);
+  EXPECT_EQ(nav_goals.load(), 0);
+}
+
+TEST(NavigationValidationTest, TypeMustBeExplicitAndKnown) {
+  std::vector<ControlPoint> points;
+  for (const auto &type : {"", "  ", "free", "UNKNOWN"}) {
+    const auto error = validateNavigationMode(type, "E1", points, false, false);
+    EXPECT_NE(error.find("edge_type"), std::string::npos);
+  }
+}
+
+TEST(NavigationValidationTest, EdgeIdRequiredExceptFree) {
+  std::vector<ControlPoint> points;
+  for (const auto &type : {"STRAIGHT", "CURVE", "ELEVATION"}) {
+    for (const auto &id : {"", " ", "\t\r\n"}) {
+      const auto error = validateNavigationMode(type, id, points, false, false);
+      EXPECT_NE(error.find("edge_id"), std::string::npos);
+    }
+  }
+  for (const auto &id : {"", " ", "unused"})
+    EXPECT_TRUE(validateNavigationMode("FREE", id, points, false, false).empty());
+}
+
+TEST(NavigationValidationTest, CurveNeedsExactlyOneOrTwoFiniteControlPoints) {
+  for (std::size_t count : {0u, 1u, 2u, 3u, 4u}) {
+    std::vector<ControlPoint> points(count, ControlPoint(1.0, 2.0));
+    const auto error = validateNavigationMode("CURVE", "E1", points, false, false);
+    if (count == 1 || count == 2) EXPECT_TRUE(error.empty());
+    else {
+      EXPECT_NE(error.find("control_points"), std::string::npos);
+      EXPECT_NE(error.find(std::to_string(count)), std::string::npos);
+    }
+  }
+  std::vector<ControlPoint> points{{1.0, 2.0}, {3.0, 4.0}};
+  points[1].x = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_NE(validateNavigationMode("CURVE", "E1", points, false, false).find("control_points[1].x"), std::string::npos);
+  points[1].x = 3.0;
+  points[0].y = std::numeric_limits<double>::infinity();
+  EXPECT_NE(validateNavigationMode("CURVE", "E1", points, false, false).find("control_points[0].y"), std::string::npos);
+}
+
+TEST(NavigationValidationTest, NonCurveModesForbidControlPoints) {
+  std::vector<ControlPoint> points{{1.0, 2.0}};
+  for (const auto &type : {"STRAIGHT", "ELEVATION", "FREE"})
+    EXPECT_NE(validateNavigationMode(type, "E1", points, false, false).find("control_points"), std::string::npos);
+}
+
+TEST(NavigationValidationTest, FreeForbidsReverseAndBackUp) {
+  std::vector<ControlPoint> points;
+  EXPECT_NE(validateNavigationMode("FREE", "", points, true, false).find("back_up=true"), std::string::npos);
+  EXPECT_NE(validateNavigationMode("FREE", "", points, false, true).find("reverse=true"), std::string::npos);
+}
+
+TEST_F(NavigationReadinessTest, InvalidCurveFailsBeforeAnyPathOrRotation) {
+  smoother_active = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  MoveToMessage task; task.commandId = "invalid-curve"; task.edgeInfo.id = "E1";
+  task.edgeInfo.type = EdgeType::CURVE;
+  EXPECT_FALSE(manager->followBezierPathNavigation(task));
+  EXPECT_EQ(callbacks.results.load(), 1);
+  EXPECT_NE(callbacks.message.find("数量为 0"), std::string::npos);
+  EXPECT_EQ(spin_goals.load(), 0);
+  EXPECT_EQ(manager->getCurrentState(), NavigationState::IDLE);
+}
+
+TEST_F(NavigationReadinessTest, StraightWithoutEdgeIdFailsBeforeAnyMovement) {
+  smoother_active = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  MoveToMessage task; task.commandId = "invalid-straight";
+  EXPECT_FALSE(manager->followPathNavigation(task));
+  EXPECT_EQ(callbacks.results.load(), 1);
+  EXPECT_NE(callbacks.message.find("edge_id"), std::string::npos);
+  EXPECT_EQ(spin_goals.load(), 0);
 }
 } // namespace agv_bridge

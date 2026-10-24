@@ -127,6 +127,7 @@ namespace agv_bridge
          * @return 是否成功发送导航目标
          */
         bool startNavigation(const std::string &command_id, const std::string &node_id, double x, double y, double theta);
+        bool startNavigation(const agv_bridge::MoveToMessage &task);
 
         /**
          * @param msg MoveToMessage
