@@ -129,7 +129,7 @@ source ~/.bashrc   # 或直接 export SIM_WS_ROOT=/home/kisdy
 ros2 launch simulated_chassis_ur5e bridge.launch.py \
   slam_algorithm:=lightning \
   maps_dir:=/home/kisdy/maps \
-  pbstream_file:=/home/kisdy/maps/map1022Pro
+  pbstream_file:=/home/kisdy/maps/map1025L
 ```
 
 无界面 GPU 雷达仍需渲染上下文，可用 `xvfb-run -a ros2 launch simulated_chassis_ur5e simulation.launch.py`；Docker 无界面入口已使用 xvfb。

@@ -49,15 +49,17 @@ ros2 launch agv_bridge_v2 agv_rosbridge.launch.py  robot_package:=simulated_chas
 ### 有地图加载，
 ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
     slam_algorithm:=lightning \
-    pbstream_file:=$PWD/maps/map1019 \
     robot_package:=simulated_chassis
-
+    maps_dir:=/home/kisdy/maps \
+    pbstream_file:=/home/kisdy/maps/map1025L
+    
 
 # 带 lightning 地图启动 bridge：
-ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
-    slam_algorithm:=lightning \
-    pbstream_file:=$PWD/maps/map1019/map1019.pbstream \
-    robot_package:=simulated_chassis
+source ~/.bashrc   # 或直接 export SIM_WS_ROOT=/home/kisdy
+ros2 launch simulated_chassis_ur5e bridge.launch.py \
+  slam_algorithm:=lightning \
+  maps_dir:=/home/kisdy/maps \
+  pbstream_file:=/home/kisdy/maps/map1022Pro
 
 ## 重启前清场（重要）
 
@@ -70,4 +72,67 @@ scripts/clean_all_ros.sh
 ```
 
 日常退出请尽量用 Ctrl+C（让 ros2 launch 优雅回收子节点），别直接关终端窗口。
+
+## 禁止全量删除，只清理指定包；保留 log
+
+## agv_bridge_v2：导航 bridge
+rm -rf -- build/agv_bridge_v2 install/agv_bridge_v2
+colcon build --packages-select agv_bridge_v2
+
+## agv_bridge_v2_interfaces：导航接口
+rm -rf -- build/agv_bridge_v2_interfaces install/agv_bridge_v2_interfaces
+colcon build --packages-select agv_bridge_v2_interfaces
+
+## agv_map_3d：3D 地图服务
+rm -rf -- build/agv_map_3d install/agv_map_3d
+colcon build --packages-select agv_map_3d
+
+## simulated_chassis：仿真底盘
+rm -rf -- build/simulated_chassis install/simulated_chassis
+colcon build --packages-select simulated_chassis
+
+## simulated_chassis_ur5e：底盘与 UR5e 组合机器人
+rm -rf -- build/simulated_chassis_ur5e install/simulated_chassis_ur5e
+colcon build --packages-select simulated_chassis_ur5e
+
+## simulated_ur5e：UR5e 仿真
+rm -rf -- build/simulated_ur5e install/simulated_ur5e
+colcon build --packages-select simulated_ur5e
+
+## simulated_arm：机械臂仿真
+rm -rf -- build/simulated_arm install/simulated_arm
+colcon build --packages-select simulated_arm
+
+## simulated_dual_arm：双臂仿真
+rm -rf -- build/simulated_dual_arm install/simulated_dual_arm
+colcon build --packages-select simulated_dual_arm
+
+## arm_manager：机械臂任务管理
+rm -rf -- build/arm_manager install/arm_manager
+colcon build --packages-select arm_manager
+
+## arm_manager_interfaces：机械臂接口
+rm -rf -- build/arm_manager_interfaces install/arm_manager_interfaces
+colcon build --packages-select arm_manager_interfaces
+
+## jzt_robot
+rm -rf -- build/jzt_robot install/jzt_robot
+colcon build --packages-select jzt_robot
+
+## zioneer_robot
+rm -rf -- build/zioneer_robot install/zioneer_robot
+colcon build --packages-select zioneer_robot
+
+
+
+## 如果修改了导航接口的消息、服务或 action 字段结构，应同时重建当前直接依赖它的包
+colcon build --packages-select \
+  agv_bridge_v2_interfaces \
+  agv_bridge_v2 \
+  simulated_chassis_ur5e \
+  simulated_dual_arm
+
+## Lightning 单独构建
+bash scripts/build_lightning.sh
+source install/setup.bash
 

@@ -23,7 +23,7 @@ fasterlio:
   time_scale: 1e-3             # time 字段单位 ms → s
 
   skip_lidar_num: 0
-  point_filter_num: 3          # 双雷达合流后 ~8640 点/帧（270x16x2），取 1/3
+  point_filter_num: 2          # 双雷达合流后 ~8640 点/帧（270x16x2），16线室内偏稀，取 1/2
   max_iteration: 4
   filter_size_scan: 0.2        # 室内小场景，比默认 0.5 更细
   filter_size_map: 0.2
@@ -44,13 +44,13 @@ fasterlio:
                  0, 1, 0,
                  0, 0, 1 ]
   keep_first_imu_estimation: false
-  kf_dis_th: 2.0               # 室内建图可降到 1.0（关键帧更密）
+  kf_dis_th: 0.8               # 关键帧距离：室内必须密！closest_id_th 按关键帧ID计数，2.0m时需跑100m才可能出现首个回环候选
   kf_angle_th: 5.0
 
   enable_icp_part: false
   plane_icp_weight: 500.0
   min_pts: 300
-  imu_filter: true
+  imu_filter: false             # 仿真 IMU 噪声极小(~0.001rad/s)，低通只会给原地快速旋转加延迟
   proj_kfs: false
 
 g2p5:
@@ -78,12 +78,14 @@ system:
   save_dir: /tmp/lightning_data       # [补丁] 建图模式：落盘根目录（launch 注入绝对路径）
 
 loop_closing:
-  loop_kf_gap: 50
-  min_id_interval: 20
-  closest_id_th: 50
+  # 注意：closest_id_th / loop_kf_gap / min_id_interval 均按【关键帧ID差】计数，不是米！
+  # 配合 kf_dis_th 换算：0.8m/关键帧时 20 个ID ≈ 16m。
+  loop_kf_gap: 20              # 成功闭环一次后，隔 20 个关键帧（≈16m）允许下次检测（原50≈100m太苛刻）
+  min_id_interval: 10          # 同一次重访中，相邻回环边最小ID间隔（≈8m 一条边，图更刚）
+  closest_id_th: 20            # 候选历史帧与当前帧最小ID差（原50 + kf_dis_th=2.0 → 需100m才有首个候选，回环从未触发）
   max_range: 30.0              # 与仿真雷达量程一致
-  ndt_score_th: 1.0
-  with_height: false
+  ndt_score_th: 0.75           # 16线稀疏云NDT分偏低，1.0会把真回环拒掉
+  with_height: true            # 平面AGV：加 z≈0 先验边，抑制z漂（z漂会 feeding 重影到2.5D栅格）
 
 ### localization =================================================================
 lidar_loc:
