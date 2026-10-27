@@ -20,6 +20,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
@@ -39,6 +40,7 @@ set(AGV_ROS_DEPS
   rclcpp_action
   geometry_msgs
   std_msgs
+  std_srvs
   sensor_msgs
   nav_msgs
   nav2_msgs
@@ -79,7 +81,7 @@ install(TARGETS agv_nav_server urdf_mesh_server
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY launch docs scripts
+install(DIRECTORY launch scripts
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -101,6 +103,10 @@ if(BUILD_TESTING)
     TIMEOUT 90)
   target_include_directories(test_navigation_readiness PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   ament_target_dependencies(test_navigation_readiness ${AGV_ROS_DEPS})
+  ament_add_gtest(test_battery_gateway test/test_battery_gateway.cpp
+    ENV ROS_DOMAIN_ID=89 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp TIMEOUT 45)
+  target_include_directories(test_battery_gateway PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  ament_target_dependencies(test_battery_gateway ${AGV_ROS_DEPS})
 endif()
 
 ament_package()

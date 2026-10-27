@@ -160,6 +160,7 @@ def _agv_nav_server_node(context):
                 "use_sim_time": use_sim_time,
                 "feedback_interval_ms": 400,
                 "battery_level": 100.0,
+                "require_battery_state": ParameterValue(LaunchConfiguration('require_battery_state'), value_type=bool),
                 "enable_tf_broadcast": True,
                 "back_up_max_heading_error_deg": back_up_max_heading_error_deg,
                 "maps_dir": _resolve_maps_dir(context),
@@ -312,7 +313,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "services_glob",
             default_value=(
-                "['/rosapi/*', '/agv/set_control', '/agv/get_map', '/agv/load_map', "
+                "['/rosapi/*', '/agv/set_control', '/agv/set_charging', '/agv/get_map', '/agv/load_map', "
                 "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize', "
                 "'/agv/arm_move']"
             ),
@@ -320,6 +321,7 @@ def generate_launch_description():
         ),
     ]
 
+    args.append(DeclareLaunchArgument('require_battery_state', default_value='false'))
     # ---------------- 1. AGV 瘦节点 ----------------
     agv_nav_server = OpaqueFunction(function=_agv_nav_server_node)
 

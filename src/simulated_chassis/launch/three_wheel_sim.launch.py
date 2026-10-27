@@ -261,6 +261,12 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument('battery_simulation', default_value='true'),
+        Node(package='battery_simulator', executable='battery_simulator_node',
+             name='battery_simulator', output='screen',
+             condition=IfCondition(LaunchConfiguration('battery_simulation')),
+             parameters=[os.path.join(get_package_share_directory('battery_simulator'), 'config', 'battery.yaml'),
+                         {'use_sim_time': LaunchConfiguration('use_sim_time')}]),
         DeclareLaunchArgument('description_file', default_value=os.path.join(pkg_share, 'urdf', 'three_wheel_chassis_3d.xacro')),
         DeclareLaunchArgument('rsp_description_file', default_value=os.path.join(pkg_share, 'urdf', 'three_wheel_chassis_3d.xacro')),
         DeclareLaunchArgument('extra_controllers', default_value=''),

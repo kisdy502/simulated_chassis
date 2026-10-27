@@ -15,10 +15,11 @@ services:
       ROBOT_PROFILE: ${ROBOT_PROFILE:-chassis_3d_ur5e}
       MODE: simulation
       USE_SIM_TIME: ${USE_SIM_TIME:-true}
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-1}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
       CYCLONEDDS_URI: file:///etc/cyclonedds.xml
       GAZEBO_GUI: ${GAZEBO_GUI:-false}
+      BATTERY_SIMULATION: ${BATTERY_SIMULATION:-true}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - simulation_data:/root/.ignition
@@ -43,13 +44,15 @@ services:
       AGV_ID: ${AGV_ID:-AGV001}
       USE_SIM_TIME: ${USE_SIM_TIME:-true}
       BACK_UP_MAX_HEADING_ERROR_DEG: ${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}
-      WEBSOCKET_PORT: ${WEBSOCKET_PORT:-9090}
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      # Internal listener stays at 9090; WEBSOCKET_PORT in .env is host-only.
+      WEBSOCKET_PORT: "9090"
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-1}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
       CYCLONEDDS_URI: file:///etc/cyclonedds.xml
       ROBOT_PACKAGE: ${ROBOT_PACKAGE:-simulated_chassis}
       ROBOT_PROFILE: ${ROBOT_PROFILE:-chassis_3d_ur5e}
       MANAGE_NAVIGATION: ${MANAGE_NAVIGATION:-true}
+      REQUIRE_BATTERY_STATE: ${REQUIRE_BATTERY_STATE:-true}
       MAPS_DIR: /ros2_ws/maps
       PBSTREAM_FILE: ${PBSTREAM_FILE:-}
       SLAM_ALGORITHM: ${SLAM_ALGORITHM:-cartographer}
@@ -62,7 +65,8 @@ services:
       - ./docker/cyclonedds.xml:/etc/cyclonedds.xml:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     ports:
-      - "${WEBSOCKET_PORT:-9090}:${WEBSOCKET_PORT:-9090}"
+      # Standard host ports; stop the native WSL robot before starting Docker.
+      - "${WEBSOCKET_PORT:-9090}:9090"
       - "${MAP_3D_PORT:-8089}:8089"
       - "${URDF_MESH_PORT:-8090}:8090"
     depends_on:

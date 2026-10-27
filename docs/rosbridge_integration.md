@@ -9,11 +9,12 @@
 
 ---
 
-## 0. 当前版本与白名单（2026-10-23 核对）
+## 0. 当前版本与白名单（2026-10-26 电池/充电增补）
 
 新增的 3D 地图 HTTP、URDF 读取、模型资源下载和地图 service 字段详见
 [3D 地图、URDF 与地图业务接口](map_model_api.md)，含请求/响应、错误码和调用顺序。
 相机拍照、预览与照片结果展示另见 [相机接口](camera_api.md)。
+电量字段、充电任务时序和请求/响应详见 [上位机电量与充电对接](battery_api.md)。
 本文为 rosbridge 交互指南；接口字段以仓库 `.srv/.action/.msg` 与 launch 为准。
 `package.xml` 仍为 0.2.0，不能只凭包版本认定本文是否最新。
 
@@ -23,7 +24,7 @@
 | --- | --- |
 | `topics_sub_glob` | 上位机能订阅：`/odom /tf /tf_static /map /plan /local_plan /joint_states /agv/status /scan_1 /scan_2 /agv/pose` |
 | `topics_pub_glob` | 上位机能发布：`/cmd_vel /initialpose /goal_pose` |
-| `services_glob` | `/rosapi/*`，建图/地图/重定位、控制和 `/agv/arm_move` 等，详见当前 launch |
+| `services_glob` | `/rosapi/*`，建图/地图/重定位、控制、`/agv/set_charging` 和 `/agv/arm_move` 等，详见当前 launch |
 | `params_glob` | `robot_description`、`/agv_nav_server/*`、`/robot_state_publisher/*` |
 
 组合机械臂 profile 会扩展相机和机械臂相关白名单。当前 launch 未设置 `actions_glob`，
@@ -199,6 +200,10 @@ bridge 未加工、rosbridge 直接透传的标准话题：
   "agv_id":"AGV001",
   "state":"EXECUTING",
   "battery":100.0,
+  "battery_state":"DISCHARGING",
+  "charging":false,
+  "charge_connected":false,
+  "battery_data_valid":true,
   "pose_initialized":true,
   "active_command_id":"move_0ca1e7b0-9a9f-470e-9a16-10035ac4237c",
   "active_node_id":"I006",
@@ -210,6 +215,22 @@ bridge 未加工、rosbridge 直接透传的标准话题：
 ```
 
 `state` 取值：`IDLE / PRE_ROTATING / EXECUTING / BACKING_UP / END_ROTATING / COMPLETED / FAILED / CANCELLED / STOPPED`。
+
+电池接口更新（2026-10-26）：导航 `state` 不新增充电枚举，电池独立上报：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `battery` | float64，0~100% | 电量百分比；数据无效时可能是上次值/配置回退值 |
+| `battery_state` | string | `UNKNOWN / DISCHARGING / CHARGING / FULL / NOT_CHARGING` |
+| `charging` | bool | 最近有效电池遥测是否正在充电；充满时通常false |
+| `charge_connected` | bool | 最近已知充电通路连接状态；充满不代表断开 |
+| `battery_data_valid` | bool | 电量数据有效且新鲜，默认有效期5秒 |
+
+通过 `/agv/set_charging`（`std_srvs/srv/SetBool`）开始/停止充电。
+上位机充电任务先导航、确认成功并停车，再调用 `data=true`；作业导航会由bridge先确认断开充电再执行。
+不能只凭 `charging=false` 判断可以离桩；数据无效或控制结果未知时，连接状态不能作为断开证明。
+完整请求/响应、字段语义、超时恢复及联调清单见 **[上位机电量与充电对接文档](battery_api.md)**。
+
 `pose_initialized=false` 时**不要下发导航指令**（节点会直接 abort）。
 该字段主要反映 TF 可用且新鲜，不证明地图匹配准确，也不等于 Nav2 已就绪。
 当前状态消息没有 `nav_ready` 字段；启动期间仍可能返回 Nav2 未就绪的 action 失败。
@@ -708,6 +729,7 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
 
 ### AgvStatus（/agv/status）
 `header` · `agv_id:string` · `state:string`（见 4.1 枚举）· `battery:float64` ·
+`battery_state:string` · `charging:bool` · `charge_connected:bool` · `battery_data_valid:bool` ·
 `pose_initialized:bool` · `active_command_id:string` · `active_node_id:string` ·
 `mode:string` · `map_name:string` · `slam_alive:bool` · `map_age_sec:int32`
 
@@ -721,6 +743,11 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
 ### SetControl（/agv/set_control）
 - 请求：`action:string`（start | stop | reset）
 - 回应：`success:bool` `message:string` `state:string`
+
+### SetCharging（/agv/set_charging，std_srvs/srv/SetBool）
+- 请求：`data:bool`（true开始充电，false停止充电；显式填写，不传null）
+- 回应：`success:bool` `message:string`
+- 服务传输成功和业务成功需分别判断：外层`result`以及`values.success`。
 
 ### 常用原生消息
 
@@ -742,10 +769,12 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
 
 ---
 
-*文档核对日期：2026-10-23，依据当前工作区代码（包声明版本仍为 0.2.0）。
+*基础文档核对日期：2026-10-23；电池/充电接口增补：2026-10-26（包声明版本仍为 0.2.0）。
 协议规范全文见 rosbridge_suite 仓库 `ROSBRIDGE_PROTOCOL.md`；
 协议操作参考实现见 `scripts/agv_client_demo.py`。*
 
 自由规划绕障到点使用同一 action 的 edge_type: FREE，详见 [FREE 接口说明](free_navigation_api.md)。
 
 导航参数现按严格规则校验：edge_type 必填；STRAIGHT/CURVE/ELEVATION 的 edge_id 不得为空或仅含空白；CURVE 必须提供 1 或 2 个控制点，其他模式控制点必须为空。FREE 不校验 edge_id。错误详情见 action_result 的 values.message；曲线错误不再退化为直线。
+
+电量与充电：/agv/status 新增 battery_state、charging、charge_connected、battery_data_valid；通过 /agv/set_charging（std_srvs/srv/SetBool）开始或停止充电。作业导航会先确认断开充电，再下发目标。详见 [电池与充电接口](battery_api.md)。

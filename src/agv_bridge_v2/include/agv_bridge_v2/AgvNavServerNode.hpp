@@ -25,6 +25,7 @@
 #include "nav_msgs/msg/occupancy_grid.hpp"
 
 #include "agv_bridge_v2/NavigationManager.hpp"
+#include "agv_bridge_v2/BatteryGateway.hpp"
 #include "agv_bridge_v2/LocalizationMonitor.hpp"
 #include "agv_bridge_v2/MapFileManager.hpp"
 #include "agv_bridge_v2/bean/MoveToMessage.hpp"
@@ -243,6 +244,7 @@ namespace agv_bridge
         // ===== 参数 =====
         std::string agv_id_ = "AGV001";
         double battery_level_ = 100.0;
+        std::shared_ptr<BatteryGateway> battery_gateway_;
         int feedback_interval_ms_ = 400;
         bool enable_tf_broadcast_ = true;
         bool use_sim_time_ = false;
@@ -315,7 +317,6 @@ namespace agv_bridge
         rclcpp::Service<Relocalize>::SharedPtr relocalize_srv_;
         rclcpp::Publisher<AgvStatus>::SharedPtr status_pub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
-        rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
         // /tracked_pose 探活（lightning 定位就绪判定 + 建图期位姿来源；
         // best_effort 订阅兼容 reliable/best_effort 两种发布端）
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr tracked_pose_sub_;

@@ -1,7 +1,7 @@
 # 3D 地图服务
 
 完整请求参数、响应字段、状态码与 URDF/模型接口联调见
-[当前接口契约（2026-10-23）](../agv_bridge_v2/docs/map_model_api.md)。
+[当前接口契约（2026-10-23）](../../docs/map_model_api.md)。
 
 机器人侧生产功能使用 C++17：`map_3d_server`（Boost.Beast/Asio HTTP、Boost.Process 导出任务）、`pbstream_to_ply`（Cartographer）、`pcd_to_ply`（PCL）。Python 仅用于测试；ROS Python launch 保留为启动配置。
 
@@ -49,7 +49,7 @@ curl -o map1008Pro.ply http://localhost:8089/maps/map1008Pro/cloud.ply
 
 ## Docker 与上位机
 
-Docker 构建已加入本包及依赖，bridge 容器内部固定 8089，Compose `MAP_3D_PORT` 设置宿主机端口（默认 8089）。构建镜像后需重建容器才生效；这里未执行完整镜像构建或容器端到端验收。
+Docker 构建已加入本包及依赖，bridge 容器内部固定 8089，Compose `MAP_3D_PORT` 设置宿主机端口（默认 8089）。同 Docker 网络的后端使用 `http://agv-bridge:8089`，宿主机/浏览器直连使用 `http://HOST:8089`。WSL 与 Docker 仿真交替运行，避免标准端口被同时占用。详见[部署网络与端口说明](../../DOCKER_DEPLOY.md)。端口映射更改后需重建容器，无需仅为映射重编译镜像。
 
 上位机 `D:\workspace\testDispatch` 中 Java 代理位于 `modules/app`，提供 `/api/v1/map-3d/{robot_map_name}/status`、`/cloud.ply`，默认访问机器人主机的 8089，也可设置 `MAP3D_BASE_URL`。Three.js 保留 Z 向上，按高度着色，支持缩放旋转。二维入口继续可用；机器人的页面箭头只表示平面位置和 yaw，不表示完整 roll/pitch/Z。
 

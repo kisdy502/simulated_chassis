@@ -16,7 +16,10 @@ Gazebo相机为 `always_on=true`，默认640×480、10Hz持续出图；ROS节点
 
 ## 拍照服务（已实现）
 
-连接 `ws://HOST:9090/`，ROS类型 `std_srvs/srv/Trigger`。UR5e组合bridge已放行；
+原生 WSL 连接 `ws://HOST:9090/`；从宿主机访问 Docker 机器人连接
+`ws://HOST:9090/`；同 Docker 网络的后端连接 `ws://agv-bridge:9090/`。
+相机没有独立 HTTP/WebSocket 监听端口，拍照复用 rosbridge。
+ROS类型 `std_srvs/srv/Trigger`。UR5e组合bridge已放行；
 纯底盘通用bridge不默认放行该服务。
 
 ```json

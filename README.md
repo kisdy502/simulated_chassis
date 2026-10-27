@@ -15,7 +15,7 @@ Docker 镜像构建、双容器部署、三维地图/URDF 资源服务、机械�
 
 ```bash
 source /opt/ros/humble/setup.bash
-colcon build --symlink-install --packages-select arm_manager_interfaces arm_manager simulated_chassis simulated_ur5e simulated_chassis_ur5e
+colcon build --symlink-install --packages-select battery_simulator arm_manager_interfaces arm_manager simulated_chassis simulated_ur5e simulated_chassis_ur5e
 source install/setup.bash
 # 终端一：整机物理仿真（需要图形显示）
 ros2 launch simulated_chassis_ur5e simulation.launch.py gui:=true
@@ -27,7 +27,9 @@ ros2 launch simulated_chassis_ur5e bridge.launch.py rviz:=true
 
 Docker 默认 `ROBOT_PROFILE=chassis_3d_ur5e`；需要原纯底盘时设为 `chassis_3d`。下面保留原纯底盘手动调试流程。
 
-## 启动顺序
+## 原纯底盘启动顺序（不适用于当前 UR5e 整机）
+
+当前带机械臂的机器人应使用上面的 `simulated_chassis_ur5e` 组合入口。下面通用 `agv_rosbridge.launch.py` 不启动机械臂运行节点和8090 mesh服务，不能替代组合 bridge。
 
 ### 1仿真机器人
 
@@ -47,19 +49,27 @@ ros2 launch simulated_chassis navigation.launch.py include_localization:=false
 ros2 launch agv_bridge_v2 agv_rosbridge.launch.py  robot_package:=simulated_chassis
 
 ### 有地图加载，
-ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
-    slam_algorithm:=lightning \
-    robot_package:=simulated_chassis
-    maps_dir:=/home/kisdy/maps \
-    pbstream_file:=/home/kisdy/maps/map1025L
-    
-
-# 带 lightning 地图启动 bridge：
 source ~/.bashrc   # 或直接 export SIM_WS_ROOT=/home/kisdy
 ros2 launch simulated_chassis_ur5e bridge.launch.py \
   slam_algorithm:=lightning \
   maps_dir:=/home/kisdy/maps \
-  pbstream_file:=/home/kisdy/maps/map1022Pro
+  pbstream_file:=/home/kisdy/maps/map1025L
+    
+
+### 当前 UR5e 整机加载 Lightning 地图（推荐）
+
+已有整机仿真保持运行；先在旧 bridge 终端按 Ctrl+C，等待退出，再在加载过工作区环境的终端启动下面这一条。不要同时运行通用 bridge 和组合 bridge，也不要重复启动仿真。
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch simulated_chassis_ur5e bridge.launch.py \
+  slam_algorithm:=lightning \
+  maps_dir:=/home/kisdy/maps \
+  pbstream_file:=/home/kisdy/maps/map1025L
+```
+
+组合 bridge 包含通用导航桥接、机械臂运行节点以及8090 mesh服务；无需单独启动 `urdf_mesh_server`。完整配置以 [组合包启动说明](src/simulated_chassis_ur5e/README.md#启动) 为准。
 
 ## 重启前清场（重要）
 
@@ -74,6 +84,18 @@ scripts/clean_all_ros.sh
 日常退出请尽量用 Ctrl+C（让 ros2 launch 优雅回收子节点），别直接关终端窗口。
 
 ## 禁止全量删除，只清理指定包；保留 log
+
+日常修改优先直接增量编译，无需先删除。下面每组命令仅在需要清理对应包时单独复制执行，不要整段执行。
+
+## battery_simulator：C++ 电量模拟节点
+
+```bash
+rm -rf -- build/battery_simulator install/battery_simulator
+colcon build --packages-select battery_simulator
+source install/setup.bash
+```
+
+仿真入口默认启动电池节点；首次使用新版本前先编译此包。电量持久化文件不在 build/install 内，清理编译产物不会重置电量。
 
 ## agv_bridge_v2：导航 bridge
 rm -rf -- build/agv_bridge_v2 install/agv_bridge_v2
@@ -132,7 +154,28 @@ colcon build --packages-select \
   simulated_chassis_ur5e \
   simulated_dual_arm
 
+## 首次接入电量/充电功能：按包联动编译，不删除已有安装
+
+本次新增 battery_simulator，并扩展 AgvStatus 消息；仅编译电池包不能更新 bridge 的充电接口和状态字段。
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build --executor sequential --packages-select \
+  battery_simulator \
+  agv_bridge_v2_interfaces \
+  agv_bridge_v2 \
+  simulated_chassis \
+  simulated_chassis_ur5e \
+  simulated_dual_arm
+source install/setup.bash
+```
+
+上面按已有其他依赖已安装编写，不包含 Lightning，也不会执行全量构建。
+Docker 部署需同步更新机器人与 bridge 镜像；接口说明见 [电量与充电对接](docs/battery_api.md)。
+
 ## Lightning 单独构建
 bash scripts/build_lightning.sh
 source install/setup.bash
 
+
+完整接口和专题文档见 [文档索引](docs/README.md)。

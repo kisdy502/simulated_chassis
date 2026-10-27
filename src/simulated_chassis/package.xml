@@ -28,6 +28,7 @@
   <depend>controller_interface</depend>
   <depend>hardware_interface</depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>battery_simulator</exec_depend>
   <exec_depend>joy</exec_depend>
   <exec_depend>xacro</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>

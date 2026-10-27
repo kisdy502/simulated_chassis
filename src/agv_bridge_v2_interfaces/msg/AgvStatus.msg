@@ -18,6 +18,12 @@ string state
 # 电量百分比 0.0 ~ 100.0
 float64 battery
 
+# 电池状态独立于导航 state。battery 无效时是上次值/配置回退值，不能用于判断电量。
+string battery_state   # UNKNOWN / DISCHARGING / CHARGING / FULL / NOT_CHARGING
+bool charging          # 当前正在充电；充满时为 false
+bool charge_connected  # 充电通路已连接；充满后也可保持 true
+bool battery_data_valid
+
 # Cartographer / AMCL 纯定位是否已收敛，false 时上位机不应下发导航指令
 bool pose_initialized
 

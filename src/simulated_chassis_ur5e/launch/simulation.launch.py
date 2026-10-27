@@ -54,6 +54,7 @@ def setup(context):
             'extra_controllers': 'joint_trajectory_controller',
             'extra_resource_path': os.path.dirname(share('ur_description')),
             'gui': LaunchConfiguration('gui'), 'use_sim_time': 'true',
+            'battery_simulation': LaunchConfiguration('battery_simulation'),
             'start_gamepad': LaunchConfiguration('start_gamepad'), 'start_teleop': 'true',
             'include_cmd_vel_relay': 'true',
         }.items())]
@@ -61,6 +62,7 @@ def setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('battery_simulation', default_value='true'),
         DeclareLaunchArgument('camera_file', default_value=path('config', 'wrist_camera.yaml')),
         DeclareLaunchArgument('photos_dir', default_value='~/.ros/wrist_camera/photos'),
         DeclareLaunchArgument('gui', default_value='false'),

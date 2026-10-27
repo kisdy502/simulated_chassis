@@ -1,0 +1,9 @@
+battery_simulator:
+  ros__parameters:
+    initial_soc: 80.0
+    idle_discharge_pct_per_hour: 12.0  # 静止：每5仿真分钟减少1个百分点
+    moving_discharge_pct_per_hour: 30.0  # 移动/原地转向：每2仿真分钟减少1个百分点
+    charge_pct_per_hour: 60.0  # 充电：每1仿真分钟增加1个百分点
+    capacity_ah: 40.0
+    nominal_voltage: 48.0
+    state_file: "~/.ros/battery_simulator/soc.state"

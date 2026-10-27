@@ -9,6 +9,11 @@
 
 ## 1. 接入地址与启动条件
 
+下面的 9090/8089/8090 示例是原生 WSL 监听地址或 Docker 内部地址。
+从 Windows/浏览器访问 Docker 机器人时，对应端口为 **9090/8089/8090**；
+同 Docker 网络的后端仍使用 `agv-bridge:9090/8089/8090`。
+完整访问矩阵和代理配置见 [Docker 部署说明](../DOCKER_DEPLOY.md#2-对外端口与上位机接入)。
+
 | 地址 | 用途 | 启动条件 |
 | --- | --- | --- |
 | `ws://HOST:9090/` | rosbridge：业务 service/action、状态订阅、URDF 参数查询 | 通用 bridge |
@@ -22,7 +27,8 @@
 ros2 run agv_bridge_v2 urdf_mesh_server --host 0.0.0.0 --port 8090
 ```
 
-Docker 中 `MAP_3D_PORT` / `URDF_MESH_PORT` 改宿主机映射，容器内部仍为 8089 / 8090。
+Docker 中 `WEBSOCKET_PORT` / `MAP_3D_PORT` / `URDF_MESH_PORT` 只改宿主机映射，
+默认 9090 / 8089 / 8090，容器内部固定 9090 / 8089 / 8090。
 ROS launch 通过 `map_3d_port`、组合 profile 的 `mesh_server_port` 改服务端口。
 
 ## 2. 3D 地图 HTTP 契约
@@ -174,6 +180,23 @@ const urdfXml = JSON.parse(envelope.values.value);
 还需检查解码结果非空且包含 `<robot`，并处理超时、白名单拒绝、无响应及缺少 `value`。
 不要发送旧文档中的 `args:{node:...,param:...}`，这不符合本机 `GetParam.srv`。
 具体服务名/类型可通过 ROS 图查询确认，节点改名时也须修改 `name`。
+
+### 3.1 URDF读取失败与自检
+
+请求的 `name` 必须使用 `/robot_state_publisher:robot_description`，不能替换为裸参数名或斜杠形式。上位机代理返回404时，先检查机器人服务的实际返回值，再检查代理转换；机器人接口本身是WebSocket服务，不是上位机的HTTP端点。
+
+在机器人所在ROS环境中自检（存在命名空间时按实际节点名调整）：
+
+```bash
+ros2 param get /rosapi params_glob
+ros2 service call /rosapi/get_param rosapi_msgs/srv/GetParam \
+  "{name: '/robot_state_publisher:robot_description'}"
+```
+
+检查白名单是否允许目标参数，并按上一节解码响应的 `value`，确认XML非空且包含 `<robot`。命令行输出包含服务响应包装，不能要求整段输出直接以 `<?xml` 开头。
+`/rosbridge_websocket` 未声明 `params_glob` 时，其 `param get` 失败不能证明白名单没有生效；优先检查 `/rosapi` 的实际配置与服务返回。参数列表为空也不能单独证明目标参数不可读，仍需直接调用上述服务。
+
+URDF读取成功但模型外观缺失时，继续检查下一节的mesh地址、HTTP状态和上位机资源地址配置。
 
 ## 4. 下载 URDF 引用资源（HTTP 8090）
 

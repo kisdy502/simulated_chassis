@@ -53,9 +53,7 @@ ros2 launch simulated_chassis_ur5e bridge.launch.py \
     slam_algorithm:=lightning pbstream_file:=$PWD/maps/my_map rviz:=true
 ```
 
-`pbstream_file` 两种后端的写法（`maps_dir` 缺省**固定为工作区根的 `maps/` 目录**，
-不随 bridge 启动目录漂移；可用环境变量 `SIM_WS_ROOT` 覆盖工作区定位，或显式传
-`maps_dir:=` 换位置。每次建图在 `maps/<地图名>/` 下生成独立子目录）：
+`pbstream_file` 两种后端的写法（地图根目录优先级为：显式 `maps_dir` > 环境变量 `MAPS_DIR` > 初始地图所在根目录 > `~/maps`。WSL 推荐 `$PWD/maps`，不要放回 `/mnt/d` 源码目录；每次建图在 `<maps_dir>/<地图名>/` 下生成独立子目录）：
 
 | 后端 | 写法 | 说明 |
 |---|---|---|

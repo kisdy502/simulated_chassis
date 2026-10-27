@@ -1,20 +1,20 @@
 # agv_bridge_v2
 
-当前接口契约（2026-10-23 核对）：[3D 地图 HTTP、URDF/mesh 和地图业务参数/响应](docs/map_model_api.md)。
+当前接口契约（2026-10-23 核对）：[3D 地图 HTTP、URDF/mesh 和地图业务参数/响应](../../docs/map_model_api.md)。
 
-[腕部相机与按需拍照](docs/camera_api.md)：触发参数/响应、元数据、预览与照片展示能力边界。
+[腕部相机与按需拍照](../../docs/camera_api.md)：触发参数/响应、元数据、预览与照片展示能力边界。
 
 AGV 上位机与仿真机器人之间的对接层。**rosbridge 架构**：业务通信暴露标准 ROS 2
 接口，由 `rosbridge_server` 对外提供 JSON over WebSocket。独立 C++ 程序
 `urdf_mesh_server` 使用 Boost.Beast 提供浏览器需要的 mesh/纹理静态资源。
 
-👉 **上位机对接细节见 [`docs/rosbridge_integration.md`](docs/rosbridge_integration.md)**
+👉 **上位机对接细节见 [`docs/rosbridge_integration.md`](../../docs/rosbridge_integration.md)**
 
 机械臂完整契约、关节顺序与连续点动限制见
-[`docs/arm_move_integration.md`](docs/arm_move_integration.md)。
+[`docs/arm_move_integration.md`](../../docs/arm_move_integration.md)。
 
 复合机器人组合、Lightning 接入和 C++ HTTP 实现见
-[`docs/composite_robot_architecture.md`](docs/composite_robot_architecture.md)。
+[`docs/composite_robot_architecture.md`](../../docs/composite_robot_architecture.md)。
 
 ## 对外接口
 
@@ -66,7 +66,6 @@ agv_bridge_v2/                          16 个文件
 ├── CMakeLists.txt
 ├── package.xml
 ├── README.md
-├── docs/rosbridge_integration.md       上位机对接指南（协议 + Spring Boot 实操）
 ├── launch/agv_rosbridge.launch.py      瘦节点 + rosbridge_server + rosapi
 ├── scripts/agv_client_demo.py          上位机侧参考实现（裸 JSON 协议）
 ├── include/agv_bridge_v2/
@@ -179,4 +178,9 @@ curl -X POST http://127.0.0.1:8090/api/v1/scheduler/release-charger
 -H 'Content-Type: application/json' 
 -d '{"robot_code": "RB_20260922_00024"}'
 
-- [自由绕障到点 FREE 接口](docs/free_navigation_api.md)
+- [自由绕障到点 FREE 接口](../../docs/free_navigation_api.md)
+
+- [电池模拟、充电任务与真机适配接口](../../docs/battery_api.md)
+
+
+接口与专题文档统一维护在仓库根目录 [docs 索引](../../docs/README.md)。

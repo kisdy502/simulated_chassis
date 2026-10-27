@@ -1,6 +1,6 @@
 # Lightning-LM
 
-[English](./README.md) | 中文
+[English](README.md) | 中文
 
 Lightning-Speed Lidar Localization and Mapping
 
@@ -64,32 +64,32 @@ Lightning-LM特性：
 
 - VBR campus数据集上的建图：
 
-![](./doc/slam_vbr.gif)
+![](doc/slam_vbr.gif)
 
 - VBR上的定位
 
-  ![](./doc/lm_loc_vbr_campus.gif)
+  ![](doc/lm_loc_vbr_campus.gif)
 
 - VBR上的地图
     - 点云
 
-  ![](./doc/campus_vbr.png)
+  ![](doc/campus_vbr.png)
     - 栅格
 
-  ![](./doc/campus.png)
+  ![](doc/campus.png)
 
 - NCLT 数据集上的定位
 
-![](./doc/lm_loc1_nclt.gif)
+![](doc/lm_loc1_nclt.gif)
 
 - 云深处四足机械狗上的数据
 
-![](./doc/demo_ysc1.png)
-![](./doc/demo_ysc2.png)
-![](./doc/demo_ysc3.png)
+![](doc/demo_ysc1.png)
+![](doc/demo_ysc2.png)
+![](doc/demo_ysc3.png)
 
 - 斜装的DEMO
-  ![](./doc/demo_github.png)
+  ![](doc/demo_github.png)
 
 ## 编译
 

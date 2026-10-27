@@ -1,6 +1,6 @@
 # Lightning-LM
 
-English | [中文](./README_CN.md)
+English | [中文](README_CN.md)
 
 Lightning-Speed Lidar Localization and Mapping
 
@@ -80,33 +80,33 @@ Features of Lightning-LM:
 
 - Mapping on the VBR campus dataset:
 
-  ![](./doc/slam_vbr.gif)
+  ![](doc/slam_vbr.gif)
 
 - Localization on VBR
 
-  ![](./doc/lm_loc_vbr_campus.gif)
+  ![](doc/lm_loc_vbr_campus.gif)
 
 - Map on VBR
     - Point Cloud
 
-  ![](./doc/campus_vbr.png)
+  ![](doc/campus_vbr.png)
     - Grid Map
 
-  ![](./doc/campus.png)
+  ![](doc/campus.png)
 
 - Localization on the NCLT dataset
 
-![](./doc/lm_loc1_nclt.gif)
+![](doc/lm_loc1_nclt.gif)
 
 - Data on the Deep Robotics quadruped robot
 
-![](./doc/demo_ysc1.png)
-![](./doc/demo_ysc2.png)
-![](./doc/demo_ysc3.png)
+![](doc/demo_ysc1.png)
+![](doc/demo_ysc2.png)
+![](doc/demo_ysc3.png)
 
 - Tilted mounting demo
 
-  ![](./doc/demo_github.png)
+  ![](doc/demo_github.png)
 
 ## Build
 

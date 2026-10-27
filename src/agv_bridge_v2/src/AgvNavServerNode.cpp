@@ -413,18 +413,15 @@ namespace agv_bridge
 
         // ---- topic: /agv/status、/agv/pose 已在 create_status_publishers() 提前创建 ----
 
-        // ---- 可选：真实电池数据，无发布者时保持 battery_level 参数值 ----
-        battery_sub_ = this->create_subscription<sensor_msgs::msg::BatteryState>(
-            "battery_state", rclcpp::QoS(10),
-            [this](const sensor_msgs::msg::BatteryState::SharedPtr msg)
-            {
-                if (std::isfinite(msg->percentage) && msg->percentage >= 0.0)
-                {
-                    // 标准约定：0.0 ~ 1.0；部分驱动直接给 0~100
-                    battery_level_ = msg->percentage <= 1.0 ? msg->percentage * 100.0
-                                                             : msg->percentage;
-                    if (battery_level_ > 100.0) battery_level_ = 100.0;
-                }
+        battery_gateway_ = std::make_shared<BatteryGateway>(this,
+            [this] {
+                bool goal_active;
+                { std::lock_guard<std::mutex> lock(goal_mutex_); goal_active = bool(current_goal_handle_); }
+                return goal_active || (navigation_manager_ && navigation_manager_->isNavigating());
+            },
+            [this] {
+                if (navigation_manager_ && navigation_manager_->isNavigating())
+                    navigation_manager_->stopNavigation();
             });
     }
 
@@ -569,6 +566,14 @@ namespace agv_bridge
         }
 
         MoveToMessage move_msg = to_move_to_message(*goal);
+
+        std::string battery_error;
+        if (battery_gateway_ && !battery_gateway_->prepareMotion(battery_error)) {
+            abort_current_goal(battery_error);
+            return;
+        }
+        // A cancellation can arrive while the charging backend is replying.
+        if (cancel_requested_.load() || !goal_handle->is_active()) return;
 
         bool started = false;
         if (move_msg.edgeInfo.type == EdgeType::FREE)
@@ -1285,6 +1290,7 @@ namespace agv_bridge
         msg.agv_id = agv_id_;
         msg.state = control_stopped_.load() ? "STOPPED" : agv_state_;
         msg.battery = battery_level_;
+        if (battery_gateway_) battery_gateway_->fill(msg);
         msg.pose_initialized = localization_monitor_ ? localization_monitor_->isInitialized() : false;
 
         {

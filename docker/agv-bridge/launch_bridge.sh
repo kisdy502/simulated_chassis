@@ -25,6 +25,7 @@ args=(
     robot_package:="${ROBOT_PACKAGE:-simulated_chassis}"
     maps_dir:="${MAPS_DIR:-/ros2_ws/maps}"
     manage_navigation:="${MANAGE_NAVIGATION:-true}"
+    require_battery_state:="${REQUIRE_BATTERY_STATE:-true}"
     back_up_max_heading_error_deg:="${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}"
 )
 # ros2 launch rejects an empty CLI value; use the launch default for no initial map.
@@ -36,6 +37,7 @@ if [[ "${ROBOT_PROFILE:-chassis_3d_ur5e}" == chassis_3d_ur5e ]]; then
       back_up_max_heading_error_deg:="${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}"
       rviz:="${START_RVIZ:-false}")
     profile_args+=(slam_algorithm:="$algorithm")
+    profile_args+=(require_battery_state:="${REQUIRE_BATTERY_STATE:-true}")
     if [[ -n "$pbstream" ]]; then profile_args+=(pbstream_file:="$pbstream"); fi
     exec ros2 launch simulated_chassis_ur5e bridge.launch.py "${profile_args[@]}"
 elif [[ "${ROBOT_PROFILE}" == chassis_3d ]]; then
