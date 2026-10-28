@@ -1,5 +1,8 @@
 # 腕部相机、按需拍照与照片展示
 
+当前默认末端是通用夹爪。以下功能要求仿真与 bridge 同时设置
+`tool_type:=camera`，Docker 对应 `TOOL_TYPE=camera`；工具切换见 [夹爪文档](gripper_api.md)。
+
 核对日期：2026-10-23。依据 `wrist_camera_node.py`、`wrist_camera.yaml`、
 `wrist_camera.xacro` 和 UR5e 组合 bridge 白名单。
 

@@ -67,8 +67,8 @@ def run():
             if token: tokens[proc.pid] = token
             processes.append(proc)
             return proc
-        launch(['xvfb-run', '-a', 'ros2', 'launch', 'simulated_chassis_ur5e', 'simulation.launch.py', f'photos_dir:={directory}/photos'])
-        launch(['ros2', 'launch', 'simulated_chassis_ur5e', 'bridge.launch.py', 'port:=19092',
+        launch(['xvfb-run', '-a', 'ros2', 'launch', 'simulated_chassis_ur5e', 'simulation.launch.py', 'tool_type:=camera', f'photos_dir:={directory}/photos'])
+        launch(['ros2', 'launch', 'simulated_chassis_ur5e', 'bridge.launch.py', 'tool_type:=camera', 'port:=19092',
                 f'manage_navigation:={str(navigation).lower()}', f'rviz:={str(shutdown_check).lower()}',
                 f'maps_dir:={directory}/maps', f'teach_points_file:={directory}/points.json'])
         rclpy.init()

@@ -9,11 +9,13 @@
 - [3D地图、URDF与mesh](map_model_api.md)：HTTP与WebSocket参数、响应、URDF读取排查。
 - [相机与按需拍照](camera_api.md)：触发、元数据、预览和展示能力。
 - [机械臂控制](arm_move_integration.md)：动作参数与结果。
+- [通用双指夹爪](gripper_api.md)：末端工具切换、开合服务、实际开口和控制器状态。
 - [电量与充电](battery_api.md)：上位机完整契约、充电流程、仿真配置、持久化与真机BMS适配。
 
 ## 运维与架构
 
 - [建图与定位](mapping_and_localization.md)
+- [Lightning 建图重影排查](lightning_mapping_diagnostics.md)：地图/位姿坐标一致性、扫描时间戳和绘图并发。
 - [Lightning与Cartographer](lightning_vs_cartographer.md)
 - [复合机器人架构](composite_robot_architecture.md)
 - [Docker部署](../DOCKER_DEPLOY.md)

@@ -1,0 +1,8 @@
+# Generic parallel gripper, SI units. Total free gap between inner finger faces.
+max_width: 0.08
+initial_width: 0.06
+finger_speed: 0.04
+command_duration: 2.0
+# Mount pose relative to ur5e_tool0; closing motion is along local +/-Y.
+xyz: '0 0 0.015'
+rpy: '0 0 0'

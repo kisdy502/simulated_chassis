@@ -1,8 +1,16 @@
 # 三舵轮 3D 雷达 + UR5e 整机仿真
 
+## 默认末端：通用双指夹爪
+
+默认 `tool_type:=gripper`，最大净开口 80 mm，可通过 `/gripper/set_closed`
+服务开合，实际开口与执行状态分别在 `/gripper/width`、`/gripper/status`。
+两指关节加入 `/joint_states`，夹持 TCP 为 `ur5e_gripper_tcp`。
+完整模型、配置、控制与使用说明见 [夹爪文档](../../docs/gripper_api.md)。
+Docker 设置 `TOOL_TYPE=gripper`；两端共同改成 `camera` 可切回以下相机模式。
+
 ## 末端 RGB 相机（新增）
 
-整机默认在 `ur5e_tool0` 安装 RGB 相机（eye-in-hand）。实现位于本包，不修改官方 UR 模型；相机沿用现有 Fortress Sensors 渲染系统，通过独立单向 `ros_gz_bridge` 接入 ROS。Lightning 与 3D 地图继续使用原雷达数据链路。
+仅 `tool_type:=camera` 模式在 `ur5e_tool0` 安装 RGB 相机（eye-in-hand），仿真和 bridge 均须设置该参数。实现位于本包，不修改官方 UR 模型；相机沿用现有 Fortress Sensors 渲染系统，通过独立单向 `ros_gz_bridge` 接入 ROS。Lightning 与 3D 地图继续使用原雷达数据链路。
 
 `urdf/wrist_camera.xacro` 定义带惯量、碰撞体的相机外壳及光学坐标系；`config/wrist_camera.yaml` 配置开关、安装位姿和画面参数。默认 640×480、10 Hz、水平视场约 60°、裁剪距离 0.02～20 m。橙色外壳 50×50×35 mm、质量 0.10 kg；绿色实体支撑杆直径 20 mm、长度 40 mm、质量 0.03 kg，两者按同一刚体建模并包含碰撞几何。默认视线沿 tool0 的 +Z，外壳中心距离 tool0 为 0.065 m，镜头位于外壳 X=0.025 m。默认支撑杆从 tool0 连至相机背面；修改安装位姿时须同步调整支撑杆几何以保持连接，修改实体规格时须同步修改惯量和碰撞体。
 
@@ -22,9 +30,9 @@ colcon build --symlink-install --packages-select simulated_chassis_ur5e
 source install/setup.bash
 
 # 终端一，无显示器时外层加 xvfb-run -a
-ros2 launch simulated_chassis_ur5e simulation.launch.py gui:=true photos_dir:=$HOME/robot_photos
+ros2 launch simulated_chassis_ur5e simulation.launch.py tool_type:=camera gui:=true photos_dir:=$HOME/robot_photos
 # 终端二，可继续附加现有建图/定位参数
-ros2 launch simulated_chassis_ur5e bridge.launch.py slam_algorithm:=lightning
+ros2 launch simulated_chassis_ur5e bridge.launch.py tool_type:=camera slam_algorithm:=lightning
 # 终端三，停车并确认机械臂实际到位后拍照
 ros2 service call /wrist_camera/take_photo std_srvs/srv/Trigger '{}'
 ros2 topic hz /wrist_camera/image_raw

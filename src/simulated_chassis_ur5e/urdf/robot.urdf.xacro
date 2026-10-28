@@ -5,10 +5,14 @@
   <!-- sim_ignition=true: mesh 用 file:// 绝对路径(Gazebo);false: package://(上位机) -->
   <xacro:arg name="sim_ignition" default="true"/>
   <xacro:arg name="camera_file" default="$(find simulated_chassis_ur5e)/config/wrist_camera.yaml"/>
+  <xacro:arg name="tool_type" default="gripper"/>
+  <xacro:arg name="gripper_file" default="$(find simulated_chassis_ur5e)/config/gripper.yaml"/>
+  <xacro:include filename="$(find simulated_chassis_ur5e)/urdf/gripper.xacro"/>
   <xacro:include filename="$(find simulated_chassis_ur5e)/urdf/wrist_camera.xacro"/>
   <xacro:include filename="$(find simulated_chassis)/urdf/three_wheel_chassis_3d_macro.xacro"/>
   <xacro:include filename="$(find simulated_chassis_ur5e)/urdf/arm_mount.xacro"/>
   <xacro:three_wheel_chassis_3d controllers_file="$(arg controllers_file)" lidar_collisions="true"/>
   <xacro:mounted_ur5e mounting_file="$(arg mounting_file)" sim_ignition="$(arg sim_ignition)"/>
-  <xacro:wrist_camera camera_file="$(arg camera_file)"/>
+  <xacro:if value="${'$(arg tool_type)' == 'camera'}"><xacro:wrist_camera camera_file="$(arg camera_file)"/></xacro:if>
+  <xacro:if value="${'$(arg tool_type)' == 'gripper'}"><xacro:parallel_gripper gripper_file="$(arg gripper_file)"/></xacro:if>
 </robot>

@@ -3,6 +3,7 @@
 //
 
 #include "core/system/slam.h"
+#include "core/system/tracked_pose.h"
 #include "core/g2p5/g2p5.h"
 #include "core/lio/laser_mapping.h"
 #include "core/loop_closing/loop_closing.h"
@@ -257,20 +258,12 @@ void SlamSystem::SaveMap(const std::string& path) {
 
 void SlamSystem::PublishTrackedPose() {
     if (!tracked_pose_pub_ || !lio_) return;
-    // sim-chassis 补丁：LIO 逐帧位姿（含回环优化前里程计位姿，建图可视化够用）
-    const auto state = lio_->GetState();
-    geometry_msgs::msg::PoseStamped pose;
-    pose.header.frame_id = "map";
-    pose.header.stamp = node_->now();
-    pose.pose.position.x = state.pos_.x();
-    pose.pose.position.y = state.pos_.y();
-    pose.pose.position.z = state.pos_.z();
-    const auto q = state.rot_.unit_quaternion();
-    pose.pose.orientation.x = q.x();
-    pose.pose.orientation.y = q.y();
-    pose.pose.orientation.z = q.z();
-    pose.pose.orientation.w = q.w();
-    tracked_pose_pub_->publish(pose);
+    // The occupancy/PCD map uses optimized poses. Raw LIO must never be labeled
+    // as map after a loop closure; propagate the latest keyframe correction.
+    // TF reanchoring must query odometry at the measurement time, not at the
+    // end of processing (which double-counts motion during SLAM latency).
+    const auto pose = MakeTrackedPose(lio_->GetState(), lio_->GetKeyframe());
+    if (pose) tracked_pose_pub_->publish(*pose);
 }
 
 void SlamSystem::ProcessIMU(const lightning::IMUPtr& imu) {
@@ -286,7 +279,7 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
     }
 
     lio_->ProcessPointCloud2(cloud);
-    lio_->Run();
+    if (!lio_->Run()) return;
     PublishTrackedPose();
 
     auto kf = lio_->GetKeyframe();
@@ -319,7 +312,7 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
     }
 
     lio_->ProcessPointCloud2(cloud);
-    lio_->Run();
+    if (!lio_->Run()) return;
     PublishTrackedPose();
 
     auto kf = lio_->GetKeyframe();

@@ -8,6 +8,41 @@
 
 namespace agv_bridge {
 struct NavigationManagerTestPeer {
+  static bool startWatchedSpin(NavigationManager &m, NavigationState state = NavigationState::PRE_ROTATING) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    MoveToMessage task; task.commandId = "stuck-spin"; task.nodeId = "P31";
+    m.current_task_ = task; m.setState(state);
+    return m.sendSpinCommand(1.54);
+  }
+  static void ageSpin(NavigationManager &m, int elapsed, int no_progress) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    const auto now = std::chrono::steady_clock::now();
+    m.spin_started_at_ = now - std::chrono::seconds(elapsed);
+    m.spin_last_progress_at_ = now - std::chrono::seconds(no_progress);
+    m.checkActionProgress();
+  }
+  static void feedSpin(NavigationManager &m, double angle) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    m.observeSpinProgress(angle);
+  }
+  static bool spinCancelPending(NavigationManager &m) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    return m.cancel_pending_;
+  }
+  static void expireSpinCancel(NavigationManager &m) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    m.action_deadline_ = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    m.checkActionProgress();
+  }
+  static bool watchedSpinAccepted(NavigationManager &m) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    return bool(m.spin_goal_handle_) && m.spin_watch_active_;
+  }
+  static bool taskOccupied(NavigationManager &m) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    return m.current_task_.has_value();
+  }
+
   static void timeoutAction(NavigationManager &m, bool cancel) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
     MoveToMessage task; task.commandId = "timed-out-goal"; m.current_task_ = task;
@@ -74,8 +109,10 @@ protected:
         }));
     }
     spin_server = rclcpp_action::create_server<Spin>(node, "spin",
-      [this](auto, auto) { ++spin_goals; return rclcpp_action::GoalResponse::REJECT; },
-      [](auto) { return rclcpp_action::CancelResponse::ACCEPT; }, [](auto) {});
+      [this](auto, auto) { ++spin_goals; return accept_spin ?
+        rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE : rclcpp_action::GoalResponse::REJECT; },
+      [this](auto) { ++spin_cancels; return rclcpp_action::CancelResponse::ACCEPT; },
+      [this](auto handle) { std::lock_guard<std::mutex> lock(spin_mutex); spin_handle = handle; });
     path_server = rclcpp_action::create_server<FollowPath>(node, "follow_path",
       [](auto, auto) { return rclcpp_action::GoalResponse::REJECT; },
       [](auto) { return rclcpp_action::CancelResponse::ACCEPT; }, [](auto) {});
@@ -106,6 +143,13 @@ protected:
   std::shared_ptr<NavHandle> navigationHandle() {
     std::lock_guard<std::mutex> lock(nav_mutex); return nav_handle;
   }
+  std::shared_ptr<rclcpp_action::ServerGoalHandle<Spin>> spinHandle() {
+    std::lock_guard<std::mutex> lock(spin_mutex); return spin_handle;
+  }
+  std::mutex spin_mutex;
+  std::shared_ptr<rclcpp_action::ServerGoalHandle<Spin>> spin_handle;
+  std::atomic<bool> accept_spin{false};
+  std::atomic<int> spin_cancels{0};
   std::mutex nav_mutex;
   std::shared_ptr<NavHandle> nav_handle;
   std::atomic<bool> accept_nav{false};
@@ -329,4 +373,78 @@ TEST_F(NavigationReadinessTest, StraightWithoutEdgeIdFailsBeforeAnyMovement) {
   EXPECT_NE(callbacks.message.find("edge_id"), std::string::npos);
   EXPECT_EQ(spin_goals.load(), 0);
 }
+} // namespace agv_bridge
+
+namespace agv_bridge {
+TEST_F(NavigationReadinessTest, FrozenSpinFeedbackCancelsButWaitsForTerminalResult) {
+  smoother_active = true; accept_spin = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(NavigationManagerTestPeer::startWatchedSpin(*manager));
+  ASSERT_TRUE(waitFor([this] { return spinHandle() && NavigationManagerTestPeer::watchedSpinAccepted(*manager); }));
+  // Wait for the client to process the acceptance before aging its watchdog.
+  ASSERT_TRUE(waitFor([this] { return spinHandle() && manager->getCurrentState() == NavigationState::PRE_ROTATING; }));
+  auto h = spinHandle();
+  auto feedback = std::make_shared<Spin::Feedback>(); feedback->angular_distance_traveled = 0.0;
+  h->publish_feedback(feedback);
+  NavigationManagerTestPeer::feedSpin(*manager, 0.0);
+  NavigationManagerTestPeer::ageSpin(*manager, 11, 11);
+  ASSERT_TRUE(waitFor([this] { return spin_cancels.load() == 1 && spinHandle()->is_canceling(); }));
+  EXPECT_EQ(callbacks.results.load(), 0); // Cancel ACK alone is not terminal.
+  EXPECT_TRUE(NavigationManagerTestPeer::taskOccupied(*manager));
+  h->canceled(std::make_shared<Spin::Result>());
+  ASSERT_TRUE(waitFor([this] { return callbacks.results.load() == 1; }));
+  EXPECT_FALSE(callbacks.success);
+  EXPECT_NE(callbacks.message.find("旋转无进展"), std::string::npos);
+  EXPECT_NE(callbacks.message.find("stuck-spin"), std::string::npos);
+  EXPECT_NE(callbacks.message.find("PRE_ROTATING"), std::string::npos);
+  EXPECT_EQ(manager->getCurrentState(), NavigationState::IDLE);
+  EXPECT_FALSE(manager->requiresServerRestart());
+}
+
+TEST_F(NavigationReadinessTest, UnconfirmedSpinStopRetainsGoalUntilServerShutdown) {
+  smoother_active = true; accept_spin = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(NavigationManagerTestPeer::startWatchedSpin(*manager, NavigationState::END_ROTATING));
+  ASSERT_TRUE(waitFor([this] { return spinHandle() && NavigationManagerTestPeer::watchedSpinAccepted(*manager); }));
+  NavigationManagerTestPeer::ageSpin(*manager, 11, 11);
+  ASSERT_TRUE(waitFor([this] { return spin_cancels.load() == 1; }));
+  NavigationManagerTestPeer::expireSpinCancel(*manager);
+  EXPECT_TRUE(manager->requiresServerRestart());
+  EXPECT_FALSE(manager->isReady());
+  EXPECT_TRUE(NavigationManagerTestPeer::taskOccupied(*manager));
+  EXPECT_EQ(callbacks.results.load(), 0);
+  manager->resetAfterServerShutdown();
+  EXPECT_EQ(callbacks.results.load(), 1);
+  EXPECT_FALSE(NavigationManagerTestPeer::taskOccupied(*manager));
+  EXPECT_NE(callbacks.message.find("旋转无进展"), std::string::npos);
+  EXPECT_NE(callbacks.message.find("END_ROTATING"), std::string::npos);
+  EXPECT_NE(callbacks.message.find("进程组停止"), std::string::npos);
+  EXPECT_FALSE(manager->requiresServerRestart());
+}
+
+TEST_F(NavigationReadinessTest, SpinProgressRefreshesStallTimerButCannotExtendTotalLimit) {
+  smoother_active = true; accept_spin = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(NavigationManagerTestPeer::startWatchedSpin(*manager));
+  ASSERT_TRUE(waitFor([this] { return spinHandle() && NavigationManagerTestPeer::watchedSpinAccepted(*manager); }));
+  NavigationManagerTestPeer::ageSpin(*manager, 8, 8);
+  NavigationManagerTestPeer::feedSpin(*manager, -0.02);
+  EXPECT_FALSE(NavigationManagerTestPeer::spinCancelPending(*manager));
+  NavigationManagerTestPeer::ageSpin(*manager, 61, 0);
+  ASSERT_TRUE(waitFor([this] { return spin_cancels.load() == 1 && spinHandle()->is_canceling(); }));
+  spinHandle()->canceled(std::make_shared<Spin::Result>());
+  ASSERT_TRUE(waitFor([this] { return callbacks.results.load() == 1; }));
+  EXPECT_NE(callbacks.message.find("总时限超时"), std::string::npos);
+}
+
+TEST(NavigationAdmissionTest, BusyStopAndModeHaveActionableBusinessReasons) {
+  const auto busy = navigationAdmissionError(true, "old-task", "PRE_ROTATING", false, "NAVIGATION", "map1");
+  EXPECT_NE(busy.find("old-task"), std::string::npos);
+  EXPECT_NE(busy.find("PRE_ROTATING"), std::string::npos);
+  EXPECT_NE(busy.find("确认停止"), std::string::npos);
+  EXPECT_NE(navigationAdmissionError(false, "", "IDLE", true, "NAVIGATION", "map1").find("stop"), std::string::npos);
+  EXPECT_NE(navigationAdmissionError(false, "", "IDLE", false, "RELOCALIZING", "map1").find("RELOCALIZING"), std::string::npos);
+  EXPECT_TRUE(navigationAdmissionError(false, "", "IDLE", false, "NAVIGATION", "map1").empty());
+}
+
 } // namespace agv_bridge

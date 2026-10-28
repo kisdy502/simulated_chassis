@@ -274,7 +274,10 @@ namespace agv_bridge
                 std::lock_guard<std::recursive_mutex> lock(mutex_);
                 if (generation == unsafe_generation_) unsafe_generation_ = 0;
                 if (generation != action_generation_ || !current_task_) return;
-                if (cancel_pending_) finishTask(false, "CANCELED", "导航已取消");
+                if (cancel_pending_) {
+                    if (!spin_failure_reason_.empty()) finishTask(false, "FAILED", spin_failure_reason_);
+                    else finishTask(false, "CANCELED", "导航已取消");
+                }
                 else if (result) result(value);
             };
             options.feedback_callback = [this, generation, feedback](auto handle, const auto &value) {
@@ -291,6 +294,19 @@ namespace agv_bridge
         }
         friend struct NavigationManagerTestPeer;
         void checkActionProgress();
+        void observeSpinProgress(double angle);
+        void stopFailedSpin(const std::string &reason);
+        bool spin_watch_active_ = false;
+        double spin_timeout_sec_ = 60.0;
+        double spin_progress_timeout_sec_ = 10.0;
+        double spin_progress_min_angle_rad_ = 0.01;
+        double spin_cancel_timeout_sec_ = 5.0;
+        double spin_target_angle_ = 0.0;
+        double spin_progress_angle_ = 0.0;
+        double spin_reported_angle_ = 0.0;
+        std::chrono::steady_clock::time_point spin_started_at_, spin_last_progress_at_;
+        std::string spin_failure_reason_;
+
         rclcpp::TimerBase::SharedPtr action_watchdog_;
         std::uint64_t action_generation_ = 0;
         std::uint64_t unsafe_generation_ = 0;

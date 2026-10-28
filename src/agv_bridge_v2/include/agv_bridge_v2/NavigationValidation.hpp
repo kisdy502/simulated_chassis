@@ -40,4 +40,16 @@ std::string validateNavigationMode(const std::string &type, const std::string &e
         return "参数错误：FREE 的 reverse=true；自由导航不支持沿边反向，请传 false";
     return {};
 }
+// Transport acceptance is separate from business admission; callers return
+// these errors in FollowEdge::Result without replacing the active task.
+inline std::string navigationAdmissionError(bool busy, const std::string &command,
+    const std::string &stage, bool stopped, const std::string &mode, const std::string &map)
+{
+    if (busy) return "导航请求未执行：已有任务占用，command_id=" + command +
+        "，阶段=" + stage + "；请等待当前任务结束或取消并确认停止后再下发";
+    if (stopped) return "导航请求未执行：机器人处于 stop 状态；请通过 /agv/set_control 恢复后再下发";
+    if (mode != "NAVIGATION") return "导航请求未执行：当前 mode=" + mode +
+        "，map=" + map + "；请等待建图或重定位完成并进入 NAVIGATION 模式";
+    return {};
+}
 } // namespace agv_bridge

@@ -61,6 +61,16 @@ namespace agv_bridge
         }
         node_->get_parameter("back_up_max_heading_error_deg", back_up_max_heading_error_deg_);
 
+        for (auto entry : {std::make_pair("spin_timeout_sec", &spin_timeout_sec_),
+                           std::make_pair("spin_progress_timeout_sec", &spin_progress_timeout_sec_),
+                           std::make_pair("spin_progress_min_angle_rad", &spin_progress_min_angle_rad_),
+                           std::make_pair("spin_cancel_timeout_sec", &spin_cancel_timeout_sec_)}) {
+            if (!node_->has_parameter(entry.first)) node_->declare_parameter<double>(entry.first, *entry.second);
+            node_->get_parameter(entry.first, *entry.second);
+            if (!std::isfinite(*entry.second) || *entry.second <= 0.0)
+                throw std::invalid_argument(std::string(entry.first) + " 必须是大于0的有限数值");
+        }
+
         // 创建导航动作客户端
         nav_action_client_ = rclcpp_action::create_client<NavigateToPose>(node_, "navigate_to_pose");
 
@@ -252,9 +262,16 @@ namespace agv_bridge
     {
         auto goal_msg = nav2_msgs::action::Spin::Goal();
         goal_msg.target_yaw = spin_angle; // 正数逆时针，负数顺时针
+        goal_msg.time_allowance = rclcpp::Duration::from_seconds(spin_timeout_sec_);
+        spin_target_angle_ = spin_angle;
+        spin_watch_active_ = false;
+        spin_failure_reason_.clear();
         auto send_goal_options = rclcpp_action::Client<nav2_msgs::action::Spin>::SendGoalOptions();
         send_goal_options.goal_response_callback = std::bind(&NavigationManager::spinGoalResponseCallback, this, std::placeholders::_1);
         send_goal_options.result_callback = std::bind(&NavigationManager::spinResultCallback, this, std::placeholders::_1);
+        send_goal_options.feedback_callback = [this](auto, const auto &feedback) {
+            observeSpinProgress(feedback->angular_distance_traveled);
+        };
         if (!dispatchGoal<Spin>(spin_client_, goal_msg, send_goal_options)) return false;
         return true;
     }
@@ -263,6 +280,7 @@ namespace agv_bridge
     void NavigationManager::spinResultCallback(
         const rclcpp_action::ClientGoalHandle<nav2_msgs::action::Spin>::WrappedResult &result)
     {
+        spin_watch_active_ = false;
         spin_goal_handle_.reset(); // 重置spin句柄
 
         switch (result.code)
@@ -273,7 +291,7 @@ namespace agv_bridge
             auto current_pose_opt = pose_provider_->getCurrentPose(); // 获取当前位姿（旋转后的）
             if (!current_pose_opt.has_value())
             {
-                RCLCPP_WARN(logger_, "位置信息为空");
+                failTask("FAILED", "旋转结束但无法取得新鲜定位位姿，导航已停止");
                 return;
             }
 
@@ -360,6 +378,13 @@ namespace agv_bridge
             finishTask(false, "CANCELED", reason.c_str());
             break;
         }
+        default:
+            spin_failure_reason_ = "旋转返回未知终态；command_id=" + current_task_->commandId +
+                "，阶段=" + navigationStateToString(current_state_) + "；底层尚未确认停止";
+            unsafe_generation_ = action_generation_;
+            cancel_pending_ = true;
+            action_deadline_ = std::chrono::steady_clock::now();
+            break;
         }
     }
 
@@ -375,6 +400,9 @@ namespace agv_bridge
         else
         {
             spin_goal_handle_ = goal_handle; // 保存句柄用于取消
+            spin_started_at_ = spin_last_progress_at_ = std::chrono::steady_clock::now();
+            spin_progress_angle_ = spin_reported_angle_ = 0.0;
+            spin_watch_active_ = true;
             RCLCPP_INFO(logger_, "旋转目标已接受");
         }
     }
@@ -951,12 +979,20 @@ namespace agv_bridge
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (!current_task_) return false;
+        if (cancel_pending_) return true;
         cancel_pending_ = true;
         action_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
         bool has_handle = false;
         if (nav_goal_handle_) { nav_action_client_->async_cancel_goal(nav_goal_handle_); has_handle = true; }
         if (follow_path_goal_handle_) { follow_path_client_->async_cancel_goal(follow_path_goal_handle_); has_handle = true; }
-        if (spin_goal_handle_) { spin_client_->async_cancel_goal(spin_goal_handle_); has_handle = true; }
+        if (spin_goal_handle_) {
+            has_handle = true;
+            try { spin_client_->async_cancel_goal(spin_goal_handle_); }
+            catch (const std::exception &e) {
+                unsafe_generation_ = action_generation_;
+                RCLCPP_ERROR(logger_, "旋转取消通信失败，保持动作保护: %s", e.what());
+            }
+        }
         // A pending send has no handle yet. Retire it now; dispatchGoal cancels
         // any accepted reply arriving after this task has been retired.
         if (!has_handle) {
@@ -1017,10 +1053,39 @@ namespace agv_bridge
             check.pending = check.active = false;
             check.responded = {};
         }
-        if (current_task_) failTask("FAILED", "Nav2 生命周期异常，导航已停止；恢复后请重新下发任务");
+        if (current_task_) {
+            const std::string reason = spin_failure_reason_.empty()
+                ? "Nav2 生命周期异常，导航已停止；恢复后请重新下发任务"
+                : spin_failure_reason_ + "；取消未确认，现已确认托管 Nav2 进程组停止；请重新下发任务";
+            failTask("FAILED", reason);
+        }
         nav_goal_handle_.reset();
         follow_path_goal_handle_.reset();
         spin_goal_handle_.reset();
+    }
+
+    void NavigationManager::observeSpinProgress(double angle)
+    {
+        if (!spin_watch_active_ || !std::isfinite(angle)) return;
+        // Spin反馈为相对起始朝向的累计角度；只认距起点更远的新进展，
+        // 重复反馈或来回抖动不能无限续期。
+        spin_reported_angle_ = angle;
+        const double directed = std::abs(angle);
+        if (directed - spin_progress_angle_ >= spin_progress_min_angle_rad_) {
+            spin_progress_angle_ = directed;
+            spin_last_progress_at_ = std::chrono::steady_clock::now();
+        }
+    }
+
+    void NavigationManager::stopFailedSpin(const std::string &reason)
+    {
+        spin_watch_active_ = false;
+        spin_failure_reason_ = reason;
+        RCLCPP_ERROR(logger_, "%s；请求取消旋转，等待底层终态", reason.c_str());
+        cancelNavigation();
+        action_deadline_ = std::chrono::steady_clock::now() +
+            std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<double>(spin_cancel_timeout_sec_));
     }
 
     void NavigationManager::checkActionProgress()
@@ -1054,7 +1119,29 @@ namespace agv_bridge
                     entry.responded = std::chrono::steady_clock::now();
                 });
         }
+        if (current_task_ && spin_watch_active_ && !cancel_pending_) {
+            const double elapsed = std::chrono::duration<double>(now - spin_started_at_).count();
+            const double stalled = std::chrono::duration<double>(now - spin_last_progress_at_).count();
+            if (elapsed >= spin_timeout_sec_ || stalled >= spin_progress_timeout_sec_) {
+                const std::string reason = elapsed >= spin_timeout_sec_
+                    ? "旋转总时限超时（限制 " + std::to_string(spin_timeout_sec_) + " 秒）"
+                    : "旋转无进展（连续 " + std::to_string(spin_progress_timeout_sec_) + " 秒未产生有效转动）";
+                stopFailedSpin(reason + "；command_id=" + current_task_->commandId +
+                    "，阶段=" + navigationStateToString(current_state_) +
+                    "，目标角度=" + std::to_string(spin_target_angle_) +
+                    " rad，已转角度=" + std::to_string(spin_reported_angle_) + " rad");
+            }
+        }
         if (current_task_ && (awaiting_response_ || cancel_pending_) && now >= action_deadline_) {
+            if (cancel_pending_ && !spin_failure_reason_.empty()) {
+                // No terminal result: do not release the upper goal or allow another
+                // task. The owner must confirm Nav2's process group has stopped.
+                if (unsafe_generation_ != action_generation_)
+                    RCLCPP_ERROR(logger_, "%s；取消等待超时，底层尚未确认停止，等待托管 Nav2 停止确认",
+                                 spin_failure_reason_.c_str());
+                unsafe_generation_ = action_generation_;
+                return;
+            }
             unsafe_generation_ = action_generation_;
             if (cancel_pending_) finishTask(false, "CANCELED", "导航取消结果等待超时，已释放任务");
             else failTask("FAILED", "底层导航目标响应超时，请等待 Nav2 就绪后重试");
@@ -1202,6 +1289,8 @@ namespace agv_bridge
         ++action_generation_;
         awaiting_response_ = false;
         cancel_pending_ = false;
+        spin_watch_active_ = false;
+        spin_failure_reason_.clear();
         pending_navigation_ = pending_bezier_ = pending_rotate_ = false;
         nav_goal_handle_.reset();
         follow_path_goal_handle_.reset();

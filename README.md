@@ -3,6 +3,10 @@
 Docker 镜像构建、双容器部署、三维地图/URDF 资源服务、机械臂与相机接入见
 [Docker 部署说明](DOCKER_DEPLOY.md)。
 
+UR5e 组合机器人默认末端为通用双指夹爪，支持开合与实际状态反馈。
+两端设置 `tool_type:=camera`（Docker 为 `TOOL_TYPE=camera`）可切回原相机，
+使用方法见 [夹爪说明](docs/gripper_api.md)。
+
 ## 建图 / 定位 / 导航（bridge 统一托管）
 
 仿真单独启动，其余节点只启动 bridge 一个入口，由它托管定位/建图/Nav2 并支持

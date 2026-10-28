@@ -15,8 +15,8 @@ Lightning-LM 3D 建图启动文件（三舵轮 + 双 3D 雷达仿真）
      落盘于 <save_dir>/<map_id>/：分块 pcd + global.pcd + map.pgm + map.yaml
 
 注意：
-  - 建图过程无 /map、无 TF 发布（与 cartographer 不同），可视化用 Pangolin
-    UI（with_ui:=true，需显示器）或结束后用 pcl_viewer 查看 global.pcd。
+  - 建图过程发布 /map 和回环校正后的 /tracked_pose；后者由
+    tracked_pose_tf_node 转为 map→odom。Pangolin UI 可选（需显示器）。
   - 存图目录默认 $PWD/maps，与 cartographer 地图同目录方便对比。
 """
 

@@ -13,6 +13,8 @@ from launch_ros.actions import Node
 
 
 def setup(context):
+    tool_type = LaunchConfiguration('tool_type').perform(context)
+    gripper_file = LaunchConfiguration('gripper_file').perform(context)
     # Materialize only the merged controller YAML and expanded model, not copies of chassis tuning.
     temporary = tempfile.TemporaryDirectory(prefix='three-wheel-ur5e-')
     controllers = os.path.join(temporary.name, 'controllers.yaml')
@@ -22,18 +24,20 @@ def setup(context):
     description = os.path.join(temporary.name, 'robot.urdf')
     description_rsp = os.path.join(temporary.name, 'robot_rsp.urdf')
     with open(controllers, 'w', encoding='utf-8') as stream:
-        yaml.safe_dump(merged_controllers(), stream)
+        yaml.safe_dump(merged_controllers(tool_type), stream)
     mounting = LaunchConfiguration('mounting_file').perform(context)
     camera_file = LaunchConfiguration('camera_file').perform(context)
     camera = read_yaml(camera_file)
     with open(description, 'w', encoding='utf-8') as stream:
-        stream.write(robot_description(controllers, mounting, camera_file=camera_file)['robot_description'])
+        stream.write(robot_description(controllers, mounting, camera_file=camera_file,
+                                      tool_type=tool_type, gripper_file=gripper_file)['robot_description'])
     with open(description_rsp, 'w', encoding='utf-8') as stream:
-        stream.write(robot_description(controllers, mounting, package_meshes=True, camera_file=camera_file)['robot_description'])
+        stream.write(robot_description(controllers, mounting, package_meshes=True, camera_file=camera_file,
+                                      tool_type=tool_type, gripper_file=gripper_file)['robot_description'])
     cleanup = RegisterEventHandler(OnShutdown(on_shutdown=[OpaqueFunction(
         function=lambda context: temporary.cleanup())]))
     camera_nodes = []
-    if camera['enabled']:
+    if tool_type == 'camera' and camera['enabled']:
         camera_nodes = [
             Node(package='ros_gz_bridge', executable='parameter_bridge', name='wrist_camera_bridge',
                  arguments=[
@@ -51,7 +55,7 @@ def setup(context):
         launch_arguments={
             'description_file': description,
             'rsp_description_file': description_rsp,
-            'extra_controllers': 'joint_trajectory_controller',
+            'extra_controllers': 'joint_trajectory_controller gripper_controller' if tool_type == 'gripper' else 'joint_trajectory_controller',
             'extra_resource_path': os.path.dirname(share('ur_description')),
             'gui': LaunchConfiguration('gui'), 'use_sim_time': 'true',
             'battery_simulation': LaunchConfiguration('battery_simulation'),
@@ -62,6 +66,8 @@ def setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('tool_type', default_value='gripper', choices=['gripper', 'camera', 'none']),
+        DeclareLaunchArgument('gripper_file', default_value=path('config', 'gripper.yaml')),
         DeclareLaunchArgument('battery_simulation', default_value='true'),
         DeclareLaunchArgument('camera_file', default_value=path('config', 'wrist_camera.yaml')),
         DeclareLaunchArgument('photos_dir', default_value='~/.ros/wrist_camera/photos'),

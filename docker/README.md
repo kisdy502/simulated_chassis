@@ -13,7 +13,7 @@
 | 路径 | 用途 |
 |---|---|
 | `ros2-base/Dockerfile` | ROS 2 Humble、Gazebo、Nav2、Cartographer、UR/MoveIt 和通用依赖 |
-| `simulated-robot/Dockerfile` | 仿真、模型、控制器和相机镜像 |
+| `simulated-robot/Dockerfile` | 仿真、模型、控制器、默认夹爪与可选相机镜像 |
 | `simulated-robot/launch_robot.sh` | 按机器人 profile 启动物理仿真，无界面时使用 Xvfb |
 | `agv-bridge/Dockerfile` | Lightning/Pangolin、桥接、地图服务和机械臂运行时镜像 |
 | `agv-bridge/launch_bridge.sh` | 传递算法、地图和运行参数，启动对应 bridge 入口 |

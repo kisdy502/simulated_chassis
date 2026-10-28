@@ -80,7 +80,7 @@ class SlamSystem {
     /// ros端保存地图的实现
     void SaveMap(const SaveMapService::Request::SharedPtr request, SaveMapService::Response::SharedPtr response);
 
-    /// sim-chassis 补丁：发布 LIO 逐帧位姿到 /tracked_pose（map→base_link）
+    /// Publish a measurement-stamped, loop-corrected pose (map→base_link).
     void PublishTrackedPose();
 
     Options options_;
@@ -111,7 +111,7 @@ class SlamSystem {
     rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr livox_sub_ = nullptr;
 
     // sim-chassis 补丁：SLAM 模式实时可视化（与 Cartographer 建图体验对齐）。
-    // /tracked_pose：LIO 逐帧位姿（map→base_link，云帧率 ~15Hz），
+    // /tracked_pose：经最新关键帧回环校正的逐帧位姿（map→base_link，云帧率 ~15Hz），
     // 配合 tracked_pose_tf_node 重锚定发布 map→odom TF；
     // /map：g2p5 栅格（TRANSIENT_LOCAL，RViz/上位机实时看图）。
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr tracked_pose_pub_ = nullptr;

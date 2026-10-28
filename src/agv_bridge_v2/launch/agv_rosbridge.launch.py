@@ -159,6 +159,10 @@ def _agv_nav_server_node(context):
                 "agv_id": agv_id,
                 "use_sim_time": use_sim_time,
                 "feedback_interval_ms": 400,
+                "spin_timeout_sec": ParameterValue(LaunchConfiguration("spin_timeout_sec"), value_type=float),
+                "spin_progress_timeout_sec": ParameterValue(LaunchConfiguration("spin_progress_timeout_sec"), value_type=float),
+                "spin_progress_min_angle_rad": ParameterValue(LaunchConfiguration("spin_progress_min_angle_rad"), value_type=float),
+                "spin_cancel_timeout_sec": ParameterValue(LaunchConfiguration("spin_cancel_timeout_sec"), value_type=float),
                 "battery_level": 100.0,
                 "require_battery_state": ParameterValue(LaunchConfiguration('require_battery_state'), value_type=bool),
                 "enable_tf_broadcast": True,
@@ -322,6 +326,10 @@ def generate_launch_description():
     ]
 
     args.append(DeclareLaunchArgument('require_battery_state', default_value='false'))
+    for name, default in (("spin_timeout_sec", "60.0"), ("spin_progress_timeout_sec", "10.0"),
+                          ("spin_progress_min_angle_rad", "0.01"), ("spin_cancel_timeout_sec", "5.0")):
+        args.append(DeclareLaunchArgument(name, default_value=default,
+            description="旋转保护参数，必须大于0；超时使用墙钟秒，角度使用弧度"))
     # ---------------- 1. AGV 瘦节点 ----------------
     agv_nav_server = OpaqueFunction(function=_agv_nav_server_node)
 

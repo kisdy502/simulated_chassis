@@ -124,6 +124,8 @@ class G2P5 {
     std::vector<Keyframe::Ptr> all_keyframes_;  // 全部关键帧
 
     std::mutex newest_map_mutex_;
+    // Front/back rendering share floor_coeffs_; serialize that workspace too.
+    std::mutex render_mutex_;
     G2P5MapPtr newest_map_ = nullptr;
 
     /// 前端相关

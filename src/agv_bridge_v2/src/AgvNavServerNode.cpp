@@ -453,52 +453,19 @@ namespace agv_bridge
     {
         (void)uuid;
 
-        // 不在这里拒绝「定位未初始化 / 启动失败」，而是先 ACCEPT 再 ABORT。
-        // 这样上位机拿到的是一条带 message 的 action_result，等价于旧的 command_ack FAILED。
-        {
-            std::lock_guard<std::mutex> lock(goal_mutex_);
-            if (current_goal_handle_)
-            {
-                RCLCPP_WARN(this->get_logger(),
-                            "已有导航任务在执行 (command_id=%s)，拒绝新的 move_to (command_id=%s)",
-                            active_command_id_.c_str(), goal->command_id.c_str());
-                return rclcpp_action::GoalResponse::REJECT;
-            }
-        }
-
-        if (control_stopped_.load())
-        {
-            RCLCPP_WARN(this->get_logger(),
-                        "AGV 处于 stop 状态，拒绝导航任务 (command_id=%s)", goal->command_id.c_str());
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-
-        {
-            std::lock_guard<std::mutex> lock(mode_mutex_);
-            if (mode_ != MODE_NAVIGATION)
-            {
-                RCLCPP_WARN(this->get_logger(),
-                            "当前 mode=%s (map=%s)，拒绝导航任务 (command_id=%s)",
-                            mode_.c_str(), map_name_.c_str(), goal->command_id.c_str());
-                return rclcpp_action::GoalResponse::REJECT;
-            }
-        }
-
-        RCLCPP_INFO(this->get_logger(),
-                    "接受导航任务: command_id=%s, node_id=%s, edge=%s(%s), 目标(%.2f, %.2f, %.3f), "
-                    "max_speed=%.2f, back_up=%d, reverse=%d, control_points=%zu",
-                    goal->command_id.c_str(), goal->node_id.c_str(),
-                    goal->edge_id.c_str(), goal->edge_type.c_str(),
-                    goal->x, goal->y, goal->theta,
-                    goal->max_speed, static_cast<int>(goal->back_up),
-                    static_cast<int>(goal->reverse), goal->control_points.size());
-
+        // ROS action的REJECT响应不携带业务原因。统一进入accepted回调，
+        // 仅在校验通过后登记活动任务；失败则对新handle独立ABORT。
+        (void)goal;
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
 
     rclcpp_action::CancelResponse AgvNavServerNode::handle_cancel(
         const std::shared_ptr<GoalHandleFollowEdge> goal_handle)
     {
+        {
+            std::lock_guard<std::mutex> lock(goal_mutex_);
+            if (goal_handle != current_goal_handle_) return rclcpp_action::CancelResponse::REJECT;
+        }
         cancel_requested_ = true;
         // The action server enters CANCELING only after this callback returns
         // ACCEPT. Finalize on a later tick, never from inside handle_cancel.
@@ -522,15 +489,46 @@ namespace agv_bridge
 
     void AgvNavServerNode::handle_accepted(const std::shared_ptr<GoalHandleFollowEdge> goal_handle)
     {
+        const auto goal = goal_handle->get_goal();
+        // Never acquire the manager mutex while holding goal_mutex_ (result
+        // callbacks take them in the opposite order).
+        const auto stage = navigationStateToString(navigation_manager_->getCurrentState());
+        std::string busy_command;
+        bool busy;
+        {
+            std::lock_guard<std::mutex> lock(goal_mutex_);
+            busy = bool(current_goal_handle_);
+            busy_command = active_command_id_;
+        }
+        std::string mode, map;
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            mode = mode_;
+            map = map_name_;
+        }
+        const auto admission_error = navigationAdmissionError(
+            busy, busy_command, stage, control_stopped_.load(), mode, map);
+        if (!admission_error.empty()) {
+            auto result = std::make_shared<FollowEdge::Result>();
+            result->success = false;
+            result->message = admission_error;
+            result->command_id = goal->command_id;
+            result->node_id = goal->node_id;
+            RCLCPP_WARN(get_logger(), "导航请求未执行: command_id=%s，%s",
+                        goal->command_id.c_str(), admission_error.c_str());
+            goal_handle->abort(result);
+            return;
+        }
+        // Action admission callbacks share the default mutually-exclusive group.
         {
             std::lock_guard<std::mutex> lock(goal_mutex_);
             current_goal_handle_ = goal_handle;
+            active_command_id_ = goal->command_id;
+            active_node_id_ = goal->node_id;
         }
         cancel_requested_ = false;
-
-        auto goal = goal_handle->get_goal();
-        active_command_id_ = goal->command_id;
-        active_node_id_ = goal->node_id;
+        RCLCPP_INFO(get_logger(), "接受导航任务: command_id=%s, node_id=%s, 目标(%.2f, %.2f, %.3f)",
+                    goal->command_id.c_str(), goal->node_id.c_str(), goal->x, goal->y, goal->theta);
 
         const auto parameter_error = validateNavigationMode(
             goal->edge_type, goal->edge_id, goal->control_points, goal->back_up, goal->reverse);

@@ -28,6 +28,7 @@ def main():
     node = Node('wait_for_mobile_ur5e')
     expected = geometry(node.declare_parameter('robot_description', '').value)
     timeout = node.declare_parameter('timeout_sec', 90.0).value
+    require_gripper = node.declare_parameter('require_gripper', False).value
     joint_time, matching, error = 0.0, False, ''
 
     def description(message):
@@ -43,6 +44,8 @@ def main():
         nonlocal joint_time
         required = {'ur5e_shoulder_pan_joint', 'ur5e_shoulder_lift_joint', 'ur5e_elbow_joint',
                     'ur5e_wrist_1_joint', 'ur5e_wrist_2_joint', 'ur5e_wrist_3_joint'}
+        if require_gripper:
+            required.update(('ur5e_gripper_left_joint', 'ur5e_gripper_right_joint'))
         if required.issubset(message.name):
             joint_time = time.monotonic()
 
@@ -61,7 +64,10 @@ def main():
             if error:
                 raise RuntimeError(error)
             if future is not None and future.done():
-                active = {'three_wheel_base_controller', 'joint_state_broadcaster', 'joint_trajectory_controller'}.issubset(
+                required_controllers = {'three_wheel_base_controller', 'joint_state_broadcaster', 'joint_trajectory_controller'}
+                if require_gripper:
+                    required_controllers.add('gripper_controller')
+                active = required_controllers.issubset(
                     {item.name for item in future.result().controller if item.state == 'active'})
                 future = None
             if future is not None and time.monotonic() - last_query > 3.0:

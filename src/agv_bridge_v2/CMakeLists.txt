@@ -95,6 +95,12 @@ if(BUILD_TESTING)
     COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_urdf_mesh_server.sh
       $<TARGET_FILE:urdf_mesh_server>)
   set_tests_properties(test_urdf_mesh_server PROPERTIES TIMEOUT 45)
+  find_program(PYTHON3_EXECUTABLE python3 REQUIRED)
+  add_test(NAME test_navigation_admission
+    COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_navigation_admission.py
+      $<TARGET_FILE:agv_nav_server>)
+  set_tests_properties(test_navigation_admission PROPERTIES TIMEOUT 60
+    ENVIRONMENT "ROS_DOMAIN_ID=93;RMW_IMPLEMENTATION=rmw_cyclonedds_cpp")
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_navigation_readiness
     test/test_navigation_readiness.cpp

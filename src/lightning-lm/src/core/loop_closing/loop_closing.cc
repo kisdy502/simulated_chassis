@@ -3,12 +3,14 @@
 //
 
 #include "core/loop_closing/loop_closing.h"
+#include "core/loop_closing/loop_validation.h"
 #include "common/keyframe.h"
 #include "common/loop_candidate.h"
 #include "utils/pointcloud_utils.h"
 
 #include <pcl/common/transforms.h>
 #include <pcl/registration/ndt.h>
+#include <cmath>
 
 #include "core/opti_algo/algo_select.h"
 #include "core/robust_kernel/cauchy.h"
@@ -27,10 +29,7 @@ LoopClosing::~LoopClosing() {
 
 void LoopClosing::Init(const std::string yaml_path) {
     /// setup miao
-    miao::OptimizerConfig config(miao::AlgorithmType::LEVENBERG_MARQUARDT,
-                                 miao::LinearSolverType::LINEAR_SOLVER_SPARSE_EIGEN, false);
-    config.incremental_mode_ = true;
-    optimizer_ = miao::SetupOptimizer<6, 3>(config);
+    optimizer_ = MakeLoopOptimizer();
 
     info_motion_.setIdentity();
     info_motion_.block<3, 3>(0, 0) =
@@ -166,15 +165,19 @@ void LoopClosing::ComputeLoopCandidates() {
 }
 
 void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
+    c.ndt_score_ = 0;
     // LOG(INFO) << "aligning " << c.idx1_ << " with " << c.idx2_;
     const int submap_idx_range = 40;
     auto kf1 = all_keyframes_.at(c.idx1_), kf2 = all_keyframes_.at(c.idx2_);
 
-    auto build_submap = [this](int given_id, bool build_in_world) -> CloudPtr {
+    auto build_submap = [this, &kf2](int given_id, bool build_in_world) -> CloudPtr {
         CloudPtr submap(new PointCloudType);
         for (int idx = -submap_idx_range; idx < submap_idx_range; idx += 4) {
             int id = idx + given_id;
             if (id < 0 || id >= all_keyframes_.size()) {
+                continue;
+            }
+            if (!IsHistoricalLoopFrame(id, static_cast<int>(kf2->GetID()), options_.closest_id_th_)) {
                 continue;
             }
 
@@ -232,6 +235,11 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
         ndt.setInputSource(rough_map2);
 
         ndt.align(*output, Tw2);
+        if (!ndt.hasConverged() || !ndt.getFinalTransformation().allFinite() ||
+            !std::isfinite(ndt.getTransformationProbability())) {
+            c.ndt_score_ = 0;
+            return;
+        }
         Tw2 = ndt.getFinalTransformation();
 
         c.ndt_score_ = ndt.getTransformationProbability();
@@ -251,9 +259,8 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
 }
 
 void LoopClosing::PoseOptimization() {
-    auto v = std::make_shared<miao::VertexSE3>();
-    v->SetId(cur_kf_->GetID());
-    v->SetEstimate(cur_kf_->GetOptPose());
+    // Fix the map origin/gauge; relative edges alone cannot anchor XYZ/yaw.
+    auto v = MakeLoopVertex(static_cast<int>(cur_kf_->GetID()), cur_kf_->GetOptPose());
 
     optimizer_->AddVertex(v);
     kf_vert_.emplace_back(v);
@@ -307,28 +314,12 @@ void LoopClosing::PoseOptimization() {
         return;
     }
 
-    optimizer_->InitializeOptimization();
     optimizer_->SetVerbose(false);
-
-    optimizer_->Optimize(20);
-
-    /// remove outliers
-    int cnt_outliers = 0;
-    for (auto& e : edge_loops_) {
-        if (e->GetRobustKernel() == nullptr) {
-            continue;
-        }
-
-        if (e->Chi2() > e->GetRobustKernel()->Delta()) {
-            e->SetLevel(1);
-            cnt_outliers++;
-        } else {
-            e->SetRobustKernel(nullptr);
-        }
-    }
+    const auto refinement = RefineLoopGraph(*optimizer_, edge_loops_);
 
     if (options_.verbose_) {
-        LOG(INFO) << "loop outliers: " << cnt_outliers << "/" << edge_loops_.size();
+        LOG(INFO) << "loop outliers: " << refinement.rejected << "/" << edge_loops_.size()
+                  << ", newly rejected: " << refinement.newly_rejected;
     }
 
     /// get results

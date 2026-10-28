@@ -53,11 +53,11 @@ void G2P5::RenderFront(Keyframe::Ptr kf) {
 
         lightning::Timer::Evaluate([&]() { AddKfToMap({kf}, frontend_map_); }, "G2P5 Occupancy Mapping", true);
         newest_map_ = frontend_map_;
-    }
-
-    /// 向外回调
-    if (map_update_cb_) {
-        map_update_cb_(newest_map_);
+        // ToROS()/ToCV() traverse mutable grid storage. Keep conversion and the
+        // publication throttle serialized with both front rendering and swap.
+        if (map_update_cb_) {
+            map_update_cb_(newest_map_);
+        }
     }
 }
 
@@ -148,11 +148,9 @@ void G2P5::RenderBack() {
             UL lock{newest_map_mutex_};
             frontend_map_ = backend_map_;
             newest_map_ = frontend_map_;
-        }
-
-        /// 向外回调
-        if (map_update_cb_) {
-            map_update_cb_(newest_map_);
+            if (map_update_cb_) {
+                map_update_cb_(newest_map_);
+            }
         }
 
         is_busy_ = false;
@@ -250,10 +248,14 @@ bool G2P5::ResizeMap(const std::vector<Keyframe::Ptr> &kfs, G2P5MapPtr &map) {
 }
 
 bool G2P5::AddKfToMap(const std::vector<Keyframe::Ptr> &kfs, G2P5MapPtr &map) {
+    UL render_lock(render_mutex_);
+    std::vector<Keyframe::Ptr> snapshots;
+    snapshots.reserve(kfs.size());
+    for (const auto &kf : kfs) snapshots.push_back(kf->RenderSnapshot());
     /// 如果需要，更新地图大小
-    ResizeMap(kfs, map);
+    ResizeMap(snapshots, map);
 
-    for (const auto &kf : kfs) {
+    for (const auto &kf : snapshots) {
         Convert3DTo2DScan(kf, map);
     }
 

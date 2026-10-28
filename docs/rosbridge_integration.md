@@ -160,7 +160,7 @@ flowchart LR
 
 **mode 状态机**（`/agv/status.mode` 是建图链路唯一事实源，上位机勿用其他信号判定）：
 `NAVIGATION`（默认）↔ `MAPPING`（start_mapping 进入）↔ `RELOCALIZING`（save_map/load_map
-切换中，收敛后自动回 NAVIGATION）。MAPPING/RELOCALIZING 下 follow_edge 直接 REJECT。
+切换中，收敛后自动回 NAVIGATION）。MAPPING/RELOCALIZING 下 follow_edge 返回 `ABORTED(status=6)`，`values.message` 明确说明当前模式；不会执行导航。
 
 ### 3.2 原生话题透传（白名单内）
 
@@ -438,7 +438,7 @@ RViz「2D Goal Pose」发的标准话题，nav2 行为树直接接单，**适合
  "result":true,"values":{"success":true,"message":"已停止当前导航并暂停接收任务","state":"STOPPED"}}
 ```
 
-- `start`：恢复接单（**stop 后必须先 start，否则新任务全被 REJECT**）
+- `start`：恢复接单（**stop 后必须先 start，否则新任务返回带 stop 原因的 ABORTED**）
 - `stop`：立即取消当前导航（上层 action 收到 ABORT），并暂停接单，状态上报 `STOPPED`
 - `reset`：停止并复位
 
@@ -665,7 +665,7 @@ public class RosbridgeClient extends WebSocketClient {
 | 转发给浏览器 | `/agv/pose` 保持10Hz、`throttle_rate:0`；`/map` 只在变化或首次接入时推；`/scan_1`/`scan_2` 用 `throttle_rate:200`（5Hz） |
 | 对账 | 每条移动指令生成 `command_id`(uuid) 存库，`action_result` 回来按它更新任务状态 |
 | 门控 | `pose_initialized=false` 时前端置灰导航按钮（后端也拦截一道） |
-| 并发任务 | `/agv/follow_edge` 同时只允许一个 goal，已有任务时新 goal 会被 REJECT，收到 REJECT 要提示前端 |
+| 并发任务 | `/agv/follow_edge` 同时只允许一个 goal，已有任务时新 goal 返回 ABORTED，message 包含占用任务 command_id、阶段及处理建议；原任务继续执行 |
 | 大消息 | `/map` 订阅必带 `fragment_size`，且实现 8.1 的分片重组（服务端已配 10MB 上限） |
 
 ### 8.3 联调自检
@@ -713,7 +713,7 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
    `true` = 这是最后一段，到达后按 `theta` 做一次最终旋转（`END_ROTATING` 状态）。
 2. **`agv_control` 的语义已明确化**：`/agv/set_control` 的 `start/stop/reset` 是独立的
    「是否接收新任务」开关，不再直接改写导航状态机；暂停后 `/agv/status` 固定上报 `STOPPED`。
-3. **`/agv/follow_edge` 同时只允许一个 goal**。已有任务在跑时新 goal 会被 `REJECT`；
+3. **`/agv/follow_edge` 同时只允许一个 goal**。已有任务在跑时新 goal 会被接受后独立 `ABORTED(status=6)`，失败结果包含占用任务 ID 和阶段，原任务不会被覆盖；
    请先 `cancel_action_goal` 再发新 goal。
 4. **执行与取消是异步闭环**：当前使用 3 线程 `MultiThreadedExecutor`。取消请求不等于底层立即停止；
    目标响应或取消结果超时会设置动作保护标记。托管导航会停止确认旧 Nav2 进程组退出后
@@ -778,3 +778,27 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
 导航参数现按严格规则校验：edge_type 必填；STRAIGHT/CURVE/ELEVATION 的 edge_id 不得为空或仅含空白；CURVE 必须提供 1 或 2 个控制点，其他模式控制点必须为空。FREE 不校验 edge_id。错误详情见 action_result 的 values.message；曲线错误不再退化为直线。
 
 电量与充电：/agv/status 新增 battery_state、charging、charge_connected、battery_data_valid；通过 /agv/set_charging（std_srvs/srv/SetBool）开始或停止充电。作业导航会先确认断开充电，再下发目标。详见 [电池与充电接口](battery_api.md)。
+
+## 旋转保护与导航业务失败（2026-10-28）
+
+通用 bridge 和 UR5e 组合 bridge 均支持以下启动参数（单位为墙钟秒，角度除外）：
+
+| 参数 | 默认 | 含义 |
+| --- | --- | --- |
+| `spin_timeout_sec` | 60.0 | 单次预旋转/到点后旋转总时限，同时设置 Nav2 Spin 的 time_allowance |
+| `spin_progress_timeout_sec` | 10.0 | 连续无有效转动的最长时间，缺少反馈同样触发 |
+| `spin_progress_min_angle_rad` | 0.01 | 认定新进展的最小角度，重复反馈或原地抖动不延长时限 |
+| `spin_cancel_timeout_sec` | 5.0 | 触发保护后等待底层终态的时限 |
+
+参数必须为大于0的有限数值，启动时读取。墙钟保护在仿真暂停时仍计时。
+超时后先请求取消；收到底层结果后以失败结束原导航，失败消息包含任务 ID、阶段、目标角度和已转角度。
+取消应答不是停止确认；若收不到终态，保留任务与动作保护，由托管 Nav2 恢复流程确认旧进程组退出后才释放任务，不自动重放。
+非托管 Nav2 无法自动确认进程组退出，需要运维确认并重启 bridge 后再接单，不能仅清空任务绕过保护。
+
+忙碌、stop 或模式不允许导航时，ROS action 传输层先接受请求，再对该新请求返回业务失败；只有通过业务校验才登记为活动任务。示例：
+
+```json
+{"op":"action_result","id":"new-request","action":"/agv/follow_edge","status":6,"result":true,"values":{"success":false,"message":"导航请求未执行：已有任务占用，command_id=old-task，阶段=PRE_ROTATING；请等待当前任务结束或取消并确认停止后再下发","command_id":"new-task","node_id":"DOCK_01"}}
+```
+
+`result=true` 表示传输层处理成功，业务仍以 `values.success` 与 action status 为准。该失败不会取消或覆盖 `old-task`。客户端不应把接收目标的 ACCEPTED 当作开始移动或任务成功。

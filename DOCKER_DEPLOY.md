@@ -1,9 +1,13 @@
 # 仿真机器人 Docker 部署
 
 本文对应当前仓库的 `docker-compose.yml`、`deploy.sh` 和 Docker 启动脚本。
-默认部署是三舵轮底盘、双 3D 雷达、UR5e 六轴机械臂和腕部仿真相机，
+默认部署是三舵轮底盘、双 3D 雷达、UR5e 六轴机械臂和通用双指夹爪，
 使用 ROS 2 Humble、Gazebo Fortress、ros2_control、MoveIt 和 Nav2。
 SLAM 支持 Lightning-LM 与 Cartographer。上位机、Web 前端及其数据库等由各自项目部署。
+
+末端工具由两容器共同使用的 `TOOL_TYPE` 控制：`gripper`（默认）、`camera`、`none`。
+夹爪开合服务、状态、TCP 与构建说明见 [夹爪文档](docs/gripper_api.md)。
+本文相机相关功能仅在 `TOOL_TYPE=camera` 时启用。
 
 ## 1. 容器与进程架构
 
@@ -27,7 +31,8 @@ SLAM 支持 Lightning-LM 与 Cartographer。上位机、Web 前端及其数据�
                          ├─ 一个 controller_manager：底盘控制器 + 机械臂 JTC
                          ├─ joint_state_broadcaster / robot_state_publisher
                          ├─ 双雷达、IMU、里程计、/clock
-                         └─ 相机渲染 → ros_gz_bridge → wrist_camera_node
+                         ├─ 默认夹爪：两指关节 + gripper_controller
+                         └─ 可选相机：渲染 → ros_gz_bridge → wrist_camera_node
 ```
 
 | Compose 服务 | 镜像 | 启动入口 | 职责 |
@@ -172,6 +177,7 @@ cp .env.example .env
 | 变量 | 新配置示例 | 说明 |
 |---|---|---|
 | `ROBOT_PROFILE` | `chassis_3d_ur5e` | 默认整机；`chassis_3d` 为纯底盘 |
+| `TOOL_TYPE` | `gripper` | 末端工具，另可选择 `camera` / `none`；仿真和 bridge 共用 |
 | `ROBOT_TYPE` | `omni_3wd` | 当前部署要求三舵轮 |
 | `ROBOT_PACKAGE` | `simulated_chassis` | 纯底盘 bridge 的机器人配置包；组合入口内部固定此值 |
 | `SLAM_ALGORITHM` | `lightning` | 可改为 `cartographer` |
@@ -241,7 +247,7 @@ Lightning 当前定位接入不保证任意初始位置的全局重定位，首�
 不是增加第三个容器。服务命令最多等待 60 秒（包含 ROS 发现时间）；
 若启动初期尚未就绪，先检查日志和状态，再调用 `start-mapping`。
 
-## 5. 机械臂与腕部相机
+## 5. 机械臂、夹爪与可选相机
 
 ### UR5e 运行时
 
@@ -266,12 +272,20 @@ Lightning 当前定位接入不保证任意初始位置的全局重定位，首�
 初始折叠角度来自 `src/simulated_ur5e/config/initial_positions.yaml`。
 修改模型后重建镜像并重启两容器，保证仿真与 MoveIt 描述一致。
 
+### 默认夹爪
+
+`TOOL_TYPE=gripper` 时启动独立夹爪控制器和 C++ `gripper_control`，
+服务 `/gripper/set_closed` 接收 `std_srvs/srv/SetBool`（true 闭合、false 打开）。
+实际开口 `/gripper/width` 单位米，执行状态为 `/gripper/status`。
+控制与状态复用 9090，无额外 HTTP 端口；详细操作见 [夹爪接口](docs/gripper_api.md)。
+夹爪模式的 arm_manager 位姿目标参考点改为 `ur5e_gripper_tcp`，旧位姿示教点需重新核对。
+
 ### 相机与拍照
 
 相机由仿真容器启动：Gazebo 渲染图像，经 `ros_gz_bridge` 转 ROS 消息，
 再由 `wrist_camera_node` 统一光学 frame 并提供拍照服务。
 配置为 `src/simulated_chassis_ur5e/config/wrist_camera.yaml`，
-默认启用，640×480、10 Hz。仿真相机无需挂载宿主 USB 设备。
+仅在 `TOOL_TYPE=camera` 时启用，640×480、10 Hz。仿真相机无需挂载宿主 USB 设备。
 
 | 接口 | 类型/含义 |
 |---|---|

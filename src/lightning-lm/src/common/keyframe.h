@@ -51,6 +51,23 @@ class Keyframe {
         pose_opt_ = pose;
     }
 
+    // Both poses must belong to one optimization revision. This is the map<-LIO
+    // correction applied to a live LIO pose, not an update to the LIO filter.
+    SE3 PoseInMap(const SE3& pose_lio) {
+        UL lock(data_mutex_);
+        return pose_opt_ * pose_lio_.inverse() * pose_lio;
+    }
+
+    // Keep a frame's hit points, free-space rays and resize bounds in exactly
+    // the same pose even if loop closing updates the original during rendering.
+    Ptr RenderSnapshot() {
+        UL lock(data_mutex_);
+        auto snapshot = std::make_shared<Keyframe>(id_, cloud_, state_);
+        snapshot->pose_lio_ = pose_lio_;
+        snapshot->pose_opt_ = pose_opt_;
+        return snapshot;
+    }
+
     void SetState(NavState s) {
         UL lock(data_mutex_);
         state_ = s;

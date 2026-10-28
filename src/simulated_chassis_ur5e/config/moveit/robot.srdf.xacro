@@ -2,6 +2,23 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="three_wheel_agv">
   <xacro:include filename="$(find ur_moveit_config)/srdf/ur_macro.srdf.xacro"/>
   <xacro:ur_srdf name="ur" prefix="ur5e_"/>
+  <xacro:arg name="tool_type" default="gripper"/>
+  <xacro:arg name="gripper_file" default="$(find simulated_chassis_ur5e)/config/gripper.yaml"/>
+  <xacro:if value="${'$(arg tool_type)' == 'gripper'}">
+    <xacro:property name="grip" value="${xacro.load_yaml('$(arg gripper_file)')}"/>
+    <group name="ur5e_gripper"><joint name="ur5e_gripper_left_joint"/><joint name="ur5e_gripper_right_joint"/></group>
+    <group_state name="open" group="ur5e_gripper">
+      <joint name="ur5e_gripper_left_joint" value="${grip['max_width']/2}"/><joint name="ur5e_gripper_right_joint" value="${grip['max_width']/2}"/>
+    </group_state>
+    <group_state name="closed" group="ur5e_gripper">
+      <joint name="ur5e_gripper_left_joint" value="0"/><joint name="ur5e_gripper_right_joint" value="0"/>
+    </group_state>
+    <end_effector name="parallel_gripper" parent_link="ur5e_gripper_tcp" group="ur5e_gripper" parent_group="ur5e_ur_manipulator"/>
+    <disable_collisions link1="ur5e_wrist_3_link" link2="ur5e_gripper_base" reason="Adjacent"/>
+    <disable_collisions link1="ur5e_gripper_base" link2="ur5e_gripper_left_finger" reason="Adjacent"/>
+    <disable_collisions link1="ur5e_gripper_base" link2="ur5e_gripper_right_finger" reason="Adjacent"/>
+    <disable_collisions link1="ur5e_gripper_left_finger" link2="ur5e_gripper_right_finger" reason="Touching"/>
+  </xacro:if>
   <xacro:property name="initial" value="${xacro.load_yaml('$(find simulated_ur5e)/config/initial_positions.yaml')}"/>
   <group_state name="stowed" group="ur5e_ur_manipulator">
     <joint name="ur5e_shoulder_pan_joint" value="${initial['shoulder_pan_joint']}"/>
