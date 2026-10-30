@@ -8,3 +8,5 @@ float64 yaw
 bool success
 string message
 string map_name
+# success means accepted, not localization complete.
+string operation_id

@@ -9,3 +9,6 @@ string map_name        # 地图名（不带扩展名，需存在 <map_name>.pbst
 bool success
 string message
 string map_name        # 实际加载（重启中）的地图名
+# success means accepted; final result is published on /agv/localization_operation.
+# Empty on admission rejection. Query via /agv/get_localization_operation.
+string operation_id

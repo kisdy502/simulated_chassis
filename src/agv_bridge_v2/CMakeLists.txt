@@ -102,6 +102,10 @@ if(BUILD_TESTING)
   set_tests_properties(test_navigation_admission PROPERTIES TIMEOUT 60
     ENVIRONMENT "ROS_DOMAIN_ID=93;RMW_IMPLEMENTATION=rmw_cyclonedds_cpp")
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_localization_operation test/test_localization_operation.cpp
+    ENV ROS_DOMAIN_ID=94 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp TIMEOUT 45)
+  target_include_directories(test_localization_operation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  ament_target_dependencies(test_localization_operation ${AGV_ROS_DEPS})
   ament_add_gtest(test_navigation_readiness
     test/test_navigation_readiness.cpp
     src/NavigationManager.cpp src/LocalizationMonitor.cpp src/TransformUtils.cpp

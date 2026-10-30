@@ -105,6 +105,8 @@ lightning **无全局重定位**：机器人须放置在建图起点附近，或
 
 ### 3.2 运行中重定位 / 切图
 
+切图与重定位服务返回成功仅表示受理，响应的 `operation_id` 用于订阅 `/agv/localization_operation` 或调用 `/agv/get_localization_operation` 获取最终成功、失败、超时及原因。无需刷新页面；上位机完整对接见 [操作结果接口](localization_operation_api.md)。
+
 ```bash
 # 在当前/指定地图坐标重启定位（拖拽放点后提交）
 ros2 service call /agv/relocalize agv_bridge_v2_interfaces/srv/Relocalize \
@@ -125,12 +127,12 @@ ros2 service call /agv/list_maps agv_bridge_v2_interfaces/srv/ListMaps "{}"
 
 ```bash
 ros2 action send_goal /agv/follow_edge agv_bridge_v2_interfaces/action/FollowEdge \
-  "{command_id: t1, node_id: n1, x: 2.0, y: 0.0, theta: 0.0, max_speed: 0.8}"
+  "{command_id: t1, node_id: n1, x: 2.0, y: 0.0, theta: 0.0, edge_type: FREE, edge_id: '', max_speed: 0.8}"
 ```
 
-- `MAPPING` / `RELOCALIZING` 模式下导航 goal 直接 REJECT（mode 闸门）。
+- `MAPPING` / `RELOCALIZING` 模式下新导航请求被接收后独立返回 `ABORTED(status=6)`，结果中明确说明当前模式；接收目标不代表通过业务检查。
 - 建图中仍可 `/cmd_vel` 遥控（速度转发常驻），支持"边建图边探索"。
-- 曲线 / 倒车 / 取消等完整用法见 `src/agv_bridge_v2/README.md`。
+- 曲线 / 倒车 / 取消等完整用法见 [主协议](rosbridge_integration.md)；内部实现见 [Bridge 源码导读](bridge_source_guide.md)。
 
 ## 5. SLAM 后端切换
 

@@ -159,6 +159,7 @@ def _agv_nav_server_node(context):
                 "agv_id": agv_id,
                 "use_sim_time": use_sim_time,
                 "feedback_interval_ms": 400,
+                "localization_operation_timeout_sec": ParameterValue(LaunchConfiguration("localization_operation_timeout_sec"), value_type=float),
                 "spin_timeout_sec": ParameterValue(LaunchConfiguration("spin_timeout_sec"), value_type=float),
                 "spin_progress_timeout_sec": ParameterValue(LaunchConfiguration("spin_progress_timeout_sec"), value_type=float),
                 "spin_progress_min_angle_rad": ParameterValue(LaunchConfiguration("spin_progress_min_angle_rad"), value_type=float),
@@ -309,7 +310,7 @@ def generate_launch_description():
             "topics_sub_glob",
             default_value=(
                 "['/odom', '/tf', '/tf_static', '/map', '/plan', '/local_plan', "
-                "'/joint_states', '/agv/status', '/scan_1', '/scan_2', '/agv/pose']"
+                "'/joint_states', '/agv/status', '/agv/localization_operation', '/scan_1', '/scan_2', '/agv/pose']"
             ),
             description="允许上位机订阅（上报）的 topic 白名单",
         ),
@@ -318,7 +319,7 @@ def generate_launch_description():
             "services_glob",
             default_value=(
                 "['/rosapi/*', '/agv/set_control', '/agv/set_charging', '/agv/get_map', '/agv/load_map', "
-                "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize', "
+                "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize', '/agv/get_localization_operation', "
                 "'/agv/arm_move']"
             ),
             description="允许上位机调用的 service 白名单",
@@ -326,7 +327,7 @@ def generate_launch_description():
     ]
 
     args.append(DeclareLaunchArgument('require_battery_state', default_value='false'))
-    for name, default in (("spin_timeout_sec", "60.0"), ("spin_progress_timeout_sec", "10.0"),
+    for name, default in (("localization_operation_timeout_sec", "600.0"), ("spin_timeout_sec", "60.0"), ("spin_progress_timeout_sec", "10.0"),
                           ("spin_progress_min_angle_rad", "0.01"), ("spin_cancel_timeout_sec", "5.0")):
         args.append(DeclareLaunchArgument(name, default_value=default,
             description="旋转保护参数，必须大于0；超时使用墙钟秒，角度使用弧度"))

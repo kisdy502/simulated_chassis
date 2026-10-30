@@ -10,6 +10,8 @@ AGV 上位机与仿真机器人之间的对接层。**rosbridge 架构**：业�
 
 👉 **上位机对接细节见 [`docs/rosbridge_integration.md`](../../docs/rosbridge_integration.md)**
 
+切图、重定位的操作 ID、过程与最终结果、断线查询见 [操作结果接口](../../docs/localization_operation_api.md)；内部调用与 C++ 用法见 [源码导读](../../docs/bridge_source_guide.md)。
+
 机械臂完整契约、关节顺序与连续点动限制见
 [`docs/arm_move_integration.md`](../../docs/arm_move_integration.md)。
 
@@ -32,6 +34,8 @@ AGV 上位机与仿真机器人之间的对接层。**rosbridge 架构**：业�
 | `/agv/list_maps` | `srv/ListMaps` | 列出可加载地图 |
 | `/agv/get_map` | `srv/GetMap` | 导出某张地图栅格（建图后入库用） |
 | `/agv/relocalize` | `srv/Relocalize` | 指定坐标重启定位 |
+| `/agv/localization_operation` | `msg/LocalizationOperation` | 切图/重定位阶段、成功、失败、超时，按 operation_id 关联 |
+| `/agv/get_localization_operation` | `srv/GetLocalizationOperation` | 查询最近或指定操作，支持 WebSocket 重连恢复 |
 | `/agv/arm_move` | `srv/ArmMove` | 机械臂绝对关节目标（UR5e 单臂 C++ 适配、双臂 profile；见机械臂专门文档） |
 | TF `map → <agv_id>/base_link` | TF | 车体位姿 |
 

@@ -9,6 +9,8 @@ find_package(nav_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AgvStatus.msg"
+  "msg/LocalizationOperation.msg"
+  "srv/GetLocalizationOperation.srv"
   "srv/SetControl.srv"
   "srv/GetMap.srv"
   "srv/LoadMap.srv"

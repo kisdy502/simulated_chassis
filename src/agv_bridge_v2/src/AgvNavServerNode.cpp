@@ -159,6 +159,8 @@ namespace agv_bridge
     {
         std::call_once(shutdown_once_, [this]() {
         shutting_down_.store(true);
+        if (localization_operations_)
+            localization_operations_->failActive("bridge正在关闭，本次定位操作未完成；重启后需重新确认定位状态");
         for (auto timer : {status_timer_, feedback_timer_, localization_timer_, tf_timer_, cancel_finalize_timer_})
             if (timer) timer->cancel();
         try
@@ -270,6 +272,7 @@ namespace agv_bridge
 
     void AgvNavServerNode::initialize_components()
     {
+        localization_operations_ = std::make_unique<LocalizationOperationTracker>(this);
         LocalizationMonitor::Config loc_config;
         loc_config.particle_spread_threshold = 1.0;
         loc_config.required_stable_count = 5;
@@ -432,7 +435,14 @@ namespace agv_bridge
         heartbeat_group_ = this->create_callback_group(
             rclcpp::CallbackGroupType::MutuallyExclusive);
         status_timer_ = this->create_wall_timer(
-            1s, std::bind(&AgvNavServerNode::publish_status, this), heartbeat_group_);
+            1s, [this]() {
+                publish_status();
+                // Independent of the potentially slow localization callbacks,
+                // and independent of /clock pausing.
+                if (localization_operations_ && localization_monitor_ && navigation_manager_)
+                    localization_operations_->observe(localization_monitor_->isInitialized(),
+                        navigation_manager_->isReady(), transition_in_progress_.load());
+            }, heartbeat_group_);
 
         feedback_timer_ = this->create_wall_timer(
             std::chrono::milliseconds(feedback_interval_ms_),
@@ -747,7 +757,9 @@ namespace agv_bridge
 
         {
             std::lock_guard<std::mutex> lock(mode_mutex_);
-            if (mode_ == MODE_RELOCALIZING)
+            if (mode_ == MODE_RELOCALIZING &&
+                (transition_in_progress_.load() || localization_operations_->active() ||
+                 localization_operations_->allowsModeCompletion()))
             {
                 response->success = false;
                 response->message = "正在切换地图 (map=" + map_name_ +
@@ -765,7 +777,8 @@ namespace agv_bridge
         {
             // 定位子进程必须由本节点托管，否则无法停掉外部启动的 cartographer
             std::lock_guard<std::mutex> lock(proc_mutex_);
-            if (localization_pid_ <= 0)
+            LocalizationOperationTracker::Status previous_operation;
+            if (localization_pid_ <= 0 && !localization_operations_->lookup("", previous_operation))
             {
                 response->success = false;
                 response->message =
@@ -783,6 +796,12 @@ namespace agv_bridge
             return;
         }
 
+        if (localization_operations_->active())
+        {
+            response->success = false;
+            response->message = "已有定位操作等待完成；请查询 /agv/get_localization_operation";
+            return;
+        }
         if (transition_in_progress_.exchange(true))
         {
             response->success = false;
@@ -796,36 +815,47 @@ namespace agv_bridge
             map_name_ = name;
         }
 
+        const auto operation_id = localization_operations_->begin("LOAD_MAP", name);
+        response->operation_id = operation_id;
         const std::string map_artifact = mapArtifactPath(name);
         if (transition_thread_.joinable())
         {
             transition_thread_.join();
         }
-        transition_thread_ = std::thread([this, map_artifact, name]()
-        {
-            RCLCPP_INFO(this->get_logger(), "load_map(%s)：停止旧定位进程...", name.c_str());
-            stop_child_process(localization_pid_, "定位");
-
-            geometry_msgs::msg::Pose remembered_pose;
-            const bool has_pose = load_remembered_pose(name, remembered_pose);
-            std::string error;
-            RCLCPP_INFO(this->get_logger(), "load_map(%s)：以%s初始位姿重启定位...",
-                        name.c_str(), has_pose ? "记忆的" : "全局搜索");
-            if (!start_managed_localization(
-                    map_artifact, name, has_pose ? &remembered_pose : nullptr, error))
+        try {
+            transition_thread_ = std::thread([this, map_artifact, name, operation_id]()
             {
-                RCLCPP_ERROR(this->get_logger(),
-                             "load_map(%s)：定位进程重启失败: %s", name.c_str(), error.c_str());
-                std::lock_guard<std::mutex> lock(mode_mutex_);
-                mode_ = MODE_NAVIGATION;
-            }
+                try {
+                    localization_operations_->stage(operation_id, "STOPPING_LOCALIZATION", "正在停止旧定位和托管导航");
+                    if (!stop_child_process(localization_pid_, "定位"))
+                        throw std::runtime_error("旧定位进程组尚未确认停止，未启动新定位");
+                    geometry_msgs::msg::Pose remembered_pose;
+                    const bool has_pose = load_remembered_pose(name, remembered_pose);
+                    std::string error;
+                    localization_operations_->stage(operation_id, "STARTING_LOCALIZATION", "正在启动目标地图定位");
+                    if (!start_managed_localization(map_artifact, name,
+                            has_pose ? &remembered_pose : nullptr, error))
+                        throw std::runtime_error(error);
+                    localization_operations_->stage(operation_id, "WAITING_LOCALIZATION", "定位进程已启动，等待新鲜TF与定位检查通过");
+                } catch (const std::exception &e) {
+                    localization_operations_->fail(operation_id, std::string("切图失败：") + e.what());
+                    RCLCPP_ERROR(get_logger(), "load_map(%s) 失败: %s", name.c_str(), e.what());
+                } catch (...) {
+                    localization_operations_->fail(operation_id, "切图失败：后台发生未知异常，请检查定位日志");
+                }
+                transition_in_progress_.store(false);
+            });
+        } catch (const std::exception &e) {
             transition_in_progress_.store(false);
-            // 收敛后由 update_localization_monitor 把 RELOCALIZING 切回 NAVIGATION
-        });
+            localization_operations_->fail(operation_id, std::string("无法创建切图工作线程：") + e.what());
+            response->success = false;
+            response->message = "切图工作线程启动失败，请查询 operation_id 对应结果";
+            return;
+        }
 
         response->success = true;
         response->map_name = name;
-        response->message = "定位重启中，等待 /agv/status.mode: RELOCALIZING -> NAVIGATION";
+        response->message = "切图已受理，尚未完成；请按 operation_id 订阅 /agv/localization_operation 或查询操作结果";
 
         RCLCPP_INFO(this->get_logger(), "load_map(%s) -> 已发起定位重启", name.c_str());
     }
@@ -866,6 +896,12 @@ namespace agv_bridge
             response->message = "正在执行导航任务，请先取消后再重定位";
             return;
         }
+        if (localization_operations_->active())
+        {
+            response->success = false;
+            response->message = "已有定位操作等待完成；请查询 /agv/get_localization_operation";
+            return;
+        }
         if (transition_in_progress_.exchange(true))
         {
             response->success = false;
@@ -885,28 +921,42 @@ namespace agv_bridge
             map_name_ = name;
             mode_ = MODE_RELOCALIZING;
         }
+        const auto operation_id = localization_operations_->begin("RELOCALIZE", name);
+        response->operation_id = operation_id;
         if (transition_thread_.joinable()) transition_thread_.join();
-        transition_thread_ = std::thread([this, name, map_artifact, pose]()
-        {
-            stop_child_process(localization_pid_, "定位");
-            std::string error;
-            if (!start_managed_localization(map_artifact, name, &pose, error))
+        try {
+            transition_thread_ = std::thread([this, name, map_artifact, pose, operation_id]()
             {
-                RCLCPP_ERROR(this->get_logger(), "relocalize(%s) 失败: %s",
-                             name.c_str(), error.c_str());
-                std::lock_guard<std::mutex> lock(mode_mutex_);
-                mode_ = MODE_NAVIGATION;
-            }
-            else if (!save_remembered_pose(name, pose, error))
-            {
-                RCLCPP_WARN(this->get_logger(), "定位已启动，但保存位置记忆失败: %s", error.c_str());
-            }
+                try {
+                    localization_operations_->stage(operation_id, "STOPPING_LOCALIZATION", "正在停止旧定位和托管导航");
+                    if (!stop_child_process(localization_pid_, "定位"))
+                        throw std::runtime_error("旧定位进程组尚未确认停止，未执行重定位");
+                    std::string error;
+                    localization_operations_->stage(operation_id, "STARTING_LOCALIZATION", "正在按指定初始位姿启动定位");
+                    if (!start_managed_localization(map_artifact, name, &pose, error))
+                        throw std::runtime_error(error);
+                    if (!save_remembered_pose(name, pose, error))
+                        RCLCPP_WARN(get_logger(), "定位已启动，但保存位置记忆失败: %s", error.c_str());
+                    localization_operations_->stage(operation_id, "WAITING_LOCALIZATION", "定位进程已启动，等待新鲜TF与定位检查通过");
+                } catch (const std::exception &e) {
+                    localization_operations_->fail(operation_id, std::string("重定位失败：") + e.what());
+                    RCLCPP_ERROR(get_logger(), "relocalize(%s) 失败: %s", name.c_str(), e.what());
+                } catch (...) {
+                    localization_operations_->fail(operation_id, "重定位失败：后台发生未知异常，请检查定位日志");
+                }
+                transition_in_progress_.store(false);
+            });
+        } catch (const std::exception &e) {
             transition_in_progress_.store(false);
-        });
+            localization_operations_->fail(operation_id, std::string("无法创建重定位工作线程：") + e.what());
+            response->success = false;
+            response->message = "重定位工作线程启动失败，请查询 operation_id 对应结果";
+            return;
+        }
 
         response->success = true;
         response->map_name = name;
-        response->message = "已接受重定位，等待 /agv/status.mode 从 RELOCALIZING 变为 NAVIGATION";
+        response->message = "重定位已受理，尚未完成；请按 operation_id 订阅 /agv/localization_operation 或查询操作结果";
     }
 
     void AgvNavServerNode::handle_start_mapping(
@@ -1409,9 +1459,10 @@ namespace agv_bridge
                         map_artifact, name, has_pose ? &remembered_pose : nullptr, error))
                 {
                     RCLCPP_ERROR(this->get_logger(),
-                                 "自动重启二次失败: %s，放弃（需人工介入，mode=NAVIGATION）", error.c_str());
+                                 "自动重启二次失败: %s，放弃（需人工介入；显式操作失败时保留导航闸门）", error.c_str());
                     std::lock_guard<std::mutex> lock(mode_mutex_);
-                    mode_ = MODE_NAVIGATION;
+                    mode_ = localization_operations_->allowsModeCompletion()
+                        ? MODE_NAVIGATION : MODE_RELOCALIZING;
                 }
             }
             transition_in_progress_.store(false);
@@ -1431,11 +1482,13 @@ namespace agv_bridge
                 std::lock_guard<std::mutex> lock(proc_mutex_);
                 loc_pid = localization_pid_;
             }
-            if (loc_pid > 0)
+            if (loc_pid > 0 && !transition_in_progress_.load())
             {
                 const pid_t r = ::waitpid(loc_pid, nullptr, WNOHANG);
                 if (r == loc_pid)
                 {
+                    if (localization_operations_)
+                        localization_operations_->failActive("定位进程在操作完成前退出；请检查 /tmp/agv_localization.log，自动恢复不改变本次失败结果");
                     {
                         std::lock_guard<std::mutex> lock(proc_mutex_);
                         localization_pid_ = -1; // 已收割，防止重复触发
@@ -1510,7 +1563,8 @@ namespace agv_bridge
         // 切图重启定位收敛后（TF 恢复新鲜），RELOCALIZING -> NAVIGATION
         {
             std::lock_guard<std::mutex> lock(mode_mutex_);
-            if (mode_ == MODE_RELOCALIZING && current && !transition_in_progress_.load())
+            if (mode_ == MODE_RELOCALIZING && current && !transition_in_progress_.load() &&
+                localization_operations_->allowsModeCompletion())
             {
                 mode_ = MODE_NAVIGATION;
                 RCLCPP_INFO(this->get_logger(), "地图 %s 定位已收敛，mode -> NAVIGATION",

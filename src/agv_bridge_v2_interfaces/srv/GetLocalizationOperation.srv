@@ -1,0 +1,6 @@
+# Empty operation_id queries the most recent operation in this bridge process.
+string operation_id
+---
+bool found
+string message
+LocalizationOperation operation

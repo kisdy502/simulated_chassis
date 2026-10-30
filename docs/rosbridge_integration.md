@@ -139,6 +139,8 @@ flowchart LR
 
 ## 3. bridge 节点提供的桥接能力
 
+2026-10-28：切图、重定位响应新增 `operation_id`；服务 `success=true` 仅表示受理。最终结果订阅 `/agv/localization_operation`，断线后通过 `/agv/get_localization_operation` 查询。完整参数、响应、超时和升级说明见 [切图与重定位操作结果](localization_operation_api.md)。不要仅凭 `mode=NAVIGATION` 或地图名更新判断本次操作完成。
+
 ### 3.1 业务接口总表
 
 `agv_nav_server` 是 rosbridge 架构下的「瘦节点」，对外接口：
@@ -234,7 +236,7 @@ bridge 未加工、rosbridge 直接透传的标准话题：
 `pose_initialized=false` 时**不要下发导航指令**（节点会直接 abort）。
 该字段主要反映 TF 可用且新鲜，不证明地图匹配准确，也不等于 Nav2 已就绪。
 当前状态消息没有 `nav_ready` 字段；启动期间仍可能返回 Nav2 未就绪的 action 失败。
-`mode`：`NAVIGATION / MAPPING / RELOCALIZING`（建图链路唯一判定源，见 §3.1 状态机）；
+`mode`：`NAVIGATION / MAPPING / RELOCALIZING`（业务模式，见 §3.1；单次切图/重定位的完成结果以 `operation_id` 对应操作记录为准）；
 `map_name`：当前定位地图名；`slam_alive`/`map_age_sec`：最近一帧 `/map` 新鲜度
 （建图活跃提示用，**不作判定条件**；从未收到过 /map 时 map_age_sec=-1）。
 该话题使用 `transient_local` QoS：rosbridge 的订阅会持续收到 1Hz 数据流，客户端接入后最多等一个周期即可拿到状态。

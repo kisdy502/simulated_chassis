@@ -30,19 +30,19 @@ def generate_launch_description():
     defaults = {'agv_id': 'AGV001', 'port': '9090', 'address': '0.0.0.0', 'maps_dir': 'maps',
                 'pbstream_file': '', 'manage_navigation': 'true',
                 'back_up_max_heading_error_deg': '20.0', 'rviz': 'false',
-                'slam_algorithm': 'cartographer',
+                'slam_algorithm': 'cartographer', 'localization_operation_timeout_sec': '600.0',
                 'mesh_server': 'true', 'mesh_server_port': '8090', 'enable_map_3d': 'true', 'map_3d_port': '8089'}
     bridge_args = {key: LaunchConfiguration(key) for key in (
         'agv_id', 'port', 'address', 'maps_dir', 'pbstream_file', 'manage_navigation',
-        'back_up_max_heading_error_deg', 'slam_algorithm', 'enable_map_3d', 'map_3d_port')}
+        'localization_operation_timeout_sec', 'back_up_max_heading_error_deg', 'slam_algorithm', 'enable_map_3d', 'map_3d_port')}
     bridge_args.update({'robot_package': 'simulated_chassis', 'use_sim_time': 'true',
                         'navigation_use_rviz': 'false',
                         'topics_sub_glob': "['/odom', '/tf', '/tf_static', '/map', '/plan', "
-                                           "'/local_plan', '/joint_states', '/agv/status', "
+                                           "'/local_plan', '/joint_states', '/agv/status', '/agv/localization_operation', "
                                            "'/scan_1', '/scan_2', '/agv/pose', '/tracked_pose']",
                         'services_glob': "['/rosapi/*', '/agv/set_control', '/agv/get_map', "
                                          "'/agv/load_map', '/agv/list_maps', '/agv/start_mapping', "
-                                         "'/agv/save_map', '/agv/relocalize', '/agv/arm_move']",
+                                         "'/agv/save_map', '/agv/relocalize', '/agv/get_localization_operation', '/agv/arm_move']",
                         'params_glob': "['robot_description', '/agv_nav_server/*', '/robot_state_publisher/*']"})
     declarations = [DeclareLaunchArgument(key, default_value=value,
                                           choices=['true', 'false'])

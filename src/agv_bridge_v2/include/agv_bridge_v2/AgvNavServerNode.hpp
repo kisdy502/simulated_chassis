@@ -26,6 +26,7 @@
 
 #include "agv_bridge_v2/NavigationManager.hpp"
 #include "agv_bridge_v2/BatteryGateway.hpp"
+#include "agv_bridge_v2/LocalizationOperationTracker.hpp"
 #include "agv_bridge_v2/LocalizationMonitor.hpp"
 #include "agv_bridge_v2/MapFileManager.hpp"
 #include "agv_bridge_v2/bean/MoveToMessage.hpp"
@@ -316,6 +317,7 @@ namespace agv_bridge
         rclcpp::Service<SaveMap>::SharedPtr save_map_srv_;
         rclcpp::Service<Relocalize>::SharedPtr relocalize_srv_;
         rclcpp::Publisher<AgvStatus>::SharedPtr status_pub_;
+        std::unique_ptr<LocalizationOperationTracker> localization_operations_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
         // /tracked_pose 探活（lightning 定位就绪判定 + 建图期位姿来源；
         // best_effort 订阅兼容 reliable/best_effort 两种发布端）
