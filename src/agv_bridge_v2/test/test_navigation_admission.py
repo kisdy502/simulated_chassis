@@ -49,14 +49,20 @@ def main():
                  "bt_navigator", "waypoint_follower", "velocity_smoother"]:
         services.append(node.create_service(GetState, name + "/get_state", lifecycle, callback_group=group))
     shutting_down = threading.Event()
+    complete_actions = threading.Event()
+    completed_paths = []
+    spin_targets = []
     def spin_execute(handle):
-        while not handle.is_cancel_requested and not shutting_down.is_set():
+        spin_targets.append(handle.request.target_yaw)
+        while not handle.is_cancel_requested and not shutting_down.is_set() and not complete_actions.is_set():
             feedback = Spin.Feedback()
             feedback.angular_distance_traveled = 0.0
             handle.publish_feedback(feedback)
             time.sleep(0.05)
         if handle.is_cancel_requested:
             handle.canceled()
+        elif complete_actions.is_set():
+            handle.succeed()
         else:
             handle.abort()
         return Spin.Result()
@@ -64,8 +70,14 @@ def main():
         goal_callback=lambda _goal: GoalResponse.ACCEPT,
         cancel_callback=lambda _goal: CancelResponse.ACCEPT, callback_group=group)]
     for action, name in [(FollowPath, "follow_path"), (NavigateToPose, "navigate_to_pose")]:
+        def execute(handle, action_type=action):
+            if action_type is FollowPath:
+                completed_paths.append(handle.request.path)
+            handle.succeed()
+            return action_type.Result()
         servers.append(ActionServer(node, action, name,
-            execute_callback=lambda h: None, goal_callback=lambda _goal: GoalResponse.REJECT,
+            execute_callback=execute,
+            goal_callback=lambda _goal: GoalResponse.ACCEPT if complete_actions.is_set() else GoalResponse.REJECT,
             callback_group=group))
     tf = TransformBroadcaster(node)
     def broadcast():
@@ -129,7 +141,41 @@ def main():
                     assert value(control.call_async(req)).success
                     stopped = value(send("stopped-new").get_result_async())
                     assert stopped.status == 6 and "stop" in stopped.result.message
+                    req.action = "start"
+                    assert value(control.call_async(req)).success
+                    complete_actions.set()
+                    def complete(command, mode, x, y, backup=False):
+                        goal = FollowEdge.Goal()
+                        goal.command_id = command
+                        goal.node_id = "completed-target"
+                        goal.edge_type = mode
+                        goal.edge_id = "" if mode == "FREE" else "edge-complete"
+                        goal.x, goal.y = x, y
+                        goal.theta = 1.0
+                        goal.max_speed = 0.2
+                        goal.step = 0.2
+                        goal.end_point = not backup
+                        goal.back_up = backup
+                        if mode == "CURVE":
+                            from geometry_msgs.msg import Point
+                            goal.control_points = [Point(x=1.0, y=1.0)]
+                        handle = value(client.send_goal_async(goal))
+                        assert handle.accepted
+                        result = value(handle.get_result_async())
+                        assert result.status == 4 and result.result.success, result
+                        assert result.result.command_id == command
+                        assert result.result.node_id == "completed-target"
+                    complete("complete-free", "FREE", 1.0, 0.0)
+                    before = len(spin_targets)
+                    complete("complete-straight", "STRAIGHT", 0.0, 2.0)
+                    assert len(spin_targets) == before + 2, "straight must pre-rotate and finish-rotate"
+                    complete("complete-curve", "CURVE", 2.0, 0.0)
+                    assert any(p.pose.position.y > 0 for p in completed_paths[-1].poses)
+                    before = len(spin_targets)
+                    complete("complete-backup", "STRAIGHT", -1.0, 0.0, backup=True)
+                    assert len(spin_targets) == before, "backup must not request spin"
                     print("PASS: busy request returns old ID/stage without replacing old task; stop returns explicit ABORTED")
+                    print("PASS: FREE/straight/curve/backup complete through real Manager callbacks with fake Nav2")
                 except Exception:
                     log.flush()
                     log.seek(0)

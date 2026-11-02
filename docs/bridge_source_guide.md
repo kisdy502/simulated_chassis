@@ -38,6 +38,10 @@ Nav2 反馈/结果 → NavigationManager → AgvNavServerNode → 上位机
 
 ## 2. 源码地图与阅读顺序
 
+2026-10-30 路径生成已提取到三个 PathBuilder，FREE 与沿路径执行流程进一步提取到两个 Executor。导航业务任务与状态仍由 Manager 统一管理；阅读时请同时看 [分阶段重构说明](navigation_refactor.md)，其中解释了执行器通过 context 报告事件的调用链。
+
+第三阶段进一步将 Nav2 客户端、句柄取消能力、动作 generation 和 unsafe 移到 Nav2ActionSession；Manager 仍持有业务任务并最终回调主节点。下文早期的 dispatchGoal / action_generation_ 定位入口现在应到 Session 查找；生命周期服务的 request_generation 仍在 Manager。传输回调只入队，Manager 取出事件后再执行业务，详见重构说明第三节。
+
 以下路径相对于项目根目录，链接可直接打开。
 
 | 顺序 | 文件 | 先搜索什么 |

@@ -54,13 +54,26 @@ set(AGV_ROS_DEPS
 )
 
 # ==================== 可执行文件 ====================
-# 全部业务逻辑只有 6 个源文件：
+# 业务入口、导航调度与独立路径生成模块：
 #   AgvNavServerNode  —— 瘦节点：action/srv/status/TF 接口
-#   NavigationManager —— 直线/贝塞尔/倒车路径生成 + nav2 FollowPath/Spin 调度
+#   NavigationManager —— 任务阶段及 Nav2 动作调度；navigation/*PathBuilder 只生成几何路径
 #   LocalizationMonitor —— TF 定位收敛监控
 #   MapFileManager    —— 地图目录扫描 + pgm/yaml -> OccupancyGrid（/agv/get_map 等）
 #   TransformUtils    —— 四元数/偏航角/贝塞尔数学
+set(AGV_PATH_BUILDER_SOURCES
+  src/navigation/StraightPathBuilder.cpp
+  src/navigation/BezierPathBuilder.cpp
+  src/navigation/BackUpPathBuilder.cpp
+)
+set(AGV_NAV2_SESSION_SOURCES src/navigation/Nav2ActionSession.cpp)
+set(AGV_NAVIGATION_EXECUTOR_SOURCES
+  src/navigation/FreeNavigationExecutor.cpp
+  src/navigation/PathNavigationExecutor.cpp
+)
 add_executable(agv_nav_server
+  ${AGV_NAV2_SESSION_SOURCES}
+  ${AGV_NAVIGATION_EXECUTOR_SOURCES}
+  ${AGV_PATH_BUILDER_SOURCES}
   src/agv_nav_server_main.cpp
   src/AgvNavServerNode.cpp
   src/NavigationManager.cpp
@@ -102,6 +115,14 @@ if(BUILD_TESTING)
   set_tests_properties(test_navigation_admission PROPERTIES TIMEOUT 60
     ENVIRONMENT "ROS_DOMAIN_ID=93;RMW_IMPLEMENTATION=rmw_cyclonedds_cpp")
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_navigation_executors test/test_navigation_executors.cpp
+    src/TransformUtils.cpp ${AGV_PATH_BUILDER_SOURCES} ${AGV_NAVIGATION_EXECUTOR_SOURCES})
+  target_include_directories(test_navigation_executors PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  ament_target_dependencies(test_navigation_executors ${AGV_ROS_DEPS})
+  ament_add_gtest(test_path_builders test/test_path_builders.cpp
+    src/TransformUtils.cpp ${AGV_PATH_BUILDER_SOURCES})
+  target_include_directories(test_path_builders PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  ament_target_dependencies(test_path_builders ${AGV_ROS_DEPS})
   ament_add_gtest(test_localization_operation test/test_localization_operation.cpp
     ENV ROS_DOMAIN_ID=94 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp TIMEOUT 45)
   target_include_directories(test_localization_operation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -109,10 +130,19 @@ if(BUILD_TESTING)
   ament_add_gtest(test_navigation_readiness
     test/test_navigation_readiness.cpp
     src/NavigationManager.cpp src/LocalizationMonitor.cpp src/TransformUtils.cpp
+    ${AGV_NAV2_SESSION_SOURCES}
+    ${AGV_NAVIGATION_EXECUTOR_SOURCES}
+    ${AGV_PATH_BUILDER_SOURCES}
     ENV ROS_DOMAIN_ID=87 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
     TIMEOUT 90)
   target_include_directories(test_navigation_readiness PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   ament_target_dependencies(test_navigation_readiness ${AGV_ROS_DEPS})
+  add_test(NAME test_action_session_lock_order
+    COMMAND $<TARGET_FILE:test_navigation_readiness>
+      --gtest_filter=NavigationReadinessTest.TransportFeedbackDoesNotWaitForManagerLock:NavigationReadinessTest.FrozenSpinFeedbackCancelsButWaitsForTerminalResult
+      --gtest_repeat=10)
+  set_tests_properties(test_action_session_lock_order PROPERTIES TIMEOUT 90
+    ENVIRONMENT "ROS_DOMAIN_ID=95;RMW_IMPLEMENTATION=rmw_cyclonedds_cpp")
   ament_add_gtest(test_battery_gateway test/test_battery_gateway.cpp
     ENV ROS_DOMAIN_ID=89 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp TIMEOUT 45)
   target_include_directories(test_battery_gateway PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

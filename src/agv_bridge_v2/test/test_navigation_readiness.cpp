@@ -19,6 +19,8 @@ struct NavigationManagerTestPeer {
     const auto now = std::chrono::steady_clock::now();
     m.spin_started_at_ = now - std::chrono::seconds(elapsed);
     m.spin_last_progress_at_ = now - std::chrono::seconds(no_progress);
+    // Deliberately race transport feedback from this test thread. Session
+    // callbacks only enqueue, so this must no longer deadlock.
     m.checkActionProgress();
   }
   static void feedSpin(NavigationManager &m, double angle) {
@@ -27,16 +29,20 @@ struct NavigationManagerTestPeer {
   }
   static bool spinCancelPending(NavigationManager &m) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
-    return m.cancel_pending_;
+    return m.action_session_->snapshot().canceling;
   }
   static void expireSpinCancel(NavigationManager &m) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
-    m.action_deadline_ = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    {
+      std::lock_guard<std::mutex> transport(m.action_session_->mutex_);
+      m.action_session_->deadline_ = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+      m.action_session_->timeout_reported_ = false;
+    }
     m.checkActionProgress();
   }
   static bool watchedSpinAccepted(NavigationManager &m) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
-    return bool(m.spin_goal_handle_) && m.spin_watch_active_;
+    return m.action_session_->snapshot().accepted && m.spin_watch_active_;
   }
   static bool taskOccupied(NavigationManager &m) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
@@ -46,15 +52,66 @@ struct NavigationManagerTestPeer {
   static void timeoutAction(NavigationManager &m, bool cancel) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
     MoveToMessage task; task.commandId = "timed-out-goal"; m.current_task_ = task;
-    ++m.action_generation_;
-    m.awaiting_response_ = !cancel;
-    m.cancel_pending_ = cancel;
-    m.action_deadline_ = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    {
+      std::lock_guard<std::mutex> transport(m.action_session_->mutex_);
+      ++m.action_session_->generation_;
+      m.action_session_->active_ = true;
+      m.action_session_->pending_ = !cancel;
+      m.action_session_->canceling_ = cancel;
+      m.action_session_->deadline_ = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    }
     m.checkActionProgress();
   }
   static bool navAccepted(NavigationManager &m) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
-    return bool(m.nav_goal_handle_);
+    return m.action_session_->snapshot().accepted;
+  }
+  static bool queuedFeedbackWhileManagerLocked(NavigationManager &m, const std::function<void()> &publish) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    publish();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (std::chrono::steady_clock::now() < deadline) {
+      {
+        std::lock_guard<std::mutex> transport(m.action_session_->mutex_);
+        for (const auto &event : m.action_session_->events_)
+          if (event.type == Nav2ActionSession::Type::FEEDBACK) return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return false;
+  }
+  static void unknownTerminal(NavigationManager &m, Nav2ActionSession::Kind kind) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    MoveToMessage task; task.commandId = "unknown-terminal"; m.current_task_ = task;
+    m.setState(NavigationState::EXECUTING);
+    {
+      auto &session = *m.action_session_;
+      std::lock_guard<std::mutex> transport(session.mutex_);
+      session.unsafe_generation_ = ++session.generation_;
+      session.kind_ = kind; session.active_ = session.accepted_ = session.canceling_ = true;
+      session.deadline_ = std::chrono::steady_clock::now();
+      session.events_.push_back({session.generation_, kind, Nav2ActionSession::Type::UNKNOWN_RESULT, {}});
+    }
+    m.checkActionProgress();
+  }
+  static bool retireTimeoutAfterLateAcceptance(NavigationManager &m) {
+    std::lock_guard<std::recursive_mutex> lock(m.mutex_);
+    {
+      std::lock_guard<std::mutex> transport(m.action_session_->mutex_);
+      m.action_session_->deadline_ = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    }
+    const auto events = m.action_session_->poll();
+    bool timeout = false;
+    for (const auto &event : events)
+      if (event.type == Nav2ActionSession::Type::RESPONSE_TIMEOUT) timeout = true;
+    if (!timeout) return false;
+    // Transport acceptance arrives after timeout detection but before cleanup.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!m.action_session_->snapshot().accepted && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    if (!m.action_session_->snapshot().accepted) return false;
+    m.failTask("FAILED", "底层导航目标响应超时");
+    return true;
   }
   static void expireSmoother(NavigationManager &m) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
@@ -67,17 +124,20 @@ struct NavigationManagerTestPeer {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
     MoveToMessage task; task.commandId = "test-goal"; m.current_task_ = task;
     m.setState(NavigationState::PRE_ROTATING);
-    return m.dispatchGoal<Spin>(m.spin_client_, Spin::Goal(), {});
+    return m.sendSpinCommand(0.0);
   }
   static void resetPendingTask(NavigationManager &m) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
     MoveToMessage task; task.commandId = "old-goal"; m.current_task_ = task;
-    m.unsafe_generation_ = ++m.action_generation_;
-    m.awaiting_response_ = true;
+    {
+      std::lock_guard<std::mutex> transport(m.action_session_->mutex_);
+      m.action_session_->unsafe_generation_ = ++m.action_session_->generation_;
+      m.action_session_->pending_ = true;
+    }
     m.resetAfterServerShutdown();
     EXPECT_FALSE(m.current_task_);
-    EXPECT_FALSE(m.awaiting_response_);
-    EXPECT_EQ(m.unsafe_generation_, 0u);
+    EXPECT_FALSE(m.action_session_->snapshot().pending);
+    EXPECT_EQ(m.action_session_->snapshot().unsafe_generation, 0u);
     for (const auto &c : m.lifecycle_checks_) EXPECT_FALSE(c.active);
   }
 };
@@ -117,8 +177,11 @@ protected:
       [](auto, auto) { return rclcpp_action::GoalResponse::REJECT; },
       [](auto) { return rclcpp_action::CancelResponse::ACCEPT; }, [](auto) {});
     nav_server = rclcpp_action::create_server<NavigationManager::NavigateToPose>(node, "navigate_to_pose",
-      [this](auto, auto) { ++nav_goals; return accept_nav ?
-        rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE : rclcpp_action::GoalResponse::REJECT; },
+      [this](auto, auto) {
+        ++nav_goals;
+        std::this_thread::sleep_for(std::chrono::milliseconds(nav_response_delay_ms.load()));
+        return accept_nav ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE : rclcpp_action::GoalResponse::REJECT;
+      },
       [](auto) { return rclcpp_action::CancelResponse::ACCEPT; },
       [this](auto handle) {
         std::lock_guard<std::mutex> lock(nav_mutex);
@@ -129,7 +192,9 @@ protected:
     ASSERT_TRUE(manager->initialize());
   }
   void TearDown() override {
-    executor.cancel(); if (worker.joinable()) worker.join(); manager.reset(); executor.remove_node(node);
+    executor.cancel(); if (worker.joinable()) worker.join();
+    // Detach while all callback groups still exist (same order as production main).
+    executor.remove_node(node); manager.reset();
   }
   bool waitFor(const std::function<bool()> &predicate) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
@@ -154,6 +219,7 @@ protected:
   std::shared_ptr<NavHandle> nav_handle;
   std::atomic<bool> accept_nav{false};
   std::atomic<int> nav_goals{0};
+  std::atomic<int> nav_response_delay_ms{0};
   std::atomic<bool> smoother_active{false}; std::atomic<int> spin_goals{0};
   rclcpp::Node::SharedPtr node;
   std::vector<rclcpp::Service<lifecycle_msgs::srv::GetState>::SharedPtr> services;
@@ -445,6 +511,120 @@ TEST(NavigationAdmissionTest, BusyStopAndModeHaveActionableBusinessReasons) {
   EXPECT_NE(navigationAdmissionError(false, "", "IDLE", true, "NAVIGATION", "map1").find("stop"), std::string::npos);
   EXPECT_NE(navigationAdmissionError(false, "", "IDLE", false, "RELOCALIZING", "map1").find("RELOCALIZING"), std::string::npos);
   EXPECT_TRUE(navigationAdmissionError(false, "", "IDLE", false, "NAVIGATION", "map1").empty());
+}
+
+TEST_F(NavigationReadinessTest, PathModesCannotReplaceAnActiveFreeTask) {
+  smoother_active = true; accept_nav = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(manager->startNavigation("owned-free", "original-node", 1.0, 0.0, 0.0));
+  ASSERT_TRUE(waitFor([this] { return navigationHandle() && NavigationManagerTestPeer::navAccepted(*manager); }));
+  MoveToMessage other; other.commandId = "must-not-replace";
+  EXPECT_FALSE(manager->followPathNavigation(other));
+  EXPECT_FALSE(manager->followBezierPathNavigation(other));
+  EXPECT_EQ(callbacks.results.load(), 0);
+  navigationHandle()->succeed(std::make_shared<NavigationManager::NavigateToPose::Result>());
+  ASSERT_TRUE(waitFor([this] { return callbacks.results.load() == 1; }));
+  EXPECT_TRUE(callbacks.success);
+  EXPECT_EQ(callbacks.command_id, "owned-free");
+  EXPECT_EQ(callbacks.node_id, "original-node");
+}
+
+TEST_F(NavigationReadinessTest, MissingPathPoseReleasesTaskBeforeNextRequest) {
+  smoother_active = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  MoveToMessage task; task.commandId = "missing-pose"; task.edgeInfo.id = "edge"; task.x = 1.0;
+  // This fixture deliberately supplies no LocalizationMonitor.
+  EXPECT_FALSE(manager->followPathNavigation(task));
+  EXPECT_EQ(callbacks.results.load(), 1);
+  EXPECT_NE(callbacks.message.find("位姿"), std::string::npos);
+  EXPECT_FALSE(NavigationManagerTestPeer::taskOccupied(*manager));
+  ASSERT_TRUE(manager->startNavigation("next-free", "target", 1.0, 0.0, 0.0));
+  ASSERT_TRUE(waitFor([this] { return callbacks.results.load() == 2; }));
+  EXPECT_EQ(callbacks.command_id, "next-free");
+}
+
+TEST_F(NavigationReadinessTest, TransportFeedbackDoesNotWaitForManagerLock) {
+  smoother_active = true; accept_spin = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(NavigationManagerTestPeer::startWatchedSpin(*manager));
+  ASSERT_TRUE(waitFor([this] { return spinHandle() && NavigationManagerTestPeer::watchedSpinAccepted(*manager); }));
+  auto h = spinHandle();
+  ASSERT_TRUE(NavigationManagerTestPeer::queuedFeedbackWhileManagerLocked(*manager, [h] {
+    auto feedback = std::make_shared<Spin::Feedback>();
+    feedback->angular_distance_traveled = 0;
+    h->publish_feedback(feedback);
+  }));
+  // Reproduce the original dangerous order: Manager lock -> cancel while
+  // transport feedback is arriving. Transport callbacks must not call Manager.
+  NavigationManagerTestPeer::ageSpin(*manager, 11, 11);
+  ASSERT_TRUE(waitFor([this,h] { return spin_cancels.load() == 1 && h->is_canceling(); }));
+  h->canceled(std::make_shared<Spin::Result>());
+  ASSERT_TRUE(waitFor([this] { return callbacks.results.load() == 1; }));
+  EXPECT_FALSE(manager->requiresServerRestart());
+}
+
+TEST_F(NavigationReadinessTest, DelayedAcceptanceIsCanceledAfterLogicalTaskRetirement) {
+  smoother_active = true; accept_nav = true; nav_response_delay_ms = 250;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(manager->startNavigation("retired-before-accept", "target", 1, 0, 0));
+  ASSERT_TRUE(waitFor([this] { return nav_goals.load() == 1; }));
+  EXPECT_TRUE(manager->cancelNavigation());
+  EXPECT_EQ(callbacks.results.load(), 1);
+  EXPECT_TRUE(manager->requiresServerRestart());
+  ASSERT_TRUE(waitFor([this] { return navigationHandle() && navigationHandle()->is_canceling(); }));
+  navigationHandle()->canceled(std::make_shared<NavigationManager::NavigateToPose::Result>());
+  ASSERT_TRUE(waitFor([this] { return !manager->requiresServerRestart(); }));
+  EXPECT_EQ(callbacks.results.load(), 1); // Late terminal never completes a second task.
+}
+
+TEST_F(NavigationReadinessTest, OldResultAfterConfirmedServerStopCannotFinishNewTask) {
+  smoother_active = true; accept_nav = true;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(manager->startNavigation("old", "target", 1, 0, 0));
+  ASSERT_TRUE(waitFor([this] { return navigationHandle() && NavigationManagerTestPeer::navAccepted(*manager); }));
+  const auto old = navigationHandle();
+  manager->resetAfterServerShutdown(); // Simulate confirmed process stop; keep old fake handle for a delayed packet.
+  EXPECT_EQ(callbacks.results.load(), 1);
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(manager->startNavigation("new", "new-target", 2, 0, 0));
+  ASSERT_TRUE(waitFor([this,old] { return navigationHandle() != old && NavigationManagerTestPeer::navAccepted(*manager); }));
+  old->succeed(std::make_shared<NavigationManager::NavigateToPose::Result>());
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  EXPECT_EQ(callbacks.results.load(), 1);
+  EXPECT_TRUE(NavigationManagerTestPeer::taskOccupied(*manager));
+  navigationHandle()->succeed(std::make_shared<NavigationManager::NavigateToPose::Result>());
+  ASSERT_TRUE(waitFor([this] { return callbacks.results.load() == 2; }));
+  EXPECT_EQ(callbacks.command_id, "new"); EXPECT_TRUE(callbacks.success);
+}
+
+TEST_F(NavigationReadinessTest, UnknownTerminalOfAnyKindKeepsTaskUntilServerStop) {
+  smoother_active = true;
+  int completed = 0;
+  for (auto kind : {Nav2ActionSession::Kind::NAVIGATE, Nav2ActionSession::Kind::PATH,
+                    Nav2ActionSession::Kind::SPIN}) {
+    ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+    NavigationManagerTestPeer::unknownTerminal(*manager, kind);
+    EXPECT_TRUE(manager->requiresServerRestart());
+    EXPECT_TRUE(NavigationManagerTestPeer::taskOccupied(*manager));
+    EXPECT_EQ(callbacks.results.load(), completed);
+    manager->resetAfterServerShutdown();
+    EXPECT_EQ(callbacks.results.load(), ++completed);
+    EXPECT_NE(callbacks.message.find("未知终态"), std::string::npos);
+    EXPECT_FALSE(manager->requiresServerRestart());
+  }
+}
+
+TEST_F(NavigationReadinessTest, AcceptanceDuringTimeoutCleanupStillGetsCanceled) {
+  smoother_active = true; accept_nav = true; nav_response_delay_ms = 250;
+  ASSERT_TRUE(waitFor([this] { return manager->isReady(); }));
+  ASSERT_TRUE(manager->startNavigation("acceptance-timeout-race", "target", 1, 0, 0));
+  ASSERT_TRUE(waitFor([this] { return nav_goals.load() == 1; }));
+  ASSERT_TRUE(NavigationManagerTestPeer::retireTimeoutAfterLateAcceptance(*manager));
+  ASSERT_TRUE(waitFor([this] { return navigationHandle() && navigationHandle()->is_canceling(); }));
+  EXPECT_EQ(callbacks.results.load(), 1); EXPECT_TRUE(manager->requiresServerRestart());
+  navigationHandle()->canceled(std::make_shared<NavigationManager::NavigateToPose::Result>());
+  ASSERT_TRUE(waitFor([this] { return !manager->requiresServerRestart(); }));
+  EXPECT_EQ(callbacks.results.load(), 1);
 }
 
 } // namespace agv_bridge

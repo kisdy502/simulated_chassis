@@ -15,6 +15,8 @@
 
 ## 运维与架构
 
+- [v2.2.0-stable 版本说明](releases/v2.2.0-stable.md)：算法优化前的功能基线、验证范围与已知边界。
+- [导航分阶段重构](navigation_refactor.md)：路径生成、两个执行器、统一动作会话，以及状态/回调边界和锁顺序。
 - [Bridge 业务、源码与 C++ / ROS2 导读](bridge_source_guide.md)：启动、导航检查与状态机、取消与恢复、地图定位、电池，以及智能指针、回调、模板、线程和 ROS2 API。
 - [建图与定位](mapping_and_localization.md)
 - [Lightning 建图重影排查](lightning_mapping_diagnostics.md)：地图/位姿坐标一致性、扫描时间戳和绘图并发。

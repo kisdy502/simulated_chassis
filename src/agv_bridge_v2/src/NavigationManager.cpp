@@ -1,6 +1,9 @@
 #include "agv_bridge_v2/NavigationManager.hpp"
 #include "agv_bridge_v2/NavigationValidation.hpp"
 
+#include "agv_bridge_v2/navigation/FreeNavigationExecutor.hpp"
+#include "agv_bridge_v2/navigation/PathNavigationExecutor.hpp"
+
 #include <cmath>
 using namespace agv_bridge;
 namespace agv_bridge
@@ -21,16 +24,16 @@ namespace agv_bridge
         {
             throw std::invalid_argument("NavigationManager: callbacks cannot be null");
         }
+        action_session_ = std::make_shared<Nav2ActionSession>(node_);
+        auto &context = static_cast<NavigationExecutionContext &>(*this);
+        free_executor_ = std::make_unique<FreeNavigationExecutor>(context);
+        path_executor_ = std::make_unique<PathNavigationExecutor>(context);
     }
 
     NavigationManager::~NavigationManager()
     {
         if (action_watchdog_) action_watchdog_->cancel();
-        // 如果正在导航，尝试取消
-        if (rclcpp::ok() && isNavigating())
-        {
-            cancelNavigation();
-        }
+        if (action_session_) action_session_->shutdown();
     }
 
     void NavigationManager::setSpeedLimit(double speed)
@@ -71,39 +74,7 @@ namespace agv_bridge
                 throw std::invalid_argument(std::string(entry.first) + " 必须是大于0的有限数值");
         }
 
-        // 创建导航动作客户端
-        nav_action_client_ = rclcpp_action::create_client<NavigateToPose>(node_, "navigate_to_pose");
-
-        if (!nav_action_client_)
-        {
-            RCLCPP_ERROR(logger_, "Failed to create navigation action client");
-            return false;
-        }
-
-        // 🔴 新增：创建 Spin 客户端
-        spin_client_ = rclcpp_action::create_client<Spin>(node_, "spin");
-        if (!spin_client_->wait_for_action_server(std::chrono::seconds(10)))
-        {
-            RCLCPP_WARN(logger_, "Spin action server 不可用，将跳过预旋转");
-        }
-
-        // 等待动作服务器可用
-        if (!nav_action_client_->wait_for_action_server(std::chrono::seconds(5)))
-        {
-            RCLCPP_WARN(logger_, "Navigation action server not available");
-            // 不返回false，因为服务器可能稍后启动
-        }
-
-        follow_path_client_ = rclcpp_action::create_client<FollowPath>(node_, "follow_path");
-        if (!follow_path_client_)
-        {
-            RCLCPP_ERROR(logger_, "Failed to create follow_path action client");
-            return false;
-        }
-        if (!follow_path_client_->wait_for_action_server(std::chrono::seconds(5)))
-        {
-            RCLCPP_WARN(logger_, "Follow path action server not available");
-        }
+        action_session_->waitForServers();
 
         for (const auto &name : {"controller_server", "smoother_server", "planner_server", "behavior_server",
                                  "bt_navigator", "waypoint_follower", "velocity_smoother"}) {
@@ -112,8 +83,9 @@ namespace agv_bridge
             check.client = node_->create_client<lifecycle_msgs::srv::GetState>(std::string(name) + "/get_state");
             lifecycle_checks_.push_back(std::move(check));
         }
+        auto weak = weak_from_this();
         action_watchdog_ = node_->create_wall_timer(std::chrono::milliseconds(100),
-            [this]() { checkActionProgress(); });
+            [weak]() { if (auto self = weak.lock()) self->checkActionProgress(); });
         initialized_ = true;
         RCLCPP_INFO(logger_, "Navigation manager initialized");
         return true;
@@ -136,50 +108,7 @@ namespace agv_bridge
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (!isReady() || current_task_) return false;
         current_task_ = task;
-        if (!std::isfinite(task.x) || !std::isfinite(task.y) ||
-            !std::isfinite(task.theta) || !std::isfinite(task.edgeInfo.maxSpeed) ||
-            task.edgeInfo.maxSpeed <= 0.0 || task.edgeInfo.backUp ||
-            task.edgeInfo.reverse || !task.edgeInfo.controlPoints.empty()) {
-            failTask("FAILED", "FREE 参数非法：目标和速度必须有效，且不能设置倒车、反向或控制点");
-            return false;
-        }
-        if (!nav_action_client_->action_server_is_ready()) {
-            failTask("FAILED", "Nav2 navigate_to_pose 动作服务尚未就绪");
-            return false;
-        }
-        const auto &command_id = task.commandId;
-        const double x = task.x, y = task.y, theta = task.theta;
-        setSpeedLimit(task.edgeInfo.maxSpeed);
-        // 创建导航目标
-        auto goal_msg = NavigateToPose::Goal();
-        goal_msg.pose.header.stamp = node_->now();
-        goal_msg.pose.header.frame_id = "map";
-        goal_msg.pose.pose.position.x = x;
-        goal_msg.pose.pose.position.y = y;
-        goal_msg.pose.pose.orientation = TransformUtils::yaw_to_quaternion(theta);
-
-        // 设置回调选项
-        auto send_goal_options = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
-
-        send_goal_options.goal_response_callback =
-            std::bind(&NavigationManager::goalResponseCallback, this, std::placeholders::_1);
-
-        send_goal_options.feedback_callback = std::bind(&NavigationManager::feedbackCallback, this,
-                                                        std::placeholders::_1, std::placeholders::_2);
-
-        send_goal_options.result_callback =
-            std::bind(&NavigationManager::resultCallback, this, std::placeholders::_1);
-
-        // 发送导航目标
-        if (!dispatchGoal<NavigateToPose>(nav_action_client_, goal_msg, send_goal_options)) return false;
-
-        setState(NavigationState::EXECUTING);
-
-        RCLCPP_INFO(logger_,
-                    "Starting navigation to (%.2f, %.2f, %.2f) with command_id: %s",
-                    x, y, theta, command_id.c_str());
-
-        return true;
+        return free_executor_->start(task);
     }
 
     void NavigationManager::goalResponseCallback(GoalHandleNavigateToPose::SharedPtr goal_handle)
@@ -193,12 +122,6 @@ namespace agv_bridge
             return;
         }
 
-        // 保存 goal_handle 以便取消(先检查是否存在旧句柄)
-        if (nav_goal_handle_)
-        {
-            RCLCPP_WARN(logger_, "Overriding existing nav_goal_handle - previous navigation may not be properly cancelled");
-        }
-        nav_goal_handle_ = goal_handle;
         RCLCPP_INFO(logger_, "Goal accepted by server, waiting for result");
 
         // 检查任务有效性
@@ -208,50 +131,19 @@ namespace agv_bridge
             return;
         }
 
-        // 发送接受确认
-        if (callbacks_)
-        {
-            // 缓存任务数据
-            const auto &task = current_task_.value();
-            callbacks_->onCommandAck(task.commandId, task.nodeId, "ACCEPTED", "准备执行自由导航到点了");
-        }
+        free_executor_->onAccepted();
     }
 
     void NavigationManager::feedbackCallback(GoalHandleNavigateToPose::SharedPtr,
-                                             const std::shared_ptr<const NavigateToPose::Feedback> feedback)
+        const std::shared_ptr<const NavigateToPose::Feedback> feedback)
     {
-        if (!callbacks_)
-            return;
-        double yaw = TransformUtils::quaternion_to_yaw(feedback->current_pose.pose.orientation);
-        callbacks_->onNavigationFeedback(feedback->current_pose.pose.position.x,
-                                         feedback->current_pose.pose.position.y, yaw);
+        free_executor_->onFeedback(*feedback);
     }
 
     void NavigationManager::resultCallback(const GoalHandleNavigateToPose::WrappedResult &result)
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-
-        bool success = false;
-        std::string status;
-        std::string message;
-
-        switch (result.code)
-        {
-        case rclcpp_action::ResultCode::SUCCEEDED:
-            finishTask(true, "SUCCESS", "导航到点成功！");
-            break;
-        case rclcpp_action::ResultCode::ABORTED:
-            failTask("ABORTED", "导航终止");
-            break;
-
-        case rclcpp_action::ResultCode::CANCELED:
-            finishTask(false, "CANCELED", "导航取消");
-            break;
-
-        default:
-            failTask("FAILED", "导航结果未知！");
-            break;
-        }
+        free_executor_->onResult(result.code);
     }
 
     /***********nav2 目标点点 自由导航过去 api END***************/
@@ -272,7 +164,15 @@ namespace agv_bridge
         send_goal_options.feedback_callback = [this](auto, const auto &feedback) {
             observeSpinProgress(feedback->angular_distance_traveled);
         };
-        if (!dispatchGoal<Spin>(spin_client_, goal_msg, send_goal_options)) return false;
+        const auto error = readinessError();
+        if (!error.empty()) { failTask("FAILED", "Nav2 未就绪: " + error); return false; }
+        try {
+            if (!action_session_->sendSpin(goal_msg, send_goal_options)) {
+                failTask("FAILED", "底层动作会话仍被占用或尚未确认停止"); return false;
+            }
+        } catch (const std::exception &e) {
+            failTask("FAILED", std::string("提交导航动作失败: ") + e.what()); return false;
+        }
         return true;
     }
 
@@ -281,14 +181,13 @@ namespace agv_bridge
         const rclcpp_action::ClientGoalHandle<nav2_msgs::action::Spin>::WrappedResult &result)
     {
         spin_watch_active_ = false;
-        spin_goal_handle_.reset(); // 重置spin句柄
 
         switch (result.code)
         {
         case rclcpp_action::ResultCode::SUCCEEDED:
         {
             RCLCPP_INFO(logger_, "旋转完成");
-            auto current_pose_opt = pose_provider_->getCurrentPose(); // 获取当前位姿（旋转后的）
+            auto current_pose_opt = executionPose(); // 获取当前位姿（旋转后的）
             if (!current_pose_opt.has_value())
             {
                 failTask("FAILED", "旋转结束但无法取得新鲜定位位姿，导航已停止");
@@ -307,62 +206,8 @@ namespace agv_bridge
             // 缓存任务数据,避免多次访问 value()
             const auto &task = current_task_.value();
 
-            if (current_state_ == NavigationState::PRE_ROTATING)
-            {
-                if (task.edgeInfo.isBezierCurve())
-                {
-                    executeBezierPath(current_pose, task);
-                }
-                else
-                {
-                    executeFollowPath(current_pose, task);
-                }
-            }
-            // ⚠️ 已失效分支（保留仅为兼容旧状态机）：
-            //    backUpNavigationInternal 现在不再发送 Spin，因此 BACKING_UP 状态
-            //    不可能出现在 Spin 回调里。留在此处避免大改，可安全删除。
-            else if (current_state_ == NavigationState::BACKING_UP)
-            {
-                // 执行倒车路径
-                auto path = generateBackUpPath(current_pose, task);
-                if (path.empty())
-                {
-                    RCLCPP_ERROR(logger_, "Failed to generate backup path after rotation");
-                    failTask("FAILED", "倒车旋转后生成路径失败");
-                    return;
-                }
-
-                // 设置倒车速度限制
-                setSpeedLimit(-task.edgeInfo.maxSpeed);
-
-                // 创建 FollowPath 目标
-                auto goal_msg = FollowPath::Goal();
-                goal_msg.path.poses = path;
-                goal_msg.path.header.frame_id = "map";
-                goal_msg.path.header.stamp = node_->now();
-                goal_msg.controller_id = "FollowPath";
-
-                auto send_goal_options = rclcpp_action::Client<FollowPath>::SendGoalOptions();
-                send_goal_options.goal_response_callback =
-                    std::bind(&NavigationManager::followPathGoalResponseCallback, this, std::placeholders::_1);
-                send_goal_options.feedback_callback =
-                    std::bind(&NavigationManager::followPathFeedbackCallback, this,
-                              std::placeholders::_1, std::placeholders::_2);
-                send_goal_options.result_callback =
-                    std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
-
-                if (!dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options)) return;
-
-                RCLCPP_INFO(logger_, "倒车旋转完成,开始倒车移动");
-            }
-            else if (current_state_ == NavigationState::END_ROTATING)
-            {
-                finishTask(true, "SUCCESS", "经过最终旋转后，导航到点完成!");
-            }
-            else
-            {
-                RCLCPP_ERROR(logger_, "旋转完成，但是当前错误状态:%d", static_cast<int>(current_state_));
-            }
+            const auto task_copy = task;
+            path_executor_->onSpinSucceeded(current_state_, current_pose, task_copy);
 
             break;
         }
@@ -379,11 +224,6 @@ namespace agv_bridge
             break;
         }
         default:
-            spin_failure_reason_ = "旋转返回未知终态；command_id=" + current_task_->commandId +
-                "，阶段=" + navigationStateToString(current_state_) + "；底层尚未确认停止";
-            unsafe_generation_ = action_generation_;
-            cancel_pending_ = true;
-            action_deadline_ = std::chrono::steady_clock::now();
             break;
         }
     }
@@ -399,7 +239,6 @@ namespace agv_bridge
         }
         else
         {
-            spin_goal_handle_ = goal_handle; // 保存句柄用于取消
             spin_started_at_ = spin_last_progress_at_ = std::chrono::steady_clock::now();
             spin_progress_angle_ = spin_reported_angle_ = 0.0;
             spin_watch_active_ = true;
@@ -410,564 +249,24 @@ namespace agv_bridge
     /***********nav2 旋转 api END***************/
 
     // 🔴 倒车导航内部实现(被followPathNavigation根据backUp标志调用)
-    bool NavigationManager::backUpNavigationInternal(const agv_bridge::MoveToMessage moveToMessage)
-    {
-        // 注意: current_task_ 已经在 followPathNavigation 中设置过了,这里不需要再设置
 
-        auto current_pose_opt = pose_provider_->getCurrentPose();
-        if (!current_pose_opt.has_value())
-        {
-            RCLCPP_ERROR(logger_, "机器人当前位置信息为空");
-            return false;
-        }
-        const auto &robot_pose = current_pose_opt.value().pose;
-
-        std::lock_guard<std::recursive_mutex> lock(mutex_);
-
-        // ===== 倒车逻辑：只后退，绝不旋转车体 =====
-        // 充电桩对接、窄过道通行、贴边作业等场景下，原地旋转会剐蹭甚至碰撞，
-        // 因此这里不再调用 sendSpinCommand()。若朝向偏差导致直线后退在几何上不可行，
-        // 直接以 FAILED 结束，把「先摆正车体」的决定权交回调度系统 / 现场操作员。
-        const double robot_yaw = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
-        const double target_yaw = std::atan2(moveToMessage.y - robot_pose.position.y,
-                                            moveToMessage.x - robot_pose.position.x);
-
-        // 后退时车头应朝向「目标方向 + 180°」，即车尾对着目标点
-        const double desired_backup_yaw = angles::normalize_angle(target_yaw + M_PI);
-        const double heading_error_deg =
-            std::abs(angles::shortest_angular_distance(robot_yaw, desired_backup_yaw)) * 180.0 / M_PI;
-
-        RCLCPP_INFO(logger_,
-                    "倒车导航(不旋转): 目标点(%.2f, %.2f), 当前朝向:%.2f°, 车尾应对准:%.2f°, 偏差:%.2f°",
-                    moveToMessage.x, moveToMessage.y,
-                    robot_yaw * 180 / M_PI, desired_backup_yaw * 180 / M_PI, heading_error_deg);
-
-        if (heading_error_deg > back_up_max_heading_error_deg_)
-        {
-            RCLCPP_ERROR(logger_,
-                         "倒车朝向偏差 %.2f° 超过阈值 %.2f°：直线后退无法贴合路径，"
-                         "已拒绝执行（不会自动旋转车体）。请先摆正车体，或改用前进导航指令。",
-                         heading_error_deg, back_up_max_heading_error_deg_);
-            failTask("FAILED", "倒车朝向偏差过大，未执行（不自动旋转车体）");
-            return true; // 结果已通过 failTask 回传，非「启动失败」
-        }
-
-        // 朝向可用，执行直线后退
-        auto path = generateBackUpPath(robot_pose, current_task_.value());
-        if (path.empty())
-        {
-            RCLCPP_ERROR(logger_, "Failed to generate backup path");
-            return false;
-        }
-
-        // 设置倒车速度限制(负值表示倒车)
-        setSpeedLimit(-moveToMessage.edgeInfo.maxSpeed);
-
-        // 创建 FollowPath 目标
-        auto goal_msg = FollowPath::Goal();
-        goal_msg.path.poses = path;
-        goal_msg.path.header.frame_id = "map";
-        goal_msg.path.header.stamp = node_->now();
-        goal_msg.controller_id = "FollowPath";
-
-        auto send_goal_options = rclcpp_action::Client<FollowPath>::SendGoalOptions();
-        send_goal_options.goal_response_callback =
-            std::bind(&NavigationManager::followPathGoalResponseCallback, this, std::placeholders::_1);
-        send_goal_options.feedback_callback =
-            std::bind(&NavigationManager::followPathFeedbackCallback, this,
-                      std::placeholders::_1, std::placeholders::_2);
-        send_goal_options.result_callback =
-            std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
-
-        if (!dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options)) return false;
-        setState(NavigationState::BACKING_UP); // 使用倒车状态
-
-        RCLCPP_INFO(logger_,
-                    "开始倒车(保持当前朝向): (%.2f, %.2f) -> (%.2f, %.2f), 倒车距离: %.2fm, 速度: %.2fm/s",
-                    robot_pose.position.x, robot_pose.position.y, moveToMessage.x, moveToMessage.y,
-                    std::hypot(moveToMessage.x - robot_pose.position.x, moveToMessage.y - robot_pose.position.y),
-                    moveToMessage.edgeInfo.maxSpeed);
-
-        return true;
-    }
-
-    std::vector<geometry_msgs::msg::PoseStamped> NavigationManager::generateBackUpPath(
-        const geometry_msgs::msg::Pose robot_pose, const agv_bridge::MoveToMessage &msg)
-    {
-        std::vector<geometry_msgs::msg::PoseStamped> path;
-        const double dx = msg.x - robot_pose.position.x;
-        const double dy = msg.y - robot_pose.position.y;
-        const double distance = std::hypot(dx, dy);
-
-        // 计算点数(最少10个点)
-        const int num_points = std::max(10, static_cast<int>(distance / msg.edgeInfo.step) + 1);
-
-        // 后退全程保持机器人「当前朝向」不变：
-        // Nav2 控制器以路径点的朝向作为期望朝向，期望朝向 == 当前朝向 ⇒ 不产生转向量，
-        // 配合负的 /speed_limit，车体沿当前朝向缓慢平移后退。
-        // ⚠️ 切勿改成 atan2(dy, dx)（指向目标）。那会让控制器把车头转向目标，
-        //    在充电桩 / 窄过道现场会造成剐蹭 —— 这正是必须避免的行为。
-        const double hold_yaw = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
-
-        RCLCPP_INFO(logger_,
-                    "生成倒车路径(保持当前朝向): 起点(%.2f,%.2f) → 终点(%.2f,%.2f), 距离=%.2fm, 点数=%d, 保持朝向=%.2f°",
-                    robot_pose.position.x, robot_pose.position.y, msg.x, msg.y,
-                    distance, num_points, hold_yaw * 180 / M_PI);
-
-        // 生成倒车路径点
-        for (int i = 0; i < num_points; ++i)
-        {
-            double ratio = static_cast<double>(i) / (num_points - 1);
-
-            geometry_msgs::msg::PoseStamped pose;
-            pose.header.frame_id = "map";
-            pose.header.stamp = rclcpp::Time(0);
-
-            // 插值位置
-            pose.pose.position.x = robot_pose.position.x + dx * ratio;
-            pose.pose.position.y = robot_pose.position.y + dy * ratio;
-            pose.pose.position.z = 0.0;
-
-            // ✅ 关键:所有点的朝向 = 机器人当前朝向，全程不转向
-            //    位置在后退方向上插值，朝向保持不变，实现「保持姿态平移后退」
-            pose.pose.orientation = TransformUtils::yaw_to_quaternion(hold_yaw);
-
-            path.push_back(pose);
-        }
-
-        // 确保最后一个点位置精确
-        if (!path.empty())
-        {
-            path.back().pose.position.x = msg.x;
-            path.back().pose.position.y = msg.y;
-        }
-
-        RCLCPP_INFO(logger_, "倒车路径生成完成: %zu 个点", path.size());
-        return path;
-    }
 
     // 直线路点导航，public放，外部调用
-    bool NavigationManager::followPathNavigation(const agv_bridge::MoveToMessage moveToMessage)
+    bool NavigationManager::followPathNavigation(const MoveToMessage task)
     {
-        std::lock_guard<std::recursive_mutex> task_lock(mutex_);
-        if (!isReady()) return false;
-        current_task_ = moveToMessage;
-        const auto parameter_error = validateNavigationMode(
-            "STRAIGHT", moveToMessage.edgeInfo.id, moveToMessage.edgeInfo.controlPoints,
-            moveToMessage.edgeInfo.backUp, moveToMessage.edgeInfo.reverse);
-        if (!parameter_error.empty()) {
-            failTask("FAILED", parameter_error);
-            return false;
-        }
-
-
-        auto current_pose_opt = pose_provider_->getCurrentPose();
-        if (!current_pose_opt.has_value())
-        {
-            RCLCPP_ERROR(logger_, "机器人当前位置信息为空"); // 之前已经判断过，这里利落上不会出现为空的情况
-            return false;
-        }
-        const auto &robot_pose = current_pose_opt.value().pose;
-
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-
-        // 🔴 新增: 判断是否倒车
-        if (moveToMessage.edgeInfo.backUp)
-        {
-            RCLCPP_INFO(logger_, "检测到倒车标志,使用倒车模式导航");
-            return backUpNavigationInternal(moveToMessage);
-        }
-
-        // 计算robot当前朝向 和robot和目标点连接成的直线路线的角度差
-        double robot_yaw = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
-        double target_yaw = std::atan2(moveToMessage.y - robot_pose.position.y, moveToMessage.x - robot_pose.position.x);
-        double angle_diff = angles::shortest_angular_distance(robot_yaw, target_yaw);
-        RCLCPP_INFO(logger_, "导航到点，计算夹角: 目标点(%.2f, %.2f, %.2f), 当前朝向:%.2f°, 目标朝向:%.2f°, 角度差:%.2f°",
-                    moveToMessage.x, moveToMessage.y, moveToMessage.theta * 180 / M_PI,
-                    robot_yaw * 180 / M_PI, target_yaw * 180 / M_PI, angle_diff * 180 / M_PI);
-
-        if (std::abs(angle_diff) > 20.0 * M_PI / 180.0) // 超过20°先预旋转，小角度由路径控制器修正
-        {
-            // 保存导航信息，旋转完成后继续
-            if (!sendSpinCommand(angle_diff))
-            {
-                RCLCPP_ERROR(logger_, "直线路点导航，发送旋转命令失败");
-                return false;
-            }
-            setState(NavigationState::PRE_ROTATING);
-            return true;
-        }
-        else
-        {
-            return executeFollowPath(robot_pose, current_task_.value());
-        }
-    }
-
-    bool NavigationManager::executeFollowPath(const geometry_msgs::msg::Pose robot_pose, const agv_bridge::MoveToMessage &msg)
-    {
-        double robot_yaw = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
-        auto path = generateStraightLinePath(robot_pose, msg);
-
-        // 创建 FollowPath 目标
-        auto goal_msg = FollowPath::Goal();
-        goal_msg.path.poses = path;
-        goal_msg.path.header.frame_id = "map";
-        goal_msg.controller_id = "FollowPath";
-
-        setSpeedLimit(msg.edgeInfo.maxSpeed);
-
-        auto send_goal_options = rclcpp_action::Client<FollowPath>::SendGoalOptions();
-        send_goal_options.goal_response_callback =
-            std::bind(&NavigationManager::followPathGoalResponseCallback, this, std::placeholders::_1);
-        send_goal_options.feedback_callback =
-            std::bind(&NavigationManager::followPathFeedbackCallback, this,
-                      std::placeholders::_1, std::placeholders::_2);
-        send_goal_options.result_callback =
-            std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
-
-        if (!dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options)) return false;
-
-        setState(NavigationState::EXECUTING);
-
-        RCLCPP_INFO(logger_,
-                    "开始导航: (%.2f, %.2f, %.2f) -> (%.2f, %.2f, %.2f), command_id: %s",
-                    robot_pose.position.x, robot_pose.position.y, robot_yaw, msg.x, msg.y, msg.theta, msg.commandId.c_str());
-
-        return true;
-    }
-
-    std::vector<geometry_msgs::msg::PoseStamped> NavigationManager::generateStraightLinePath(const geometry_msgs::msg::Pose robot_pose,
-                                                                                             const agv_bridge::MoveToMessage &msg)
-    {
-        std::vector<geometry_msgs::msg::PoseStamped> path;
-        double dx = msg.x - robot_pose.position.x;
-        double dy = msg.y - robot_pose.position.y;
-        double distance = std::hypot(dx, dy);
-        double estimated_total_time = distance / msg.edgeInfo.maxSpeed * 0.75;
-
-        // 计算点数（最少10个点，确保平滑）
-        int num_points = std::max(10, static_cast<int>(distance / msg.edgeInfo.step) + 1);
-
-        double time_step = estimated_total_time / (num_points - 1);
-
-        // 🔴 关键：使用当前仿真时间（不要递增，不要回溯）
-        rclcpp::Time current_time = node_->now();
-
-        // 直线方向
-        double edge_yaw = std::atan2(dy, dx);
-
-        RCLCPP_INFO(logger_,
-                    "生成直线路径: 起点(%.2f,%.2f) → 终点(%.2f,%.2f), 距离=%.2fm, 点数=%d",
-                    robot_pose.position.x, robot_pose.position.y, msg.x, msg.y, distance, num_points);
-
-        // 🔴 简化：只生成直线点，所有点朝向为直线方向
-        // 旋转由 Nav2 行为树处理
-        for (int i = 0; i < num_points; ++i)
-        {
-            double ratio = static_cast<double>(i) / (num_points - 1);
-
-            geometry_msgs::msg::PoseStamped pose;
-            pose.header.frame_id = "map";
-            // pose.header.stamp = current_time + rclcpp::Duration::from_seconds(i * time_step);
-            // 时间戳设为0，Nav2会使用收到消息时的当前时间
-            pose.header.stamp = rclcpp::Time(0);
-            pose.pose.position.x = robot_pose.position.x + dx * ratio;
-            pose.pose.position.y = robot_pose.position.y + dy * ratio;
-            pose.pose.position.z = 0.0;
-            // 所有点朝向直线方向（Nav2 会在到达后处理最终旋转）
-            pose.pose.orientation = TransformUtils::yaw_to_quaternion(edge_yaw);
-            path.push_back(pose);
-            RCLCPP_INFO(logger_, "路点[%d](%.2f,%.2f), stamp: %d.%09d", i, pose.pose.position.x, pose.pose.position.y,
-                        pose.header.stamp.sec, pose.header.stamp.nanosec);
-        }
-
-        // 确保最后一个点位置精确
-        if (!path.empty())
-        {
-            path.back().pose.position.x = msg.x;
-            path.back().pose.position.y = msg.y;
-        }
-
-        RCLCPP_INFO(logger_, "路径生成完成: %zu 个点", path.size());
-        return path;
+        if (!isReady() || current_task_) return false;
+        current_task_ = task;
+        return path_executor_->startStraight(task);
     }
 
     // 贝塞尔曲线路点导航，public放，外部调用
-    bool NavigationManager::followBezierPathNavigation(const agv_bridge::MoveToMessage moveToMessage)
+    bool NavigationManager::followBezierPathNavigation(const MoveToMessage task)
     {
-        std::lock_guard<std::recursive_mutex> task_lock(mutex_);
-        if (!isReady()) return false;
-        current_task_ = moveToMessage;
-        const auto parameter_error = validateNavigationMode(
-            "CURVE", moveToMessage.edgeInfo.id, moveToMessage.edgeInfo.controlPoints,
-            moveToMessage.edgeInfo.backUp, moveToMessage.edgeInfo.reverse);
-        if (!parameter_error.empty()) {
-            failTask("FAILED", parameter_error);
-            return false;
-        }
-
-
-        auto current_pose_opt = pose_provider_->getCurrentPose();
-        if (!current_pose_opt.has_value())
-        {
-            RCLCPP_DEBUG(logger_, "机器人当前位置信息为空");
-            return false;
-        }
-
-        const geometry_msgs::msg::Pose &robot_pose = current_pose_opt.value().pose;
-
-        double robot_yaw = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
-
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-
-        // 获取边和已反转的控制点（如果reverse_path，外部已处理反转）
-        std::vector<double> control_x, control_y;
-        for (const auto &cp : moveToMessage.edgeInfo.controlPoints)
-        {
-            control_x.push_back(cp.x);
-            control_y.push_back(cp.y);
-        }
-        if (moveToMessage.edgeInfo.reverse)
-        {
-            std::reverse(control_x.begin(), control_x.end());
-            std::reverse(control_y.begin(), control_y.end());
-        }
-
-        // 计算起点切线方向（t=0）
-        double target_raw = calculateBezierTangent(0.0, robot_pose.position.x, robot_pose.position.y,
-                                                   control_x, control_y, moveToMessage.x, moveToMessage.y);
-
-        double angle_diff = angles::shortest_angular_distance(robot_yaw, target_raw);
-
-        RCLCPP_INFO(logger_, "贝塞尔曲线起点切线方向: %.2f°, 当前朝向: %.2f°, 角度差: %.2f°",
-                    target_raw * 180 / M_PI, robot_yaw * 180 / M_PI, angle_diff * 180 / M_PI);
-        if (std::abs(angle_diff) > 20.0 * M_PI / 180.0)
-        {
-            if (!sendSpinCommand(angle_diff)) // 旋转到切线方向
-            {
-                RCLCPP_ERROR(logger_, "贝塞尔曲线到点，发送旋转命令失败");
-                return false;
-            }
-            setState(NavigationState::PRE_ROTATING);
-            return true;
-        }
-        else
-        {
-            return executeBezierPath(robot_pose, current_task_.value());
-        }
-    }
-
-    bool NavigationManager::executeBezierPath(const geometry_msgs::msg::Pose robot_pose, const agv_bridge::MoveToMessage moveToMessage)
-    {
-        auto path = generateBezierPath(robot_pose, moveToMessage); // 生成贝塞尔曲线路径
-        if (path.empty())
-        {
-            RCLCPP_ERROR(logger_, "Failed to generate Bezier path");
-            return false;
-        }
-        setSpeedLimit(moveToMessage.edgeInfo.maxSpeed); // 发布速度限制
-
-        // 创建FollowPath目标
-        auto goal_msg = FollowPath::Goal();
-        goal_msg.path.poses = path;
-        goal_msg.path.header.frame_id = "map";
-        goal_msg.path.header.stamp = node_->now();
-        goal_msg.controller_id = "FollowPath";
-
-        // 设置回调选项
-        auto send_goal_options = rclcpp_action::Client<FollowPath>::SendGoalOptions();
-        send_goal_options.goal_response_callback =
-            std::bind(&NavigationManager::followPathGoalResponseCallback, this, std::placeholders::_1);
-        send_goal_options.feedback_callback =
-            std::bind(&NavigationManager::followPathFeedbackCallback, this,
-                      std::placeholders::_1, std::placeholders::_2);
-        send_goal_options.result_callback =
-            std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
-
-        // 发送目标
-        if (!dispatchGoal<FollowPath>(follow_path_client_, goal_msg, send_goal_options)) return false;
-        setState(NavigationState::EXECUTING);
-        return true;
-    }
-
-    // 计算二阶/三阶贝塞尔曲线上的点
-    std::pair<double, double> NavigationManager::calculateBezierPoint(double t, double p0x, double p0y,
-                                                                      const std::vector<double> &cp_x, const std::vector<double> &cp_y, double p1x, double p1y)
-
-    {
-        if (cp_x.empty() || cp_y.empty() || cp_x.size() != cp_y.size())
-        {
-            // 没有控制点，返回线性插值
-            return {p0x + t * (p1x - p0x), p0y + t * (p1y - p0y)};
-        }
-
-        if (cp_x.size() == 1)
-        {
-            // 二阶贝塞尔曲线
-            double u = 1.0 - t;
-            double x = u * u * p0x + 2.0 * u * t * cp_x[0] + t * t * p1x;
-            double y = u * u * p0y + 2.0 * u * t * cp_y[0] + t * t * p1y;
-            return {x, y};
-        }
-        else if (cp_x.size() == 2)
-        {
-            // 三阶贝塞尔曲线
-            double u = 1.0 - t;
-            double u2 = u * u;
-            double t2 = t * t;
-
-            double x = u2 * u * p0x + 3.0 * u2 * t * cp_x[0] + 3.0 * u * t2 * cp_x[1] + t2 * t * p1x;
-            double y = u2 * u * p0y + 3.0 * u2 * t * cp_y[0] + 3.0 * u * t2 * cp_y[1] + t2 * t * p1y;
-            return {x, y};
-        }
-
-        // 不支持更高阶贝塞尔曲线
-        return {p0x + t * (p1x - p0x), p0y + t * (p1y - p0y)};
-    }
-
-    // 计算贝塞尔曲线在t点的切线方向
-    double NavigationManager::calculateBezierTangent(double t, double p0x, double p0y,
-                                                     const std::vector<double> &cp_x, const std::vector<double> &cp_y, double p1x, double p1y)
-    {
-        if (cp_x.empty() || cp_y.empty() || cp_x.size() != cp_y.size())
-        {
-            // 直线
-            return std::atan2(p1y - p0y, p1x - p0x);
-        }
-
-        if (cp_x.size() == 1)
-        {
-            // 二阶贝塞尔曲线导数
-            double dx = 2.0 * (1.0 - t) * (cp_x[0] - p0x) + 2.0 * t * (p1x - cp_x[0]);
-            double dy = 2.0 * (1.0 - t) * (cp_y[0] - p0y) + 2.0 * t * (p1y - cp_y[0]);
-            return std::atan2(dy, dx);
-        }
-        else if (cp_x.size() == 2)
-        {
-            // 三阶贝塞尔曲线导数
-            double u = 1.0 - t;
-            double dx = 3.0 * u * u * (cp_x[0] - p0x) + 6.0 * u * t * (cp_x[1] - cp_x[0]) + 3.0 * t * t * (p1x - cp_x[1]);
-            double dy = 3.0 * u * u * (cp_y[0] - p0y) + 6.0 * u * t * (cp_y[1] - cp_y[0]) + 3.0 * t * t * (p1y - cp_y[1]);
-            return std::atan2(dy, dx);
-        }
-
-        return std::atan2(p1y - p0y, p1x - p0x);
-    }
-
-    // 估算贝塞尔曲线长度
-    double NavigationManager::calculateBezierLength(double p0x, double p0y,
-                                                    const std::vector<double> &cp_x, const std::vector<double> &cp_y, double p1x, double p1y, int segments)
-    {
-        double length = 0.0;
-        double prev_x = p0x;
-        double prev_y = p0y;
-
-        for (int i = 1; i <= segments; ++i)
-        {
-            double t = static_cast<double>(i) / segments;
-            auto [x, y] = calculateBezierPoint(t, p0x, p0y, cp_x, cp_y, p1x, p1y);
-
-            double dx = x - prev_x;
-            double dy = y - prev_y;
-            length += std::hypot(dx, dy);
-
-            prev_x = x;
-            prev_y = y;
-        }
-
-        return length;
-    }
-    // 生成贝塞尔曲线路径
-    std::vector<geometry_msgs::msg::PoseStamped> NavigationManager::generateBezierPath(
-        const geometry_msgs::msg::Pose robot_pose, const agv_bridge::MoveToMessage &move_msg)
-    {
-        const auto parameter_error = validateNavigationMode(
-            "CURVE", move_msg.edgeInfo.id, move_msg.edgeInfo.controlPoints,
-            move_msg.edgeInfo.backUp, move_msg.edgeInfo.reverse);
-        if (!parameter_error.empty()) {
-            RCLCPP_ERROR(logger_, "%s", parameter_error.c_str());
-            return {};
-        }
-        bool reverse_path = move_msg.nodeId == move_msg.edgeInfo.sourceId; // 目标点和通道起点相同，说明是reverse的，主要用途就是反转切点
-        // double start_theta = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
-        std::vector<geometry_msgs::msg::PoseStamped> path;
-        // 处理贝塞尔曲线
-        std::vector<double> control_x, control_y;
-        const auto &cps = move_msg.edgeInfo.controlPoints; // 已经确认有值
-        for (const auto &cp : cps)
-        {
-            control_x.push_back(cp.x);
-            control_y.push_back(cp.y);
-        }
-
-        // 如果需要反向，反转控制点
-        if (reverse_path)
-        {
-            std::reverse(control_x.begin(), control_x.end());
-            std::reverse(control_y.begin(), control_y.end());
-            RCLCPP_INFO(logger_, "已反转贝塞尔曲线控制点顺序，控制点数量: %zu", control_x.size());
-        }
-        // 计算贝塞尔曲线长度
-        double length = calculateBezierLength(robot_pose.position.x, robot_pose.position.y, control_x, control_y, move_msg.x, move_msg.y);
-
-        // 计算需要的点数
-        int num_points = std::max(2, static_cast<int>(length / move_msg.edgeInfo.step) + 1);
-        double estimated_arrival_time = length / move_msg.edgeInfo.maxSpeed * 0.7; // 预估到达时间，乘以0.7作为avg speed
-
-        RCLCPP_INFO(logger_, "生成贝塞尔曲线路点: 长度=%.2f, 路点数量=%d, 控制点个数=%zu, 通道速度=%.2f",
-                    length, num_points, control_x.size(), move_msg.edgeInfo.maxSpeed);
-
-        rclcpp::Time base_time = node_->now();
-
-        for (int i = 0; i < num_points; ++i)
-        {
-            double t = static_cast<double>(i) / (num_points - 1);
-            // 计算位置
-            auto [x, y] = calculateBezierPoint(t, robot_pose.position.x, robot_pose.position.y, control_x, control_y, move_msg.x, move_msg.y);
-            // 计算朝向
-            double yaw = calculateBezierTangent(t, robot_pose.position.x, robot_pose.position.y, control_x, control_y, move_msg.x, move_msg.y);
-            // 创建位姿
-            geometry_msgs::msg::PoseStamped pose;
-            pose.header.frame_id = "map";
-            pose.header.stamp = rclcpp::Time(0);
-
-            pose.pose.position.x = x;
-            pose.pose.position.y = y;
-            // 第一个点和最后一个点设置角度，中间点间隔一个设置角度，防止频繁设置角度导致nav2 出错
-            if (i == 1 || i == num_points - 1 || i % 2 == 0)
-            {
-                pose.pose.orientation = TransformUtils::yaw_to_quaternion(yaw);
-            }
-
-            // // 跳过过于接近的点
-            // if (!path.empty())
-            // {
-            //     const auto &last_pose = path.back();
-            //     double dist = std::hypot(x - last_pose.pose.position.x, y - last_pose.pose.position.y);
-            //     if (dist < 0.01)
-            //     {
-            //         continue;
-            //     }
-            // }
-
-            path.push_back(pose);
-            RCLCPP_INFO(logger_, "路点[%d](%.2f,%.2f), stamp: %d.%09d", i, pose.pose.position.x, pose.pose.position.y,
-                        pose.header.stamp.sec, pose.header.stamp.nanosec);
-            // last_x = x;
-            // last_y = y;
-        }
-
-        if (!path.empty())
-        {
-            path.back().pose.position.x = move_msg.x;
-            path.back().pose.position.y = move_msg.y;
-
-            // 使用估算的到达时间
-            // path.back().header.stamp = base_time + rclcpp::Duration::from_seconds(estimated_arrival_time);
-            // RCLCPP_INFO(logger_, "最后一个点时间戳: +%.2fs", estimated_arrival_time);
-        }
-
-        return path;
+        if (!isReady() || current_task_) return false;
+        current_task_ = task;
+        return path_executor_->startCurve(task);
     }
 
     void NavigationManager::stopNavigation()
@@ -978,25 +277,16 @@ namespace agv_bridge
     bool NavigationManager::cancelNavigation()
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
+        return requestCancel(5.0);
+    }
+
+    bool NavigationManager::requestCancel(double timeout_sec)
+    {
         if (!current_task_) return false;
-        if (cancel_pending_) return true;
-        cancel_pending_ = true;
-        action_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        bool has_handle = false;
-        if (nav_goal_handle_) { nav_action_client_->async_cancel_goal(nav_goal_handle_); has_handle = true; }
-        if (follow_path_goal_handle_) { follow_path_client_->async_cancel_goal(follow_path_goal_handle_); has_handle = true; }
-        if (spin_goal_handle_) {
-            has_handle = true;
-            try { spin_client_->async_cancel_goal(spin_goal_handle_); }
-            catch (const std::exception &e) {
-                unsafe_generation_ = action_generation_;
-                RCLCPP_ERROR(logger_, "旋转取消通信失败，保持动作保护: %s", e.what());
-            }
-        }
-        // A pending send has no handle yet. Retire it now; dispatchGoal cancels
-        // any accepted reply arriving after this task has been retired.
-        if (!has_handle) {
-            if (awaiting_response_) unsafe_generation_ = action_generation_;
+        if (action_session_->snapshot().canceling) return true;
+        if (!action_session_->cancel(timeout_sec)) {
+            // A send without an accepted handle is retired. The session keeps
+            // unsafe until the late goal is rejected/terminated or servers stop.
             finishTask(false, "CANCELED", "导航已取消（底层目标尚未接受）");
         }
         return true;
@@ -1011,7 +301,7 @@ namespace agv_bridge
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (!initialized_) return "导航管理器尚未初始化";
-        if (unsafe_generation_ != 0) return "上一条底层动作尚未确认停止";
+        if (action_session_->snapshot().unsafe_generation != 0) return "上一条底层动作尚未确认停止";
         const auto now = std::chrono::steady_clock::now();
         if (lifecycle_checks_.empty()) return "Nav2 生命周期状态尚未取得";
         for (const auto &check : lifecycle_checks_) {
@@ -1019,7 +309,7 @@ namespace agv_bridge
             if (now - check.responded > std::chrono::seconds(3))
                 return check.name + " 生命周期状态已过期";
         }
-        if (!spin_client_->action_server_is_ready() || !follow_path_client_->action_server_is_ready())
+        if (!action_session_->spinReady() || !action_session_->pathReady())
             return "Nav2 动作服务尚未就绪";
         return {};
     }
@@ -1027,7 +317,7 @@ namespace agv_bridge
     bool NavigationManager::requiresServerRestart() const
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        return unsafe_generation_ != 0;
+        return action_session_->snapshot().unsafe_generation != 0;
     }
 
     bool NavigationManager::isStackActive() const
@@ -1037,16 +327,14 @@ namespace agv_bridge
         if (!initialized_ || lifecycle_checks_.empty()) return false;
         for (const auto &check : lifecycle_checks_)
             if (!check.active || now - check.responded > std::chrono::seconds(3)) return false;
-        return spin_client_->action_server_is_ready() && follow_path_client_->action_server_is_ready();
+        return action_session_->spinReady() && action_session_->pathReady();
     }
 
     void NavigationManager::resetAfterServerShutdown()
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         // Only call after the owned Nav2 process group has exited.
-        unsafe_generation_ = 0;
-        ++action_generation_;
-        awaiting_response_ = cancel_pending_ = false;
+        action_session_->resetAfterServerShutdown();
         for (auto &check : lifecycle_checks_) {
             ++check.request_generation;
             check.client->prune_pending_requests();
@@ -1059,9 +347,6 @@ namespace agv_bridge
                 : spin_failure_reason_ + "；取消未确认，现已确认托管 Nav2 进程组停止；请重新下发任务";
             failTask("FAILED", reason);
         }
-        nav_goal_handle_.reset();
-        follow_path_goal_handle_.reset();
-        spin_goal_handle_.reset();
     }
 
     void NavigationManager::observeSpinProgress(double angle)
@@ -1082,15 +367,13 @@ namespace agv_bridge
         spin_watch_active_ = false;
         spin_failure_reason_ = reason;
         RCLCPP_ERROR(logger_, "%s；请求取消旋转，等待底层终态", reason.c_str());
-        cancelNavigation();
-        action_deadline_ = std::chrono::steady_clock::now() +
-            std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                std::chrono::duration<double>(spin_cancel_timeout_sec_));
+        requestCancel(spin_cancel_timeout_sec_);
     }
 
     void NavigationManager::checkActionProgress()
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
+        processActionEvents();
         const auto now = std::chrono::steady_clock::now();
         for (std::size_t i = 0; i < lifecycle_checks_.size(); ++i) {
             auto &check = lifecycle_checks_[i];
@@ -1106,20 +389,22 @@ namespace agv_bridge
             check.pending = true;
             const auto request_generation = ++check.request_generation;
             check.client->async_send_request(std::make_shared<lifecycle_msgs::srv::GetState::Request>(),
-                [this, i, request_generation](rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedFuture future) {
-                    std::lock_guard<std::recursive_mutex> lock(mutex_);
-                    auto &entry = lifecycle_checks_[i];
+                [weak = weak_from_this(), i, request_generation](rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedFuture future) {
+                    auto self = weak.lock();
+                    if (!self) return;
+                    std::lock_guard<std::recursive_mutex> lock(self->mutex_);
+                    auto &entry = self->lifecycle_checks_[i];
                     if (entry.request_generation != request_generation) return;
                     entry.pending = false;
                     try { entry.active = future.get()->current_state.id == 3; }
                     catch (const std::exception &e) {
                         entry.active = false;
-                        RCLCPP_WARN(logger_, "%s 状态查询失败: %s", entry.name.c_str(), e.what());
+                        RCLCPP_WARN(self->logger_, "%s 状态查询失败: %s", entry.name.c_str(), e.what());
                     }
                     entry.responded = std::chrono::steady_clock::now();
                 });
         }
-        if (current_task_ && spin_watch_active_ && !cancel_pending_) {
+        if (current_task_ && spin_watch_active_ && !action_session_->snapshot().canceling) {
             const double elapsed = std::chrono::duration<double>(now - spin_started_at_).count();
             const double stalled = std::chrono::duration<double>(now - spin_last_progress_at_).count();
             if (elapsed >= spin_timeout_sec_ || stalled >= spin_progress_timeout_sec_) {
@@ -1132,20 +417,7 @@ namespace agv_bridge
                     " rad，已转角度=" + std::to_string(spin_reported_angle_) + " rad");
             }
         }
-        if (current_task_ && (awaiting_response_ || cancel_pending_) && now >= action_deadline_) {
-            if (cancel_pending_ && !spin_failure_reason_.empty()) {
-                // No terminal result: do not release the upper goal or allow another
-                // task. The owner must confirm Nav2's process group has stopped.
-                if (unsafe_generation_ != action_generation_)
-                    RCLCPP_ERROR(logger_, "%s；取消等待超时，底层尚未确认停止，等待托管 Nav2 停止确认",
-                                 spin_failure_reason_.c_str());
-                unsafe_generation_ = action_generation_;
-                return;
-            }
-            unsafe_generation_ = action_generation_;
-            if (cancel_pending_) finishTask(false, "CANCELED", "导航取消结果等待超时，已释放任务");
-            else failTask("FAILED", "底层导航目标响应超时，请等待 Nav2 就绪后重试");
-        }
+
     }
 
     NavigationState NavigationManager::getCurrentState() const
@@ -1156,7 +428,7 @@ namespace agv_bridge
 
     bool NavigationManager::isNavigating() const
     {
-        // std::lock_guard<std::recursive_mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         return current_state_ != NavigationState::IDLE;
     }
 
@@ -1171,13 +443,6 @@ namespace agv_bridge
             return;
         }
 
-        // 保存 goal_handle 以便取消
-        if (follow_path_goal_handle_)
-        {
-            RCLCPP_WARN(logger_, "Overriding existing follow_path_goal_handle - previous navigation may not be properly cancelled");
-        }
-        follow_path_goal_handle_ = goal_handle;
-
         // 检查任务有效性
         if (!current_task_)
         {
@@ -1185,81 +450,23 @@ namespace agv_bridge
             return;
         }
 
-        // 缓存任务数据
-        const auto &task = current_task_.value();
-        if (callbacks_)
-        {
-            callbacks_->onCommandAck(task.commandId, task.nodeId, "ACCEPTED", "准备执行导航到点了");
-        }
+        path_executor_->onAccepted();
     }
 
     // 2. 反馈回调
     void NavigationManager::followPathFeedbackCallback(GoalHandleFollowPath::SharedPtr,
-                                                       const std::shared_ptr<const FollowPath::Feedback> feedback)
+        const std::shared_ptr<const FollowPath::Feedback> feedback)
     {
-        // FollowPath 反馈通常包含 distance_to_goal、speed 等，不直接提供位姿。
-        // 如果你需要实时位置反馈，可以通过 TF 监听获取，或使用 Nav2 的本地规划器反馈。
-        // 此处简单记录日志，不触发 onNavigationFeedback
-        RCLCPP_DEBUG(logger_, "FollowPath feedback: distance remaining: %.2f", feedback->distance_to_goal);
+        path_executor_->onFeedback(*feedback);
     }
 
     // 3. 结果回调
     void NavigationManager::followPathResultCallback(const GoalHandleFollowPath::WrappedResult &result)
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-
-        switch (result.code)
-        {
-        case rclcpp_action::ResultCode::SUCCEEDED:
-        {
-            // 检查任务是否仍然有效
-            if (!current_task_)
-            {
-                RCLCPP_WARN(logger_, "followPathResultCallback: current_task_ is null, skipping end rotation");
-                follow_path_goal_handle_.reset();
-                return;
-            }
-
-            auto current_pose_opt = pose_provider_->getCurrentPose();
-            if (!current_pose_opt.has_value())
-            {
-                RCLCPP_WARN(logger_, "最终旋转时，机器人当前位置信息为空");
-            }
-            const geometry_msgs::msg::Pose &robot_pose = current_pose_opt.value().pose;
-            double robot_yaw = TransformUtils::quaternion_to_yaw(robot_pose.orientation);
-
-            // 缓存任务数据,避免多次访问 value()
-            const auto &task = current_task_.value();
-            double angle_diff = angles::shortest_angular_distance(robot_yaw, task.theta);
-            RCLCPP_INFO(logger_, "followPathResultCallback,目标点方向: %.2f°, 当前朝向: %.2f°, 角度差: %.2f°",
-                        task.theta * 180 / M_PI, robot_yaw * 180 / M_PI, angle_diff * 180 / M_PI);
-
-            if (task.endPoint && std::abs(angle_diff) > M_PI / 40) // 4.5角度
-            {
-                if (!sendSpinCommand(angle_diff))
-                { // 旋转到切线方向
-                    failTask("FAILED", "调用nav2 spin接口，发送旋转请求失败");
-                    return;
-                }
-                setState(NavigationState::END_ROTATING);
-            }
-            else
-            {
-                finishTask(true, "SUCCESS", "无需最终旋转，即导航到点完成!");
-            }
-
-            break;
-        }
-        case rclcpp_action::ResultCode::ABORTED:
-            failTask("FAILED", "路点导航请求终止！");
-            break;
-        case rclcpp_action::ResultCode::CANCELED:
-            finishTask(false, "CANCELED", "路点导航请别取消！");
-            break;
-        default:
-            break;
-        }
-        follow_path_goal_handle_.reset(); // 重置命令信息
+        if (!current_task_) return;
+        const auto task = *current_task_;
+        path_executor_->onResult(result.code, task);
     }
 
     /***其他辅助的方法 */
@@ -1286,15 +493,9 @@ namespace agv_bridge
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (!current_task_) return;
         agv_bridge::MoveToMessage task = current_task_.value();
-        ++action_generation_;
-        awaiting_response_ = false;
-        cancel_pending_ = false;
+        action_session_->retire();
         spin_watch_active_ = false;
         spin_failure_reason_.clear();
-        pending_navigation_ = pending_bezier_ = pending_rotate_ = false;
-        nav_goal_handle_.reset();
-        follow_path_goal_handle_.reset();
-        spin_goal_handle_.reset();
 
         if (callbacks_)
         {
@@ -1317,5 +518,80 @@ namespace agv_bridge
     void NavigationManager::failTask(const std::string status, const std::string message)
     {
         finishTask(false, status, message);
+    }
+
+    const rclcpp::Logger &NavigationManager::executionLogger() const { return logger_; }
+    rclcpp::Time NavigationManager::executionNow() const { return node_->now(); }
+    std::optional<geometry_msgs::msg::PoseStamped> NavigationManager::executionPose() const
+    {
+        return pose_provider_ ? pose_provider_->getCurrentPose() : std::nullopt;
+    }
+    double NavigationManager::backUpHeadingLimit() const { return back_up_max_heading_error_deg_; }
+    bool NavigationManager::navigateServerReady() const { return action_session_->navigateReady(); }
+    void NavigationManager::reportAccepted(const std::string &message)
+    {
+        if (callbacks_ && current_task_) {
+            const auto task = *current_task_;
+            callbacks_->onCommandAck(task.commandId, task.nodeId, "ACCEPTED", message);
+        }
+    }
+    void NavigationManager::reportFeedback(double x, double y, double yaw)
+    {
+        if (callbacks_) callbacks_->onNavigationFeedback(x, y, yaw);
+    }
+    bool NavigationManager::sendNavigateGoal(const NavigateToPose::Goal &goal)
+    {
+        NavigationActionClient::SendGoalOptions options;
+        options.goal_response_callback = std::bind(&NavigationManager::goalResponseCallback, this, std::placeholders::_1);
+        options.feedback_callback = std::bind(&NavigationManager::feedbackCallback, this, std::placeholders::_1, std::placeholders::_2);
+        options.result_callback = std::bind(&NavigationManager::resultCallback, this, std::placeholders::_1);
+        const auto error = readinessError();
+        if (!error.empty()) { failTask("FAILED", "Nav2 未就绪: " + error); return false; }
+        try {
+            if (action_session_->sendNavigate(goal, options)) return true;
+            failTask("FAILED", "底层动作会话仍被占用或尚未确认停止");
+        } catch (const std::exception &e) { failTask("FAILED", std::string("提交导航动作失败: ") + e.what()); }
+        return false;
+    }
+    bool NavigationManager::sendPathGoal(const FollowPath::Goal &goal)
+    {
+        rclcpp_action::Client<FollowPath>::SendGoalOptions options;
+        options.goal_response_callback = std::bind(&NavigationManager::followPathGoalResponseCallback, this, std::placeholders::_1);
+        options.feedback_callback = std::bind(&NavigationManager::followPathFeedbackCallback, this, std::placeholders::_1, std::placeholders::_2);
+        options.result_callback = std::bind(&NavigationManager::followPathResultCallback, this, std::placeholders::_1);
+        const auto error = readinessError();
+        if (!error.empty()) { failTask("FAILED", "Nav2 未就绪: " + error); return false; }
+        try {
+            if (action_session_->sendPath(goal, options)) return true;
+            failTask("FAILED", "底层动作会话仍被占用或尚未确认停止");
+        } catch (const std::exception &e) { failTask("FAILED", std::string("提交导航动作失败: ") + e.what()); }
+        return false;
+    }
+
+    void NavigationManager::processActionEvents()
+    {
+        using Type = Nav2ActionSession::Type;
+        for (auto &event : action_session_->poll()) {
+            if (!action_session_->isCurrent(event.generation) || !current_task_) continue;
+            if (event.type == Type::UNKNOWN_RESULT) {
+                spin_watch_active_ = false;
+                spin_failure_reason_ = "底层动作返回未知终态；command_id=" + current_task_->commandId +
+                    "，阶段=" + navigationStateToString(current_state_) + "；底层尚未确认停止";
+                RCLCPP_ERROR(logger_, "%s", spin_failure_reason_.c_str());
+            } else if (event.type == Type::RESPONSE_TIMEOUT) {
+                failTask("FAILED", "底层导航目标响应超时，请等待 Nav2 就绪后重试");
+            } else if (event.type == Type::CANCEL_TIMEOUT) {
+                if (!spin_failure_reason_.empty()) {
+                    RCLCPP_ERROR(logger_, "%s；取消等待超时，等待托管 Nav2 停止确认", spin_failure_reason_.c_str());
+                } else {
+                    finishTask(false, "CANCELED", "导航取消结果等待超时，已释放任务");
+                }
+            } else if (event.type == Type::RESULT && action_session_->snapshot().canceling) {
+                if (!spin_failure_reason_.empty()) finishTask(false, "FAILED", spin_failure_reason_);
+                else finishTask(false, "CANCELED", "导航已取消");
+            } else if (event.type != Type::FEEDBACK || !action_session_->snapshot().canceling) {
+                if (event.deliver) event.deliver();
+            }
+        }
     }
 } // namespace agv_bridge

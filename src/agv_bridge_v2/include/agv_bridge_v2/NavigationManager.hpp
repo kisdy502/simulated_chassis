@@ -22,6 +22,8 @@
 #include <nav2_msgs/msg/speed_limit.hpp>
 #include <angles/angles.h>
 #include "agv_bridge_v2/LocalizationMonitor.hpp"
+#include "agv_bridge_v2/navigation/NavigationExecutionContext.hpp"
+#include "agv_bridge_v2/navigation/Nav2ActionSession.hpp"
 #include "agv_bridge_v2/bean/Edge.hpp"
 #include "agv_bridge_v2/bean/MoveToMessage.hpp"
 
@@ -32,43 +34,8 @@ using GoalHandleFollowPath = rclcpp_action::Client<nav2_msgs::action::FollowPath
 namespace agv_bridge
 {
 
-    // 导航状态枚举,其中PRE_ROTATING =移动前，先旋转到目标角度，END_ROTATING，移动结束后，旋转到目标点
-    enum class NavigationState
-    {
-        IDLE,
-        PRE_ROTATING,
-        EXECUTING,
-        END_ROTATING,
-        BACKING_UP,  // 🔴 新增:倒车状态
-        COMPLETED,
-        FAILED,
-        CANCELLED
-    };
-
-    inline std::string navigationStateToString(NavigationState state)
-    {
-        switch (state)
-        {
-        case NavigationState::IDLE:
-            return "IDLE";
-        case NavigationState::PRE_ROTATING:
-            return "PRE_ROTATING";
-        case NavigationState::EXECUTING:
-            return "EXECUTING";
-        case NavigationState::END_ROTATING:
-            return "END_ROTATING";
-        case NavigationState::BACKING_UP:
-            return "BACKING_UP";
-        case NavigationState::COMPLETED:
-            return "COMPLETED";
-        case NavigationState::FAILED:
-            return "FAILED";
-        case NavigationState::CANCELLED:
-            return "CANCELLED";
-        default:
-            return "UNKNOWN(" + std::to_string(static_cast<int>(state)) + ")";
-        }
-    }
+    class FreeNavigationExecutor;
+    class PathNavigationExecutor;
 
     // 导航回调接口
     class NavigationCallbacks
@@ -91,7 +58,8 @@ namespace agv_bridge
                                   const std::string &status, const std::string &message) = 0;
     };
 
-    class NavigationManager : public std::enable_shared_from_this<NavigationManager>
+    class NavigationManager : public std::enable_shared_from_this<NavigationManager>,
+                              private NavigationExecutionContext
     {
     public:
         using NavigateToPose = nav2_msgs::action::NavigateToPose;
@@ -168,7 +136,7 @@ namespace agv_bridge
          */
         bool isNavigating() const;
 
-        void setSpeedLimit(double speed);
+        void setSpeedLimit(double speed) override;
         bool isReady() const;
         bool isStackActive() const;
         bool requiresServerRestart() const;
@@ -176,6 +144,19 @@ namespace agv_bridge
         void resetAfterServerShutdown();
 
     private:
+        // Executors call only this boundary; the facade retains all ownership.
+        const rclcpp::Logger &executionLogger() const override;
+        rclcpp::Time executionNow() const override;
+        std::optional<geometry_msgs::msg::PoseStamped> executionPose() const override;
+        double backUpHeadingLimit() const override;
+        bool navigateServerReady() const override;
+        bool sendNavigateGoal(const NavigateToPose::Goal &goal) override;
+        bool sendPathGoal(const FollowPath::Goal &goal) override;
+        void reportAccepted(const std::string &message) override;
+        void reportFeedback(double x, double y, double yaw) override;
+        std::unique_ptr<FreeNavigationExecutor> free_executor_;
+        std::unique_ptr<PathNavigationExecutor> path_executor_;
+
         // 回调函数
         void goalResponseCallback(GoalHandleNavigateToPose::SharedPtr goal_handle);
         void feedbackCallback(GoalHandleNavigateToPose::SharedPtr,
@@ -186,114 +167,23 @@ namespace agv_bridge
         void followPathFeedbackCallback(GoalHandleFollowPath::SharedPtr, const std::shared_ptr<const FollowPath::Feedback> feedback);
         void followPathResultCallback(const GoalHandleFollowPath::WrappedResult &result);
 
-        // /*生成直线路径点函数
-        //  */
-        std::vector<geometry_msgs::msg::PoseStamped> generateStraightLinePath(
-            const geometry_msgs::msg::Pose robot_pose, const agv_bridge::MoveToMessage &msg);
-
-        std::vector<geometry_msgs::msg::PoseStamped> generateBezierPath(
-            const geometry_msgs::msg::Pose, const agv_bridge::MoveToMessage &msg);
-
-        // 🔴 新增:生成倒车直线路径
-        std::vector<geometry_msgs::msg::PoseStamped> generateBackUpPath(
-            const geometry_msgs::msg::Pose robot_pose, const agv_bridge::MoveToMessage &msg);
-
-        // 🔴 新增：倒车导航内部实现
-        bool backUpNavigationInternal(const agv_bridge::MoveToMessage moveToMessage);
-
-        // 🔴 新增：执行实际导航
-        bool executeFollowPath(
-            const geometry_msgs::msg::Pose robot_pose,
-            const agv_bridge::MoveToMessage &msg);
-
-        bool executeBezierPath(
-            const geometry_msgs::msg::Pose robot_pose,
-            const agv_bridge::MoveToMessage moveToMessage);
-
         // 🔴 新增：发送旋转命令
-        bool sendSpinCommand(const double spin_angle);
+        bool sendSpinCommand(const double spin_angle) override;
         // 🔴 新增：回调函数
         void spinGoalResponseCallback(std::shared_ptr<rclcpp_action::ClientGoalHandle<Spin>> goal_handle);
         void spinResultCallback(const rclcpp_action::ClientGoalHandle<Spin>::WrappedResult &result);
 
         // 更新状态
-        void setState(NavigationState new_state);
+        void setState(NavigationState new_state) override;
 
-        void finishTask(bool success, const std::string status, const std::string message);
-        void failTask(const std::string status, const std::string message);
+        void finishTask(bool success, const std::string status, const std::string message) override;
+        void failTask(const std::string status, const std::string message) override;
 
-        // 贝塞尔曲线计算辅助方法
-        static std::pair<double, double> calculateBezierPoint(
-            double t,
-            double p0x, double p0y,
-            const std::vector<double> &cp_x, const std::vector<double> &cp_y,
-            double p1x, double p1y);
-
-        static double calculateBezierTangent(
-            double t,
-            double p0x, double p0y,
-            const std::vector<double> &cp_x, const std::vector<double> &cp_y,
-            double p1x, double p1y);
-
-        static double calculateBezierLength(
-            double p0x, double p0y,
-            const std::vector<double> &cp_x, const std::vector<double> &cp_y,
-            double p1x, double p1y,
-            int segments = 100);
-
-        // Every dispatched action gets a generation. Late replies cannot attach
-        // themselves to a newer task; accepted stale goals are canceled.
-        template<typename Action>
-        bool dispatchGoal(const typename rclcpp_action::Client<Action>::SharedPtr &client,
-                          const typename Action::Goal &goal,
-                          typename rclcpp_action::Client<Action>::SendGoalOptions options)
-        {
-            const auto error = readinessError();
-            if (!error.empty()) {
-                failTask("FAILED", "Nav2 未就绪: " + error);
-                return false;
-            }
-            const auto generation = ++action_generation_;
-            awaiting_response_ = true;
-            action_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-            auto response = options.goal_response_callback;
-            auto result = options.result_callback;
-            auto feedback = options.feedback_callback;
-            options.goal_response_callback = [this, client, generation, response](auto handle) {
-                std::lock_guard<std::recursive_mutex> lock(mutex_);
-                if (generation != action_generation_ || !current_task_) {
-                    if (handle) client->async_cancel_goal(handle);
-                    else if (generation == unsafe_generation_) unsafe_generation_ = 0;
-                    return;
-                }
-                awaiting_response_ = false;
-                if (response) response(handle);
-                if (cancel_pending_ && handle) client->async_cancel_goal(handle);
-            };
-            options.result_callback = [this, generation, result](const auto &value) {
-                std::lock_guard<std::recursive_mutex> lock(mutex_);
-                if (generation == unsafe_generation_) unsafe_generation_ = 0;
-                if (generation != action_generation_ || !current_task_) return;
-                if (cancel_pending_) {
-                    if (!spin_failure_reason_.empty()) finishTask(false, "FAILED", spin_failure_reason_);
-                    else finishTask(false, "CANCELED", "导航已取消");
-                }
-                else if (result) result(value);
-            };
-            options.feedback_callback = [this, generation, feedback](auto handle, const auto &value) {
-                std::lock_guard<std::recursive_mutex> lock(mutex_);
-                if (generation == action_generation_ && !cancel_pending_ && feedback)
-                    feedback(handle, value);
-            };
-            try { client->async_send_goal(goal, options); }
-            catch (const std::exception &e) {
-                failTask("FAILED", std::string("提交导航动作失败: ") + e.what());
-                return false;
-            }
-            return true;
-        }
         friend struct NavigationManagerTestPeer;
         void checkActionProgress();
+        void processActionEvents();
+        bool requestCancel(double timeout_sec);
+        std::shared_ptr<Nav2ActionSession> action_session_;
         void observeSpinProgress(double angle);
         void stopFailedSpin(const std::string &reason);
         bool spin_watch_active_ = false;
@@ -308,11 +198,6 @@ namespace agv_bridge
         std::string spin_failure_reason_;
 
         rclcpp::TimerBase::SharedPtr action_watchdog_;
-        std::uint64_t action_generation_ = 0;
-        std::uint64_t unsafe_generation_ = 0;
-        bool awaiting_response_ = false;
-        bool cancel_pending_ = false;
-        std::chrono::steady_clock::time_point action_deadline_;
         struct LifecycleCheck {
             rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedPtr client;
             std::string name;
@@ -329,7 +214,6 @@ namespace agv_bridge
         rclcpp::Logger logger_;  // 子logger，日志tag显示类名
         NavigationCallbacks *callbacks_;
 
-        rclcpp_action::Client<NavigateToPose>::SharedPtr nav_action_client_;
 
         // 当前导航状态
         NavigationState current_state_;
@@ -340,10 +224,7 @@ namespace agv_bridge
         // 是否已初始化
         bool initialized_;
 
-        rclcpp_action::Client<FollowPath>::SharedPtr follow_path_client_;
 
-        GoalHandleFollowPath::SharedPtr follow_path_goal_handle_;
-        GoalHandleNavigateToPose::SharedPtr nav_goal_handle_;
 
         rclcpp::Publisher<nav2_msgs::msg::SpeedLimit>::SharedPtr speed_limit_pub_;
 
@@ -355,14 +236,6 @@ namespace agv_bridge
 
         std::shared_ptr<agv_bridge::LocalizationMonitor> pose_provider_;
 
-        rclcpp_action::Client<Spin>::SharedPtr spin_client_; // 🔴 新增
-        rclcpp_action::ClientGoalHandle<Spin>::SharedPtr spin_goal_handle_; // 🔴 新增：保存Spin动作句柄用于取消
-
-        // 🔴 新增：待执行的导航信息
-        bool pending_navigation_ = false; // 是否需要执行直线导航
-        bool pending_bezier_ = false;     // 是否执行曲线导航
-        bool pending_rotate_ = false;     // 最终是否要旋转到站点角度
-        
         std::optional<agv_bridge::MoveToMessage> current_task_;
     };
 
