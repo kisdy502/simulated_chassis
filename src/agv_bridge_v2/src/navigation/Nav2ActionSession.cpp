@@ -1,13 +1,65 @@
 #include "agv_bridge_v2/navigation/Nav2ActionSession.hpp"
 #include <cmath>
+#include <algorithm>
 #include <stdexcept>
 
 namespace agv_bridge {
 Nav2ActionSession::Nav2ActionSession(rclcpp::Node *node) {
+    ros_clock_ = node->get_clock();
     transport_group_ = node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    rclcpp::SubscriptionOptions subscription_options;
+    subscription_options.callback_group = transport_group_;
+    // Capture independent state: an in-flight callback cannot access a destroyed session.
+    rosout_ = node->create_subscription<rcl_interfaces::msg::Log>(
+        "/rosout", rclcpp::QoS(100).best_effort().durability_volatile(),
+        [state = diagnostics_](rcl_interfaces::msg::Log::ConstSharedPtr message) {
+            recordDiagnostic(state, *message);
+        }, subscription_options);
     navigate_ = rclcpp_action::create_client<Navigate>(node, "navigate_to_pose", transport_group_);
     path_ = rclcpp_action::create_client<Path>(node, "follow_path", transport_group_);
     spin_ = rclcpp_action::create_client<Spin>(node, "spin", transport_group_);
+}
+void Nav2ActionSession::beginDiagnostics(Kind kind) {
+    std::lock_guard<std::mutex> lock(diagnostics_->mutex);
+    diagnostics_->enabled = true;
+    diagnostics_->kind = kind;
+    diagnostics_->started_ros_ns = ros_clock_->now().nanoseconds();
+    diagnostics_->entries.clear();
+}
+void Nav2ActionSession::recordDiagnostic(const std::shared_ptr<Diagnostics> &state,
+                                        const rcl_interfaces::msg::Log &message) {
+    if (message.level < rcl_interfaces::msg::Log::ERROR) return;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (!state->enabled || message.msg.empty()) return;
+    const auto stamp = std::int64_t(message.stamp.sec) * 1000000000LL + message.stamp.nanosec;
+    if (stamp < state->started_ros_ns) return; // Discard queued logs from a previous action.
+    const auto separator = message.name.find_last_of("./");
+    const auto source = message.name.substr(separator == std::string::npos ? 0 : separator + 1);
+    const bool allowed = state->kind == Kind::PATH ? source == "controller_server" :
+        state->kind == Kind::SPIN ? source == "behavior_server" :
+        (source == "controller_server" || source == "planner_server" ||
+         source == "bt_navigator" || source == "behavior_server");
+    if (!allowed) return;
+    auto end = std::min<std::size_t>(message.msg.size(), 900);
+    while (end < message.msg.size() && end > 0 &&
+           (static_cast<unsigned char>(message.msg[end]) & 0xc0) == 0x80) --end;
+    auto text = message.msg.substr(0, end);
+    for (auto &c : text) if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+    if (!state->entries.empty() && state->entries.back().source == source &&
+        state->entries.back().text == text) return;
+    state->entries.push_back({Clock::now(), source, std::move(text)});
+    while (state->entries.size() > 3) state->entries.pop_front();
+}
+std::string Nav2ActionSession::failureDetails() const {
+    std::lock_guard<std::mutex> lock(diagnostics_->mutex);
+    std::string details;
+    for (const auto &entry : diagnostics_->entries) {
+        if (Clock::now() - entry.received > std::chrono::seconds(5)) continue;
+        if (!details.empty()) details += " | ";
+        details += "[" + entry.source + "] " + entry.text;
+    }
+    return details.empty() ? "；Nav2 Humble 未提供错误文本，未捕获本次动作的近期错误日志，请检查 Nav2 日志" :
+        "；Nav2 关联错误日志（非动作结果字段）：" + details;
 }
 Nav2ActionSession::~Nav2ActionSession() { shutdown(); }
 void Nav2ActionSession::waitForServers() {
@@ -78,6 +130,7 @@ void Nav2ActionSession::retire() {
     // Do not drop a handle accepted in that window without targeting it for cancel.
     if (active_ && cancel_goal_) queueCancelLocked(generation_, cancel_goal_);
     if (active_ || pending_) unsafe_generation_ = generation_;
+    { std::lock_guard<std::mutex> diagnostic_lock(diagnostics_->mutex); diagnostics_->enabled = false; }
     ++generation_;
     active_ = pending_ = accepted_ = canceling_ = timeout_reported_ = false;
     cancel_goal_ = {};
@@ -89,6 +142,7 @@ void Nav2ActionSession::resetAfterServerShutdown() {
     std::lock_guard<std::mutex> lock(mutex_);
     ++generation_;
     unsafe_generation_ = 0;
+    { std::lock_guard<std::mutex> diagnostic_lock(diagnostics_->mutex); diagnostics_->enabled = false; diagnostics_->entries.clear(); }
     active_ = pending_ = accepted_ = canceling_ = timeout_reported_ = false;
     cancel_goal_ = {};
     events_.clear();

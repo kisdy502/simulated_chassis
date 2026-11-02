@@ -804,3 +804,22 @@ launch 里已配好，这里说明为什么（`agv_rosbridge.launch.py`）：
 ```
 
 `result=true` 表示传输层处理成功，业务仍以 `values.success` 与 action status 为准。该失败不会取消或覆盖 `old-task`。客户端不应把接收目标的 ACCEPTED 当作开始移动或任务成功。
+
+
+### Nav2 终止时的失败详情（2026-11-02）
+
+`/agv/follow_edge` 的 action result 继续使用现有 `message` 字段，上位机无需修改 IDL；
+失败时应展示完整 `values.message`，保留 `command_id`、`node_id` 用于对账。
+FREE、路径跟随、旋转被 Nav2 终止时，bridge 尽力附上本次底层动作期间相关节点
+最近 5 秒内的 ERROR/FATAL 日志（最多 3 条，每条最多约 900 字节）。例如：
+
+```text
+路径跟随被 Nav2 终止；Nav2 关联错误日志（非动作结果字段）：[controller_server] Exception in transformPose: Lookup would require extrapolation into the future ... | [controller_server] Unable to transform robot pose into global plan's frame
+```
+
+Humble 的 Nav2 动作结果不携带具体错误文本，因此关联日志是辅助证据，不能保证与目标一一对应。
+同一 ROS domain 内不要运行同名 Nav2 栈。日志来源为 `/rosout`；按本次动作起始 ROS 时间、
+相关 logger 和接收时间过滤，切换底层动作时清空。若日志关闭、丢失、延迟到结果发送之后，
+或错误只以 WARN 输出，则明确返回“未捕获本次动作的近期错误日志，请检查 Nav2 日志”，不编造原因。
+不会读取旧日志文件补充结果，也不会因此改变取消、停止确认或任务终态规则。
+`command_ack` 在机器人内部为日志记录，不是新增的上位机 topic；终态仍以 action result 为准。

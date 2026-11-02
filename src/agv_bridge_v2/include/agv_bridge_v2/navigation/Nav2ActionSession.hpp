@@ -1,5 +1,6 @@
 #pragma once
 #include <rclcpp/rclcpp.hpp>
+#include <rcl_interfaces/msg/log.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <nav2_msgs/action/follow_path.hpp>
@@ -55,6 +56,8 @@ public:
     Snapshot snapshot() const;
     bool isCurrent(std::uint64_t generation) const;
     std::vector<Event> poll();
+    // Correlated logs are best-effort evidence, not an action-provided error.
+    std::string failureDetails() const;
 
 private:
     friend struct NavigationManagerTestPeer;
@@ -67,6 +70,7 @@ private:
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (closed_ || active_ || unsafe_generation_ != 0) return false;
+            beginDiagnostics(kind);
             generation = ++generation_;
             kind_ = kind;
             active_ = pending_ = true;
@@ -144,6 +148,20 @@ private:
         }
         return true;
     }
+    struct DiagnosticEntry { Clock::time_point received; std::string source, text; };
+    struct Diagnostics {
+        std::mutex mutex;
+        bool enabled = false;
+        Kind kind = Kind::NAVIGATE;
+        std::int64_t started_ros_ns = 0;
+        std::deque<DiagnosticEntry> entries;
+    };
+    void beginDiagnostics(Kind kind);
+    static void recordDiagnostic(const std::shared_ptr<Diagnostics> &state,
+                                 const rcl_interfaces::msg::Log &message);
+    std::shared_ptr<Diagnostics> diagnostics_ = std::make_shared<Diagnostics>();
+    rclcpp::Clock::SharedPtr ros_clock_;
+    rclcpp::Subscription<rcl_interfaces::msg::Log>::SharedPtr rosout_;
     struct DeferredCancel { std::uint64_t generation; std::function<void()> send; };
     void queueCancelLocked(std::uint64_t generation, std::function<void()> command);
     void runCancels(std::vector<DeferredCancel> commands);

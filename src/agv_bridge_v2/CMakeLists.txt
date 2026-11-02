@@ -17,6 +17,7 @@ find_package(ament_index_cpp REQUIRED)
 find_package(Boost 1.71 REQUIRED COMPONENTS system)
 find_package(Threads REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -35,6 +36,7 @@ find_package(angles REQUIRED)
 find_package(agv_bridge_v2_interfaces REQUIRED)
 
 set(AGV_ROS_DEPS
+  rcl_interfaces
   rclcpp
   ament_index_cpp
   rclcpp_action

@@ -15,6 +15,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import TransformStamped
 from lifecycle_msgs.srv import GetState
+from rcl_interfaces.msg import Log
 from nav2_msgs.action import Spin, FollowPath, NavigateToPose
 from tf2_ros import TransformBroadcaster
 from agv_bridge_v2_interfaces.action import FollowEdge
@@ -50,6 +51,8 @@ def main():
         services.append(node.create_service(GetState, name + "/get_state", lifecycle, callback_group=group))
     shutting_down = threading.Event()
     complete_actions = threading.Event()
+    abort_cause = [None]
+    error_publisher = node.create_publisher(Log, "/rosout", 10)
     completed_paths = []
     spin_targets = []
     def spin_execute(handle):
@@ -73,7 +76,20 @@ def main():
         def execute(handle, action_type=action):
             if action_type is FollowPath:
                 completed_paths.append(handle.request.path)
-            handle.succeed()
+            cause = abort_cause[0]
+            abort_cause[0] = None
+            if cause is not None:
+                if cause:
+                    error = Log()
+                    error.name = "controller_server"
+                    error.level = 40  # Humble byte constant Log.ERROR is bytes in Python; field requires int.
+                    error.stamp = node.get_clock().now().to_msg()
+                    error.msg = cause
+                    error_publisher.publish(error)
+                    time.sleep(0.2)  # Allow the independent diagnostic subscription to receive it.
+                handle.abort()
+            else:
+                handle.succeed()
             return action_type.Result()
         servers.append(ActionServer(node, action, name,
             execute_callback=execute,
@@ -144,7 +160,8 @@ def main():
                     req.action = "start"
                     assert value(control.call_async(req)).success
                     complete_actions.set()
-                    def complete(command, mode, x, y, backup=False):
+                    def complete(command, mode, x, y, backup=False, failure=None):
+                        abort_cause[0] = failure
                         goal = FollowEdge.Goal()
                         goal.command_id = command
                         goal.node_id = "completed-target"
@@ -162,7 +179,15 @@ def main():
                         handle = value(client.send_goal_async(goal))
                         assert handle.accepted
                         result = value(handle.get_result_async())
-                        assert result.status == 4 and result.result.success, result
+                        if failure is None:
+                            assert result.status == 4 and result.result.success, result
+                        else:
+                            assert result.status == 6 and not result.result.success, result
+                            if failure:
+                                assert failure in result.result.message, result
+                            else:
+                                assert "未捕获本次动作" in result.result.message, result
+                                assert "synthetic TF" not in result.result.message, result
                         assert result.result.command_id == command
                         assert result.result.node_id == "completed-target"
                     complete("complete-free", "FREE", 1.0, 0.0)
@@ -174,6 +199,11 @@ def main():
                     before = len(spin_targets)
                     complete("complete-backup", "STRAIGHT", -1.0, 0.0, backup=True)
                     assert len(spin_targets) == before, "backup must not request spin"
+                    wait_until(lambda: error_publisher.get_subscription_count() > 0)
+                    complete("abort-path", "STRAIGHT", 1.0, 0.0, failure="synthetic TF: extrapolation into the future")
+                    complete("abort-free", "FREE", 1.0, 0.0, failure="synthetic TF: cannot transform robot pose")
+                    complete("abort-without-logs", "FREE", 1.0, 0.0, failure="")
+                    print("PASS: path/free failures carry correlated cause in action result; next action excludes previous errors")
                     print("PASS: busy request returns old ID/stage without replacing old task; stop returns explicit ABORTED")
                     print("PASS: FREE/straight/curve/backup complete through real Manager callbacks with fake Nav2")
                 except Exception:

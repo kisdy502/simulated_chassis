@@ -7,7 +7,23 @@
 #include "agv_bridge_v2/NavigationValidation.hpp"
 
 namespace agv_bridge {
+struct Nav2ActionSessionTestPeer {
+  static void begin(Nav2ActionSession &session, Nav2ActionSession::Kind kind) { session.beginDiagnostics(kind); }
+  static void log(Nav2ActionSession &session, const std::string &source, const std::string &text,
+                  bool old = false, int level = rcl_interfaces::msg::Log::ERROR) {
+    rcl_interfaces::msg::Log message;
+    message.name = source; message.msg = text; message.level = level;
+    message.stamp = rclcpp::Time(session.diagnostics_->started_ros_ns - (old ? 1 : 0));
+    Nav2ActionSession::recordDiagnostic(session.diagnostics_, message);
+  }
+  static void expire(Nav2ActionSession &session) {
+    std::lock_guard<std::mutex> lock(session.diagnostics_->mutex);
+    for (auto &entry : session.diagnostics_->entries) entry.received -= std::chrono::seconds(6);
+  }
+};
 struct NavigationManagerTestPeer {
+  static std::string details(NavigationManager &m) { return m.action_session_->failureDetails(); }
+
   static bool startWatchedSpin(NavigationManager &m, NavigationState state = NavigationState::PRE_ROTATING) {
     std::lock_guard<std::recursive_mutex> lock(m.mutex_);
     MoveToMessage task; task.commandId = "stuck-spin"; task.nodeId = "P31";
@@ -625,6 +641,53 @@ TEST_F(NavigationReadinessTest, AcceptanceDuringTimeoutCleanupStillGetsCanceled)
   navigationHandle()->canceled(std::make_shared<NavigationManager::NavigateToPose::Result>());
   ASSERT_TRUE(waitFor([this] { return !manager->requiresServerRestart(); }));
   EXPECT_EQ(callbacks.results.load(), 1);
+}
+
+TEST_F(NavigationReadinessTest, DiagnosticsExcludeOtherNodesOldLogsAndPreviousActions) {
+  auto session = std::make_shared<Nav2ActionSession>(node.get());
+  Nav2ActionSessionTestPeer::begin(*session, Nav2ActionSession::Kind::PATH);
+  Nav2ActionSessionTestPeer::log(*session, "controller_server", "old task", true);
+  Nav2ActionSessionTestPeer::log(*session, "behavior_server", "unrelated spin");
+  Nav2ActionSessionTestPeer::log(*session, "controller_server", "warning", false, rcl_interfaces::msg::Log::WARN);
+  EXPECT_EQ(session->failureDetails().find("关联错误日志"), std::string::npos);
+  Nav2ActionSessionTestPeer::log(*session, "robot.controller_server", "TF extrapolation into the future");
+  EXPECT_NE(session->failureDetails().find("TF extrapolation"), std::string::npos);
+  Nav2ActionSessionTestPeer::begin(*session, Nav2ActionSession::Kind::SPIN);
+  EXPECT_EQ(session->failureDetails().find("TF extrapolation"), std::string::npos);
+  Nav2ActionSessionTestPeer::log(*session, "behavior_server", "collision");
+  Nav2ActionSessionTestPeer::expire(*session);
+  EXPECT_EQ(session->failureDetails().find("collision"), std::string::npos);
+}
+
+TEST_F(NavigationReadinessTest, DiagnosticsAreBoundedAndClearedAfterServerReset) {
+  auto session = std::make_shared<Nav2ActionSession>(node.get());
+  Nav2ActionSessionTestPeer::begin(*session, Nav2ActionSession::Kind::NAVIGATE);
+  for (int i = 0; i < 10; ++i)
+    Nav2ActionSessionTestPeer::log(*session, "planner_server", std::to_string(i) + std::string(2000, 'x'));
+  auto details = session->failureDetails();
+  EXPECT_LT(details.size(), 3000u);
+  EXPECT_EQ(details.find("] 0"), std::string::npos);
+  EXPECT_NE(details.find("] 9"), std::string::npos);
+  session->resetAfterServerShutdown();
+  EXPECT_EQ(session->failureDetails().find("关联错误日志"), std::string::npos);
+}
+
+TEST_F(NavigationReadinessTest, AbortedSpinForwardsRosoutCauseThroughBusinessResult) {
+  smoother_active = true; accept_spin = true;
+  auto publisher = node->create_publisher<rcl_interfaces::msg::Log>("/rosout", rclcpp::QoS(100));
+  ASSERT_TRUE(waitFor([&] { return publisher->get_subscription_count() > 0 && manager->isReady(); }));
+  ASSERT_TRUE(NavigationManagerTestPeer::startWatchedSpin(*manager));
+  ASSERT_TRUE(waitFor([&] { return spinHandle() && NavigationManagerTestPeer::watchedSpinAccepted(*manager); }));
+  rcl_interfaces::msg::Log message;
+  message.name = "behavior_server"; message.level = rcl_interfaces::msg::Log::ERROR;
+  message.stamp = node->now(); message.msg = "TF lookup failed: extrapolation into the future";
+  publisher->publish(message);
+  ASSERT_TRUE(waitFor([&] { return NavigationManagerTestPeer::details(*manager).find("TF lookup failed") != std::string::npos; }));
+  spinHandle()->abort(std::make_shared<Spin::Result>());
+  ASSERT_TRUE(waitFor([&] { return callbacks.results.load() == 1; }));
+  EXPECT_FALSE(callbacks.success);
+  EXPECT_NE(callbacks.message.find("TF lookup failed"), std::string::npos);
+  EXPECT_NE(callbacks.message.find("behavior_server"), std::string::npos);
 }
 
 } // namespace agv_bridge

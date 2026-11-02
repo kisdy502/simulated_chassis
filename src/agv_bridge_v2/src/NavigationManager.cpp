@@ -143,6 +143,10 @@ namespace agv_bridge
     void NavigationManager::resultCallback(const GoalHandleNavigateToPose::WrappedResult &result)
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (result.code == rclcpp_action::ResultCode::ABORTED) {
+            failTask("ABORTED", "自由导航被 Nav2 终止" + action_session_->failureDetails());
+            return;
+        }
         free_executor_->onResult(result.code);
     }
 
@@ -214,7 +218,7 @@ namespace agv_bridge
         case rclcpp_action::ResultCode::ABORTED:
         {
             std::string reason = (current_state_ == NavigationState::PRE_ROTATING ? "预旋转" : "到点后旋转") + std::string(",旋转被终止");
-            failTask("FAILED", reason.c_str());
+            failTask("FAILED", reason + action_session_->failureDetails());
             break;
         }
         case rclcpp_action::ResultCode::CANCELED:
@@ -466,6 +470,10 @@ namespace agv_bridge
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (!current_task_) return;
         const auto task = *current_task_;
+        if (result.code == rclcpp_action::ResultCode::ABORTED) {
+            failTask("FAILED", "路径跟随被 Nav2 终止" + action_session_->failureDetails());
+            return;
+        }
         path_executor_->onResult(result.code, task);
     }
 
