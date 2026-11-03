@@ -18,7 +18,7 @@ if [[ "${ROBOT_PROFILE:-chassis_3d_ur5e}" == chassis_3d_ur5e ]]; then
     args=(ros2 launch simulated_chassis_ur5e simulation.launch.py
           tool_type:="${TOOL_TYPE:-gripper}"
           battery_simulation:="${BATTERY_SIMULATION:-true}"
-          start_gamepad:=false gui:="${GAZEBO_GUI:-false}")
+          start_gamepad:=false start_teleop:=false gui:="${GAZEBO_GUI:-false}")
 elif [[ "${ROBOT_PROFILE}" == chassis_3d ]]; then
     args=(ros2 launch simulated_chassis three_wheel_sim.launch.py
       battery_simulation:="${BATTERY_SIMULATION:-true}"

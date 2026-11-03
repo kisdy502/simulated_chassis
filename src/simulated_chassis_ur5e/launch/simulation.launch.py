@@ -59,7 +59,8 @@ def setup(context):
             'extra_resource_path': os.path.dirname(share('ur_description')),
             'gui': LaunchConfiguration('gui'), 'use_sim_time': 'true',
             'battery_simulation': LaunchConfiguration('battery_simulation'),
-            'start_gamepad': LaunchConfiguration('start_gamepad'), 'start_teleop': 'true',
+            'start_gamepad': LaunchConfiguration('start_gamepad'),
+            'start_teleop': LaunchConfiguration('start_teleop'),
             'include_cmd_vel_relay': 'true',
         }.items())]
 
@@ -72,7 +73,10 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_file', default_value=path('config', 'wrist_camera.yaml')),
         DeclareLaunchArgument('photos_dir', default_value='~/.ros/wrist_camera/photos'),
         DeclareLaunchArgument('gui', default_value='false'),
-        DeclareLaunchArgument('start_gamepad', default_value='true'),
+        # 遥控默认全关：日常遥控已由上位机遥控器经 /cmd_vel 下发，
+        # 仿真端只负责提供机器人本体。本地手柄/键盘遥控按需显式开启。
+        DeclareLaunchArgument('start_gamepad', default_value='false'),
+        DeclareLaunchArgument('start_teleop', default_value='false'),
         DeclareLaunchArgument('mounting_file', default_value=path('config', 'mounting.yaml')),
         OpaqueFunction(function=setup),
     ])
