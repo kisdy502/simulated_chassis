@@ -16,6 +16,7 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(Boost 1.71 REQUIRED COMPONENTS system)
 find_package(Threads REQUIRED)
+find_package(LibArchive REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 find_package(rclcpp_action REQUIRED)
@@ -92,7 +93,11 @@ add_executable(urdf_mesh_server src/urdf_mesh_server.cpp)
 ament_target_dependencies(urdf_mesh_server ament_index_cpp)
 target_link_libraries(urdf_mesh_server Boost::system Threads::Threads)
 
-install(TARGETS agv_nav_server urdf_mesh_server
+add_executable(native_map_server src/native_map_server.cpp)
+target_include_directories(native_map_server PRIVATE ${LibArchive_INCLUDE_DIRS})
+target_link_libraries(native_map_server Boost::system Threads::Threads ${LibArchive_LIBRARIES})
+
+install(TARGETS agv_nav_server urdf_mesh_server native_map_server
   DESTINATION lib/${PROJECT_NAME}
 )
 

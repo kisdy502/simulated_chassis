@@ -103,6 +103,8 @@ source install/setup.bash
 
 ## agv_bridge_v2：导航 bridge
 rm -rf -- build/agv_bridge_v2 install/agv_bridge_v2
+# 在 Ubuntu / ROS 2 Humble 本机构建时，先安装 ZIP 依赖（Docker 已包含）
+sudo apt-get install libarchive-dev
 colcon build --packages-select agv_bridge_v2
 
 ## agv_bridge_v2_interfaces：导航接口

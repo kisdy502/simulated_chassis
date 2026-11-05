@@ -126,6 +126,17 @@ def _map_3d_server(context):
     )]
 
 
+def _native_map_server(context):
+    if (not os.environ.get("NATIVE_MAP_TOKEN") or
+            LaunchConfiguration("slam_algorithm").perform(context) != "lightning"):
+        return []
+    executable = os.path.join(get_package_prefix("agv_bridge_v2"), "lib", "agv_bridge_v2", "native_map_server")
+    return [ExecuteProcess(
+        cmd=[executable, "--maps-dir", _resolve_maps_dir(context)],
+        output="screen",
+    )]
+
+
 def _agv_nav_server_node(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     agv_id = LaunchConfiguration("agv_id")
@@ -159,6 +170,8 @@ def _agv_nav_server_node(context):
                 "agv_id": agv_id,
                 "use_sim_time": use_sim_time,
                 "feedback_interval_ms": 400,
+                "allow_cold_map_load": bool(os.environ.get("NATIVE_MAP_TOKEN")) and manage_navigation
+                    and slam_algorithm.perform(context) == "lightning",
                 "localization_operation_timeout_sec": ParameterValue(LaunchConfiguration("localization_operation_timeout_sec"), value_type=float),
                 "spin_timeout_sec": ParameterValue(LaunchConfiguration("spin_timeout_sec"), value_type=float),
                 "spin_progress_timeout_sec": ParameterValue(LaunchConfiguration("spin_progress_timeout_sec"), value_type=float),
@@ -442,4 +455,5 @@ def generate_launch_description():
         rosbridge,
         rosapi,
         OpaqueFunction(function=_map_3d_server),
+        OpaqueFunction(function=_native_map_server),
     ])

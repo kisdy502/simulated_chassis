@@ -204,6 +204,7 @@ namespace agv_bridge
         // ===== 地图管理 =====
         this->declare_parameter<std::string>("maps_dir", "maps");
         this->declare_parameter<std::string>("pbstream_file", "");
+        this->declare_parameter<bool>("allow_cold_map_load", false);
         this->declare_parameter<std::string>("robot_package", "jzt_robot");
         this->declare_parameter<bool>("manage_navigation", false);
         this->declare_parameter<bool>("navigation_use_rviz", false);
@@ -778,7 +779,8 @@ namespace agv_bridge
             // 定位子进程必须由本节点托管，否则无法停掉外部启动的 cartographer
             std::lock_guard<std::mutex> lock(proc_mutex_);
             LocalizationOperationTracker::Status previous_operation;
-            if (localization_pid_ <= 0 && !localization_operations_->lookup("", previous_operation))
+            if (localization_pid_ <= 0 && !localization_operations_->lookup("", previous_operation) &&
+                !this->get_parameter("allow_cold_map_load").as_bool())
             {
                 response->success = false;
                 response->message =
