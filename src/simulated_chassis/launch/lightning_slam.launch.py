@@ -15,8 +15,7 @@ Lightning-LM 3D 建图启动文件（三舵轮 + 双 3D 雷达仿真）
      落盘于 <save_dir>/<map_id>/：分块 pcd + global.pcd + map.pgm + map.yaml
 
 注意：
-  - 建图过程发布 /map 和回环校正后的 /tracked_pose；后者由
-    tracked_pose_tf_node 转为 map→odom。Pangolin UI 可选（需显示器）。
+  - Lightning 发布 /map、/tracked_pose 和 map→odom TF。Pangolin UI 可选（需显示器）。
   - 存图目录默认 $PWD/maps，与 cartographer 地图同目录方便对比。
 """
 
@@ -69,6 +68,7 @@ def generate_launch_description():
             cfg = pyyaml.safe_load(f)
         cfg.setdefault("system", {})["save_dir"] = os.path.abspath(save_dir)
         cfg["system"]["with_ui"] = with_ui
+        cfg["system"].setdefault("odom_frame", "odom")
 
         cfg_file = os.path.join(tempfile.gettempdir(), f"lightning_cfg_slam_{os.getpid()}.yaml")
         with open(cfg_file, "w", encoding="utf-8") as f:
@@ -91,9 +91,6 @@ def generate_launch_description():
                  ],
             ),
             # 2. lightning 在线建图（gflags 与 rclcpp 参数共存需 "--" 分隔）
-            #    [补丁] SLAM 亦发布 /tracked_pose（LIO 逐帧位姿），由同款
-            #    tracked_pose_tf_node 重锚定为 map→odom TF —— 建图期间
-            #    RViz/上位机即可看实时位姿与 /map 栅格（与 Cartographer 体验对齐）
             TimerAction(
                 period=1.5,
                 actions=[
@@ -108,19 +105,6 @@ def generate_launch_description():
                             "--ros-args",
                             "-p", "use_sim_time:=" + use_sim_time,
                         ],
-                    ),
-                    Node(
-                        package="simulated_chassis",
-                        executable="tracked_pose_tf_node",
-                        name="tracked_pose_tf_node",
-                        output="screen",
-                        parameters=[{
-                            "use_sim_time": use_sim_time_bool,
-                            "map_frame": "map",
-                            "odom_frame": "odom",
-                            "tracking_frame": "base_link",
-                            "tracked_pose_topic": "/tracked_pose",
-                        }],
                     ),
                 ],
             ),

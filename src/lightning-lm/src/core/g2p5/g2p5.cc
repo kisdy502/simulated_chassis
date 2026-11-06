@@ -43,25 +43,24 @@ void G2P5::PushKeyframe(Keyframe::Ptr kf) {
 }
 
 void G2P5::RenderFront(Keyframe::Ptr kf) {
-    {
-        UL lock(frontend_mutex_);
-        frontend_current_ = kf;
+    UL lock{newest_map_mutex_};
+    // A completed redraw may already include frames queued for the frontend.
+    if (frontend_rendered_ && kf->GetID() <= frontend_rendered_->GetID()) {
+        return;
     }
 
-    {
-        UL lock{newest_map_mutex_};
-
-        lightning::Timer::Evaluate([&]() { AddKfToMap({kf}, frontend_map_); }, "G2P5 Occupancy Mapping", true);
-        newest_map_ = frontend_map_;
-        // ToROS()/ToCV() traverse mutable grid storage. Keep conversion and the
-        // publication throttle serialized with both front rendering and swap.
-        if (map_update_cb_) {
-            map_update_cb_(newest_map_);
-        }
+    lightning::Timer::Evaluate([&]() { AddKfToMap({kf}, frontend_map_); }, "G2P5 Occupancy Mapping", true);
+    frontend_rendered_ = kf;
+    newest_map_ = frontend_map_;
+    if (map_update_cb_) {
+        map_update_cb_(newest_map_);
     }
 }
 
-void G2P5::RedrawGlobalMap() { backend_redraw_flag_ = true; }
+void G2P5::RedrawGlobalMap() {
+    UL lock{newest_map_mutex_};
+    backend_redraw_flag_ = true;
+}
 
 void G2P5::RenderBack() {
     while (!quit_flag_) {
@@ -74,82 +73,64 @@ void G2P5::RenderBack() {
         }
 
         is_busy_ = true;
-
-        /// 后端重绘被触发
         backend_redraw_flag_ = false;
 
-        /// 重新绘制整张地图，如果中间过程又被重绘了，则退出
-        std::vector<Keyframe::Ptr> all_keyframes;
+        std::vector<Keyframe::Ptr> keyframes;
         {
             UL lock(kf_mutex_);
-            all_keyframes = all_keyframes_;
+            keyframes = all_keyframes_;
         }
 
-        if (all_keyframes.empty()) {
+        if (keyframes.empty()) {
             is_busy_ = false;
             continue;
         }
 
         G2P5Map::Options opt;
         opt.resolution_ = options_.grid_map_resolution_;
-        backend_map_ = std::make_shared<G2P5Map>(opt);
-        auto cur_kf = all_keyframes.begin();
-        bool abort = false;
-
-        for (; cur_kf != all_keyframes.end(); ++cur_kf) {
-            AddKfToMap({*cur_kf}, backend_map_);
-            if (backend_redraw_flag_) {
-                LOG(INFO) << "backend redraw triggered in process, abort";
-                abort = true;
+        auto rebuilt_map = std::make_shared<G2P5Map>(opt);
+        auto rendered = keyframes.front();
+        for (const auto& kf : keyframes) {
+            if (quit_flag_ || backend_redraw_flag_) {
                 break;
             }
-
-            if (quit_flag_) {
-                abort = true;
-                break;
-            }
+            AddKfToMap({kf}, rebuilt_map);
+            rendered = kf;
         }
 
-        if (abort) {
-            /// 继续重绘
-            is_busy_ = false;
-            continue;
-        }
-
-        /// 绘制过程中前端可能发生了更新，要保证后端绘制和前端的一致性
-        int cur_idx = all_keyframes.back()->GetID();
-        while (true) {
-            Keyframe::Ptr frontend_kf = nullptr;
+        while (!quit_flag_ && !backend_redraw_flag_) {
+            Keyframe::Ptr catch_up_to;
             {
-                UL lock(frontend_mutex_);
-                frontend_kf = frontend_current_;
-            }
-
-            if (cur_idx == frontend_kf->GetID()) {
-                break;
-            }
-
-            int frontend_idx = frontend_kf->GetID();
-            std::vector<Keyframe::Ptr> kfs;
-
-            {
-                UL lock(kf_mutex_);
-                for (int i = cur_idx + 1; i <= frontend_idx; ++i) {
-                    kfs.emplace_back(all_keyframes_[i]);
+                UL lock{newest_map_mutex_};
+                if (backend_redraw_flag_) {
+                    break;
+                }
+                catch_up_to = frontend_rendered_;
+                // Checking the rendered frontier and replacing the map must
+                // happen under the same lock as frontend drawing.
+                if (!catch_up_to || rendered->GetID() >= catch_up_to->GetID()) {
+                    frontend_map_ = rebuilt_map;
+                    newest_map_ = frontend_map_;
+                    frontend_rendered_ = rendered;
+                    if (map_update_cb_) {
+                        map_update_cb_(newest_map_);
+                    }
+                    break;
                 }
             }
 
-            AddKfToMap(kfs, backend_map_);
-            cur_idx = frontend_idx;
-        }
-
-        {
-            /// 同步前后端地图，替换newest map
-            UL lock{newest_map_mutex_};
-            frontend_map_ = backend_map_;
-            newest_map_ = frontend_map_;
-            if (map_update_cb_) {
-                map_update_cb_(newest_map_);
+            std::vector<Keyframe::Ptr> missing;
+            {
+                UL lock(kf_mutex_);
+                missing.assign(all_keyframes_.begin() + rendered->GetID() + 1,
+                               all_keyframes_.begin() + catch_up_to->GetID() + 1);
+            }
+            for (const auto& kf : missing) {
+                if (quit_flag_ || backend_redraw_flag_) {
+                    break;
+                }
+                AddKfToMap({kf}, rebuilt_map);
+                rendered = kf;
             }
         }
 
@@ -234,11 +215,6 @@ bool G2P5::ResizeMap(const std::vector<Keyframe::Ptr> &kfs, G2P5MapPtr &map) {
         max_x = (max_x < init_max_x) ? init_max_x : max_x;
         max_y = (max_y < init_max_y) ? init_max_y : max_y;
 
-        float r = map->GetGridResolution();
-        min_x = static_cast<int>((floor)(min_x / r)) * r;
-        min_y = static_cast<int>((floor)(min_y / r)) * r;
-        max_x = static_cast<int>((ceil)(max_x / r)) * r;
-        max_y = static_cast<int>((ceil)(max_y / r)) * r;
         map->Resize(min_x, min_y, max_x, max_y);
 
         // LOG(INFO) << "map resized to " << min_x << ", " << min_y << ", " << max_x << ", " << max_y;
@@ -417,18 +393,13 @@ void G2P5::SetWhitePoints(const std::vector<Vec2d> &pt2d, Keyframe::Ptr kf, G2P5
         float r = pt2d[i][0];
         float h = pt2d[i][1];
 
-        Vec3d p_local(r * cos(angle), r * sin(angle), h);
-        Vec3d p_world = pose * p_local;
-
-        /// 某方向无测量值时，认为无效
+        // 无有效距离的方向不能提供空闲空间观测。
         if (r <= 0 || r > options_.usable_scan_range_) {
-            /// 比较近时，涂白
-            if (r < 0.1) {
-                map->SetMissPoint(p_world[0], p_world[1], orig[0], orig[1], h, options_.lidar_height_);
-            }
             continue;
         }
 
+        Vec3d p_local(r * cos(angle), r * sin(angle), h);
+        Vec3d p_world = pose * p_local;
         map->SetMissPoint(p_world[0], p_world[1], orig[0], orig[1], h, options_.lidar_height_);
     }
 }

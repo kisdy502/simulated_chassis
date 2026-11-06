@@ -333,7 +333,7 @@ def generate_launch_description():
             "services_glob",
             default_value=(
                 "['/rosapi/*', '/agv/set_control', '/agv/set_charging', '/agv/get_map', '/agv/load_map', "
-                "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize', '/agv/get_localization_operation', "
+                "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/cancel_mapping', '/agv/relocalize', '/agv/get_localization_operation', "
                 "'/agv/arm_move']"
             ),
             description="允许上位机调用的 service 白名单",

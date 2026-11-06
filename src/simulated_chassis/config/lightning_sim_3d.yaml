@@ -74,7 +74,8 @@ system:
   lidar_loc_skip_num: 4
   lidar_odom_skip_num: 2
   map_path: /tmp/lightning_map         # 定位模式：地图目录（launch 注入绝对路径）
-  pub_tf: false               # [补丁] 关闭直发 map->base_link；用 /tracked_pose + tracked_pose_tf_node
+  pub_tf: false               # 禁用定位模式的 map→base_link 广播
+  odom_frame: odom            # Lightning 根据同时间戳底盘 TF 发布 map→odom
   save_dir: /tmp/lightning_data       # [补丁] 建图模式：落盘根目录（launch 注入绝对路径）
 
 loop_closing:

@@ -409,6 +409,11 @@ namespace agv_bridge
             std::bind(&AgvNavServerNode::handle_save_map, this,
                       std::placeholders::_1, std::placeholders::_2));
 
+        cancel_mapping_srv_ = this->create_service<CancelMapping>(
+            "/agv/cancel_mapping",
+            std::bind(&AgvNavServerNode::handle_cancel_mapping, this,
+                      std::placeholders::_1, std::placeholders::_2));
+
         // ---- service: /agv/relocalize（指定地图坐标重启 Cartographer 定位）----
         relocalize_srv_ = this->create_service<Relocalize>(
             "/agv/relocalize",
@@ -770,7 +775,7 @@ namespace agv_bridge
             if (mode_ == MODE_MAPPING)
             {
                 response->success = false;
-                response->message = "正在建图 (MAPPING)，请先 /agv/save_map 保存后再切换地图";
+                response->message = "正在建图 (MAPPING)，请先调用 /agv/save_map 保存或 /agv/cancel_mapping 放弃建图";
                 return;
             }
         }
@@ -976,7 +981,7 @@ namespace agv_bridge
             if (mode_ == MODE_MAPPING)
             {
                 response->success = false;
-                response->message = "已在建图中 (MAPPING)，遥控探索完成后请调用 /agv/save_map";
+                response->message = "已在建图中 (MAPPING)，可调用 /agv/save_map 保存或 /agv/cancel_mapping 放弃";
                 return;
             }
         }
@@ -1009,6 +1014,7 @@ namespace agv_bridge
 
         {
             std::lock_guard<std::mutex> lock(mode_mutex_);
+            pre_mapping_map_name_ = map_name_;
             mode_ = MODE_MAPPING;
             map_name_.clear();
         }
@@ -1051,9 +1057,97 @@ namespace agv_bridge
 
         response->success = true;
         response->message = "建图已启动（mode=MAPPING）：导航任务被拒绝，/cmd_vel 遥控可用；"
-                            "完成后调用 /agv/save_map 保存并回到定位";
+                            "完成后可调用 /agv/save_map 保存，或 /agv/cancel_mapping 恢复建图前的地图";
 
         RCLCPP_INFO(this->get_logger(), "start_mapping -> 已发起建图");
+    }
+
+    void AgvNavServerNode::handle_cancel_mapping(
+        std::shared_ptr<CancelMapping::Request> /*request*/,
+        std::shared_ptr<CancelMapping::Response> response)
+    {
+        if (transition_in_progress_.exchange(true))
+        {
+            response->message = "上一次模式切换仍在进行中";
+            return;
+        }
+
+        std::string name;
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            if (mode_ != MODE_MAPPING)
+            {
+                transition_in_progress_.store(false);
+                response->message = "当前 mode=" + mode_ + "，仅 MAPPING 模式可放弃建图";
+                return;
+            }
+            name = pre_mapping_map_name_;
+        }
+        if (name.empty() || !map_file_manager_ || !hasMapArtifact(name))
+        {
+            transition_in_progress_.store(false);
+            response->message = name.empty() ? "建图前没有定位地图可恢复" :
+                "建图前的地图 " + name + " 已缺失或不完整";
+            return;
+        }
+
+        if (transition_thread_.joinable())
+        {
+            transition_thread_.join();
+        }
+        const auto operation_id = localization_operations_->begin("CANCEL_MAPPING", name);
+        response->operation_id = operation_id;
+        response->map_name = name;
+
+        try
+        {
+            transition_thread_ = std::thread([this, name, operation_id]()
+            {
+                try
+                {
+                    localization_operations_->stage(operation_id, "STOPPING_MAPPING", "正在停止建图");
+                    if (!stop_child_process(slam_pid_, "建图"))
+                        throw std::runtime_error("建图进程组尚未确认停止");
+
+                    {
+                        std::lock_guard<std::mutex> lock(mode_mutex_);
+                        mode_ = MODE_RELOCALIZING;
+                        map_name_ = name;
+                    }
+
+                    geometry_msgs::msg::Pose remembered_pose;
+                    const bool has_pose = load_remembered_pose(name, remembered_pose);
+                    std::string error;
+                    localization_operations_->stage(operation_id, "STARTING_LOCALIZATION", "正在恢复建图前的地图定位");
+                    if (!start_managed_localization(mapArtifactPath(name), name,
+                            has_pose ? &remembered_pose : nullptr, error))
+                        throw std::runtime_error(error);
+
+                    localization_operations_->stage(operation_id, "WAITING_LOCALIZATION",
+                                                     "旧图定位已启动，等待定位收敛");
+                }
+                catch (const std::exception &e)
+                {
+                    localization_operations_->fail(operation_id, std::string("放弃建图失败：") + e.what());
+                    RCLCPP_ERROR(get_logger(), "cancel_mapping(%s) 失败: %s", name.c_str(), e.what());
+                }
+                catch (...)
+                {
+                    localization_operations_->fail(operation_id, "放弃建图失败：后台发生未知异常");
+                }
+                transition_in_progress_.store(false);
+            });
+        }
+        catch (const std::exception &e)
+        {
+            localization_operations_->fail(operation_id, std::string("无法创建放弃建图工作线程：") + e.what());
+            transition_in_progress_.store(false);
+            response->message = "放弃建图工作线程启动失败";
+            return;
+        }
+
+        response->success = true;
+        response->message = "放弃建图已受理，请按 operation_id 查询旧图定位结果";
     }
 
     void AgvNavServerNode::handle_save_map(
@@ -1506,15 +1600,14 @@ namespace agv_bridge
         // 建图 launch 秒退（Lua 配置键层级写错、传感器话题缺失等）时若不回收，
         // mode 会永远卡在 MAPPING：上位机闸门只认 mode 流转，卡死意味着
         // 既无法重试 start_mapping 也无法导航。死了就地回退 NAVIGATION，
-        // 死因看 /tmp/agv_slam.log。保存/放弃建图走 stop_child_process，
-        // 它先把 pid 槽位置 -1 再发信号，正常停流不会与本监督双收割。
+        // 死因看 /tmp/agv_slam.log。模式切换期间由后台线程负责回收进程。
         {
             pid_t slam_pid = -1;
             {
                 std::lock_guard<std::mutex> lock(proc_mutex_);
                 slam_pid = slam_pid_;
             }
-            if (slam_pid > 0)
+            if (slam_pid > 0 && !transition_in_progress_.load())
             {
                 const pid_t r = ::waitpid(slam_pid, nullptr, WNOHANG);
                 if (r == slam_pid)

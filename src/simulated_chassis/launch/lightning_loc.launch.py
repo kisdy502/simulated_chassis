@@ -10,10 +10,8 @@ Lightning-LM 3D 纯定位启动文件（三舵轮 + 双 3D 雷达仿真）
 链路：
   1. dual_lidar_merge_node：/points2_1 + /points2_2 → /points2_merged
   2. lightning run_loc_online：加载分块地图定位
-     - [补丁] pub_tf=false：不发 map→base_link TF，只发 /tracked_pose（100Hz）
-  3. tracked_pose_tf_node：复用 Cartographer 同款重锚定，发 map→odom TF
-     （TF 树约定与 Cartographer 链路完全一致，Nav2 无感切换）
-  4. nav2_map_server：发布建图时 g2p5 生成的 map.pgm → /map（Nav2 静态层）
+     - Lightning 发布 /tracked_pose 和 map→odom TF
+  3. nav2_map_server：发布建图时 g2p5 生成的 map.pgm → /map（Nav2 静态层）
 
 初始位姿：
   - 机器人须放置在建图起点附近（lightning 无全局重定位）
@@ -94,7 +92,8 @@ def generate_launch_description():
         with open(base_cfg, "r", encoding="utf-8") as f:
             cfg = pyyaml.safe_load(f)
         cfg.setdefault("system", {})["map_path"] = map_dir
-        cfg["system"]["pub_tf"] = False  # TF 由 tracked_pose_tf_node 重锚定发布
+        cfg["system"]["pub_tf"] = False
+        cfg["system"].setdefault("odom_frame", "odom")
         cfg["system"]["with_ui"] = False
         cfg.setdefault("loc", {})["init_pose"] = init_pose
 
@@ -135,24 +134,11 @@ def generate_launch_description():
                             "-p", "use_sim_time:=" + use_sim_time,
                         ],
                     ),
-                    Node(
-                        package="simulated_chassis",
-                        executable="tracked_pose_tf_node",
-                        name="tracked_pose_tf_node",
-                        output="screen",
-                        parameters=[{
-                            "use_sim_time": use_sim_time_bool,
-                            "map_frame": "map",
-                            "odom_frame": "odom",
-                            "tracking_frame": "base_link",
-                            "tracked_pose_topic": "/tracked_pose",
-                        }],
-                    ),
                 ],
             ),
         ]
 
-        # 4. map_server：发布 g2p5 栅格地图（Nav2 静态层消费 /map）
+        # 3. map_server：发布 g2p5 栅格地图（Nav2 静态层消费 /map）
         map_yaml = os.path.join(map_dir, "map.yaml")
         if with_map_server and os.path.isfile(map_yaml):
             nodes.append(

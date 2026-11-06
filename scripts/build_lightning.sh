@@ -3,7 +3,8 @@
 # 显式 --packages-select 也发现不了它，须临时摘掉忽略标记再构建）。
 #
 # 用法：
-#   ./scripts/build_lightning.sh          # 默认 -j2（8GB 内存机器 -j8 会 OOM）
+#   ./scripts/build_lightning.sh          # 默认 -j4
+#   MAKE_JOBS=2 ./scripts/build_lightning.sh  # 内存紧张时降低并行度
 #   MAKE_JOBS=8 ./scripts/build_lightning.sh
 #
 # 首次使用：bash scripts/install_lightning_deps.sh（arm64 / x86_64 均本机编译依赖）。
@@ -19,7 +20,8 @@ if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --check-deps ) ]]; then
     echo "Usage: $0 [--check-deps]" >&2
     exit 2
 fi
-if [[ ! "${MAKE_JOBS:-2}" =~ ^[1-9][0-9]*$ ]]; then
+make_jobs="${MAKE_JOBS:-4}"
+if [[ ! "$make_jobs" =~ ^[1-9][0-9]*$ ]]; then
     echo "MAKE_JOBS must be a positive integer" >&2
     exit 2
 fi
@@ -45,7 +47,7 @@ prune_prefix_path() {
 }
 prune_prefix_path AMENT_PREFIX_PATH
 prune_prefix_path CMAKE_PREFIX_PATH
-export MAKEFLAGS="-j${MAKE_JOBS:-2}"
+export MAKEFLAGS="-j$make_jobs"
 
 PROBE=$(mktemp -d)
 restore_ignore() {

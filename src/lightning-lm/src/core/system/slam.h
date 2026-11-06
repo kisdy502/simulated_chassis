@@ -21,6 +21,8 @@
 
 namespace lightning {
 
+class MapOdomTf;
+
 class LaserMapping;  //  lio 前端
 class LoopClosing;   // 回环检测
 
@@ -102,6 +104,7 @@ class SlamSystem {
 
     /// 实时模式下的ros2 node, subscribers
     rclcpp::Node::SharedPtr node_;
+    std::shared_ptr<MapOdomTf> map_odom_tf_;
     std::string imu_topic_;
     std::string cloud_topic_;
     std::string livox_topic_;
@@ -112,7 +115,6 @@ class SlamSystem {
 
     // sim-chassis 补丁：SLAM 模式实时可视化（与 Cartographer 建图体验对齐）。
     // /tracked_pose：经最新关键帧回环校正的逐帧位姿（map→base_link，云帧率 ~15Hz），
-    // 配合 tracked_pose_tf_node 重锚定发布 map→odom TF；
     // /map：g2p5 栅格（TRANSIENT_LOCAL，RViz/上位机实时看图）。
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr tracked_pose_pub_ = nullptr;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_ = nullptr;

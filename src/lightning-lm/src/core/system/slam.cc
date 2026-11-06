@@ -3,6 +3,7 @@
 //
 
 #include "core/system/slam.h"
+#include "core/system/map_odom_tf.h"
 #include "core/system/tracked_pose.h"
 #include "core/g2p5/g2p5.h"
 #include "core/lio/laser_mapping.h"
@@ -100,6 +101,10 @@ bool SlamSystem::Init(const std::string& yaml_path) {
 
         /// subscribers
         node_ = std::make_shared<rclcpp::Node>("lightning_slam");
+        const auto odom_frame = yaml["system"]["odom_frame"].as<std::string>("");
+        if (!odom_frame.empty()) {
+            map_odom_tf_ = std::make_shared<MapOdomTf>(*node_, odom_frame);
+        }
 
         imu_topic_ = yaml["common"]["imu_topic"].as<std::string>();
         cloud_topic_ = yaml["common"]["lidar_topic"].as<std::string>();
@@ -263,7 +268,12 @@ void SlamSystem::PublishTrackedPose() {
     // TF reanchoring must query odometry at the measurement time, not at the
     // end of processing (which double-counts motion during SLAM latency).
     const auto pose = MakeTrackedPose(lio_->GetState(), lio_->GetKeyframe());
-    if (pose) tracked_pose_pub_->publish(*pose);
+    if (pose) {
+        tracked_pose_pub_->publish(*pose);
+        if (map_odom_tf_) {
+            map_odom_tf_->Update(*pose);
+        }
+    }
 }
 
 void SlamSystem::ProcessIMU(const lightning::IMUPtr& imu) {

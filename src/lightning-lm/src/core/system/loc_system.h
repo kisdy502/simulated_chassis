@@ -19,6 +19,8 @@
 
 namespace lightning {
 
+class MapOdomTf;
+
 namespace loc {
 class Localization;
 }
@@ -58,6 +60,7 @@ class LocSystem {
 
     /// 实时模式下的ros2 node, subscribers
     rclcpp::Node::SharedPtr node_;
+    std::shared_ptr<MapOdomTf> map_odom_tf_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_ = nullptr;
     // sim-chassis 补丁：固定发布 /tracked_pose（map→base_link, PoseStamped），
     // TF 广播改由 pub_tf 开关控制

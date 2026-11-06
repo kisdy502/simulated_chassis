@@ -16,6 +16,7 @@
 #include "agv_bridge_v2_interfaces/srv/list_maps.hpp"
 #include "agv_bridge_v2_interfaces/srv/start_mapping.hpp"
 #include "agv_bridge_v2_interfaces/srv/save_map.hpp"
+#include "agv_bridge_v2_interfaces/srv/cancel_mapping.hpp"
 #include "agv_bridge_v2_interfaces/srv/relocalize.hpp"
 
 #include "cartographer_ros_msgs/srv/write_state.hpp"
@@ -76,6 +77,7 @@ namespace agv_bridge
         using ListMaps = agv_bridge_v2_interfaces::srv::ListMaps;
         using StartMapping = agv_bridge_v2_interfaces::srv::StartMapping;
         using SaveMap = agv_bridge_v2_interfaces::srv::SaveMap;
+        using CancelMapping = agv_bridge_v2_interfaces::srv::CancelMapping;
         using Relocalize = agv_bridge_v2_interfaces::srv::Relocalize;
         using AgvStatus = agv_bridge_v2_interfaces::msg::AgvStatus;
 
@@ -151,6 +153,10 @@ namespace agv_bridge
         void handle_start_mapping(
             std::shared_ptr<StartMapping::Request> request,
             std::shared_ptr<StartMapping::Response> response);
+
+        void handle_cancel_mapping(
+            std::shared_ptr<CancelMapping::Request> request,
+            std::shared_ptr<CancelMapping::Response> response);
 
         void handle_save_map(
             std::shared_ptr<SaveMap::Request> request,
@@ -292,6 +298,7 @@ namespace agv_bridge
         // 进入建图前机器人所在的地图名（save_map 导出失败时回退用，
         // 由 publish_status 在 NAVIGATION 态持续刷新）
         std::string last_nav_map_name_;
+        std::string pre_mapping_map_name_;  // Captured under mode_mutex_ when mapping starts.
 
         // ===== 地图 / 定位 / 建图子进程管理 =====
         std::unique_ptr<MapFileManager> map_file_manager_;
@@ -315,6 +322,7 @@ namespace agv_bridge
         rclcpp::Service<ListMaps>::SharedPtr list_maps_srv_;
         rclcpp::Service<StartMapping>::SharedPtr start_mapping_srv_;
         rclcpp::Service<SaveMap>::SharedPtr save_map_srv_;
+        rclcpp::Service<CancelMapping>::SharedPtr cancel_mapping_srv_;
         rclcpp::Service<Relocalize>::SharedPtr relocalize_srv_;
         rclcpp::Publisher<AgvStatus>::SharedPtr status_pub_;
         std::unique_ptr<LocalizationOperationTracker> localization_operations_;

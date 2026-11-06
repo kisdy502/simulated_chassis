@@ -3,6 +3,7 @@
 //
 
 #include "core/system/loc_system.h"
+#include "core/system/map_odom_tf.h"
 #include "core/localization/localization.h"
 #include "io/yaml_io.h"
 #include "wrapper/ros_utils.h"
@@ -34,16 +35,9 @@ bool LocSystem::Init(const std::string &yaml_path) {
     cloud_topic_ = yaml.GetValue<std::string>("common", "lidar_topic");
     livox_topic_ = yaml.GetValue<std::string>("common", "livox_lidar_topic");
 
-    // sim-chassis 补丁：system.pub_tf 可配置（缺省 true 保持上游行为）。
-    // 直发 map→base_link TF 与控制器 odom→base TF 双权威冲突，仿真链路置 false，
-    // 由 tracked_pose_tf_node 重锚定 map→odom（与 Cartographer 链路同构）
-    {
-        auto node = YAML::LoadFile(yaml_path);
-        if (node["system"] && node["system"]["pub_tf"]) {
-            options_.pub_tf_ = node["system"]["pub_tf"].as<bool>();
-        }
-    }
-    LOG(INFO) << "loc system pub_tf: " << (options_.pub_tf_ ? "true" : "false");
+    const auto system = YAML::LoadFile(yaml_path)["system"];
+    options_.pub_tf_ = system["pub_tf"].as<bool>(options_.pub_tf_);
+    const auto odom_frame = system["odom_frame"].as<std::string>("");
 
     // sim-chassis 补丁：SensorDataQoS。上游默认 RELIABLE 订阅与 best_effort
     // 发布端（gz bridge 等）不匹配会静默收不到数据
@@ -72,7 +66,9 @@ bool LocSystem::Init(const std::string &yaml_path) {
 
     // sim-chassis 补丁：固定发布 /tracked_pose；TF 广播由 pub_tf 开关控制
     tracked_pose_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("/tracked_pose", 10);
-    if (options_.pub_tf_) {
+    if (!odom_frame.empty()) {
+        map_odom_tf_ = std::make_shared<MapOdomTf>(*node_, odom_frame);
+    } else if (options_.pub_tf_) {
         tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(node_);
     }
     loc_->SetTFCallback([this](const geometry_msgs::msg::TransformStamped &tf) {
@@ -83,7 +79,9 @@ bool LocSystem::Init(const std::string &yaml_path) {
         pose.pose.position.z = tf.transform.translation.z;
         pose.pose.orientation = tf.transform.rotation;
         tracked_pose_pub_->publish(pose);
-        if (tf_broadcaster_) {
+        if (map_odom_tf_) {
+            map_odom_tf_->Update(pose);
+        } else if (tf_broadcaster_) {
             tf_broadcaster_->sendTransform(tf);
         }
     });

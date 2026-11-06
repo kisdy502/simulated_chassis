@@ -1,4 +1,4 @@
-# 切图、重定位的异步执行结果
+# 切图、重定位和放弃建图的异步执行结果
 
 更新：2026-10-28。适用于本次新增接口后的 bridge；旧版本没有 operation_id。本文供 Robot Manager Service、调度与前端共同对接。
 
@@ -6,6 +6,7 @@
 
 仍使用原请求：
 
+- /agv/cancel_mapping，类型 agv_bridge_v2_interfaces/srv/CancelMapping，空请求。停止当前建图并恢复本轮建图开始前的地图。
 - /agv/load_map，类型 agv_bridge_v2_interfaces/srv/LoadMap，请求 map_name。
 - /agv/relocalize，类型 agv_bridge_v2_interfaces/srv/Relocalize，请求 map_name、x、y、yaw。位置为 map 坐标米，yaw 为弧度。
 
@@ -38,6 +39,12 @@
 {"op":"call_service","id":"reloc-request-1","service":"/agv/relocalize","args":{"map_name":"map1025L","x":1.0,"y":2.0,"yaw":0.5}}
 ```
 
+放弃建图时发送空参数。机器人会使用旧图保存的位姿尝试恢复定位。
+
+```json
+{"op":"call_service","id":"cancel-mapping-1","service":"/agv/cancel_mapping","args":{}}
+```
+
 受理响应示意（operation_id 由机器人生成，不要解析其内部格式）：
 
 ```json
@@ -51,7 +58,7 @@ rosbridge 的 result=true 表示服务调用处理成功，values.success 才是
 - 名称：/agv/localization_operation。
 - 类型：agv_bridge_v2_interfaces/msg/LocalizationOperation。
 - 阶段变化即时发布，并约每墙钟秒重发最新操作；QoS reliable、transient_local、depth=1。
-- 只追踪显式 load_map / relocalize；启动自动定位、后台自动恢复、建图保存不创建新的操作 ID。
+- 追踪显式 load_map / relocalize / cancel_mapping；启动自动定位、后台自动恢复、建图保存不创建新的操作 ID。
 
 ```json
 {"op":"subscribe","id":"localization-operations","topic":"/agv/localization_operation","type":"agv_bridge_v2_interfaces/msg/LocalizationOperation","throttle_rate":0}
@@ -61,7 +68,7 @@ rosbridge 的 result=true 表示服务调用处理成功，values.success 才是
 |---|---|---|
 | header | std_msgs/Header | 本条发布的 ROS 时间；仿真暂停时不要用它衡量操作超时 |
 | operation_id | string | 唯一操作标识，用于关联服务响应和上层任务 |
-| operation_type | string | LOAD_MAP / RELOCALIZE |
+| operation_type | string | LOAD_MAP / RELOCALIZE / CANCEL_MAPPING |
 | map_name | string | 本次请求的目标地图，不单独证明加载成功 |
 | state | string | RUNNING / SUCCEEDED / FAILED / TIMED_OUT |
 | stage | string | 当前阶段，失败/超时时保留最后阶段 |

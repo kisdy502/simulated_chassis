@@ -1,0 +1,7 @@
+# Discard the current mapping session and restore the map active before mapping.
+---
+bool success
+string message
+string map_name
+# Acceptance is asynchronous. Query the final result using this ID.
+string operation_id

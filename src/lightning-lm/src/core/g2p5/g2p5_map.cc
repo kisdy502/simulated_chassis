@@ -24,6 +24,8 @@ bool G2P5Map::Init(const float &temp_min_x, const float &temp_min_y, const float
         return false;
     }
 
+    max_x_ = min_x_ + grid_size_x_ * grid_reso_;
+    max_y_ = min_y_ + grid_size_y_ * grid_reso_;
     grids_ = new SubGrid *[grid_size_x_];
     for (int xi = 0; xi < grid_size_x_; ++xi) {
         grids_[xi] = new SubGrid[grid_size_y_];
@@ -53,45 +55,42 @@ std::shared_ptr<G2P5Map> G2P5Map::MakeDeepCopy() {
 
 bool G2P5Map::Resize(const float &temp_min_x, const float &temp_min_y, const float &temp_max_x,
                      const float &temp_max_y) {
-    int temp_grid_size_x = ceil((temp_max_x - temp_min_x) / grid_reso_) + 1;
-    int temp_grid_size_y = ceil((temp_max_y - temp_min_y) / grid_reso_) + 1;
-
-    auto **new_grids = new SubGrid *[temp_grid_size_x];
-    for (int xi = 0; xi < temp_grid_size_x; ++xi) {
-        new_grids[xi] = new SubGrid[temp_grid_size_y];
+    if (IsEmpty()) {
+        const float min_x = std::floor(temp_min_x / grid_reso_) * grid_reso_;
+        const float min_y = std::floor(temp_min_y / grid_reso_) * grid_reso_;
+        return Init(min_x, min_y, temp_max_x, temp_max_y);
     }
 
-    int min_grid_x = (int)round((temp_min_x - min_x_) / grid_reso_);
-    int min_grid_y = (int)round((temp_min_y - min_y_) / grid_reso_);
-    int max_grid_x = (int)ceil((temp_max_x - min_x_) / grid_reso_);
-    int max_grid_y = (int)ceil((temp_max_y - min_y_) / grid_reso_);
+    // Move the origin by whole subgrids, exactly matching the data offset.
+    const int left = std::max(0, static_cast<int>(std::ceil((min_x_ - temp_min_x) / grid_reso_)));
+    const int bottom = std::max(0, static_cast<int>(std::ceil((min_y_ - temp_min_y) / grid_reso_)));
+    const int right = std::max(0, static_cast<int>(std::ceil((temp_max_x - max_x_) / grid_reso_)));
+    const int top = std::max(0, static_cast<int>(std::ceil((temp_max_y - max_y_) / grid_reso_)));
+    if (left == 0 && bottom == 0 && right == 0 && top == 0) {
+        return true;
+    }
 
-    int dx = min_grid_x < 0 ? 0 : min_grid_x;
-    int dy = min_grid_y < 0 ? 0 : min_grid_y;
-    int Dx = max_grid_x < this->grid_size_x_ ? max_grid_x : this->grid_size_x_;
-    int Dy = max_grid_y < this->grid_size_y_ ? max_grid_y : this->grid_size_y_;
-
-    for (int x = dx; x < Dx; x++) {
-        for (int y = dy; y < Dy; y++) {
-            assert((x - min_grid_x) >= 0 && (x - min_grid_x) < temp_grid_size_x);
-            assert((y - min_grid_y) >= 0 && (y - min_grid_y) < temp_grid_size_y);
-
-            assert((x) >= 0 && (x) < temp_grid_size_x);
-            assert((y) >= 0 && (y) < temp_grid_size_y);
-
-            new_grids[x - min_grid_x][y - min_grid_y] = this->grids_[x][y];
+    const int width = grid_size_x_ + left + right;
+    const int height = grid_size_y_ + bottom + top;
+    auto **new_grids = new SubGrid *[width];
+    for (int x = 0; x < width; ++x) {
+        new_grids[x] = new SubGrid[height];
+    }
+    for (int x = 0; x < grid_size_x_; ++x) {
+        for (int y = 0; y < grid_size_y_; ++y) {
+            new_grids[x + left][y + bottom] = grids_[x][y];
         }
-        delete[] this->grids_[x];
+        delete[] grids_[x];
     }
 
-    delete[] this->grids_;
-    this->grids_ = new_grids;
-    this->min_x_ = temp_min_x;
-    this->min_y_ = temp_min_y;
-    this->max_x_ = temp_max_x;
-    this->max_y_ = temp_max_y;
-    this->grid_size_x_ = temp_grid_size_x;
-    this->grid_size_y_ = temp_grid_size_y;
+    delete[] grids_;
+    grids_ = new_grids;
+    min_x_ -= left * grid_reso_;
+    min_y_ -= bottom * grid_reso_;
+    grid_size_x_ = width;
+    grid_size_y_ = height;
+    max_x_ = min_x_ + grid_size_x_ * grid_reso_;
+    max_y_ = min_y_ + grid_size_y_ * grid_reso_;
 
     return true;
 }
@@ -152,11 +151,13 @@ void G2P5Map::SetMissPoint(const float &point_x, const float &point_y, const flo
         return;
     }
 
-    int point_x_index = floor(point_x / options_.resolution_);
-    int point_y_index = floor(point_y / options_.resolution_);
+    int point_x_index = floor((point_x - min_x_) / options_.resolution_);
+    int point_y_index = floor((point_y - min_y_) / options_.resolution_);
 
-    int xi_lidar = floor(laser_origin_x / options_.resolution_);
-    int yi_lidar = floor(laser_origin_y / options_.resolution_);
+    int xi_lidar, yi_lidar;
+    if (!GetDataIndex(laser_origin_x, laser_origin_y, xi_lidar, yi_lidar)) {
+        return;
+    }
 
     float k = 0;
     int sign = 1;
@@ -165,10 +166,6 @@ void G2P5Map::SetMissPoint(const float &point_x, const float &point_y, const flo
 
     /// 整数的直线填充算法
     if (diff_y == 0 && diff_x == 0) {
-        return;
-    }
-
-    if (!GetDataIndex(laser_origin_x, laser_origin_y, xi_lidar, yi_lidar)) {
         return;
     }
 
@@ -253,12 +250,10 @@ nav_msgs::msg::OccupancyGrid G2P5Map::ToROS() {
     occu_map.info.origin.position.y = min_y_;
 
     int grid_map_size = occu_map.info.width * occu_map.info.height;
-    int grid_map_size_1 = grid_map_size - 1;
     occu_map.data.resize(grid_map_size);
 
     std::fill(occu_map.data.begin(), occu_map.data.end(), -1);
     int tmp_area = 0;
-    int index_min, index_max;
 
     for (int bxi = 0; bxi < grid_size_x_; ++bxi) {
         for (int byi = 0; byi < grid_size_y_; ++byi) {
@@ -284,11 +279,11 @@ nav_msgs::msg::OccupancyGrid G2P5Map::ToROS() {
                             tmp_area++;
                             occu_map.data[MapIdx(image_width, x, y)] = 100;
                         } else {
-                            int index = MapIdx(image_width, x, y);
-                            index_min = std::max(0, index - 1);
-                            index_max = std::min(grid_map_size_1, index + 1);
-
-                            for (auto extend = index_min; extend <= index_max; extend++) {
+                            // Expand free space within this row only.
+                            const int first_x = std::max(0, x - 1);
+                            const int last_x = std::min(image_width - 1, x + 1);
+                            for (int neighbor = first_x; neighbor <= last_x; ++neighbor) {
+                                const int extend = MapIdx(image_width, neighbor, y);
                                 if (occu_map.data[extend] < 0) {  //-1
                                     tmp_area++;
                                     occu_map.data[extend] = 0;

@@ -17,6 +17,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ListMaps.srv"
   "srv/StartMapping.srv"
   "srv/SaveMap.srv"
+  "srv/CancelMapping.srv"
   "srv/Relocalize.srv"
   "srv/ArmMove.srv"
   "action/FollowEdge.action"

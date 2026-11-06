@@ -129,15 +129,13 @@ class G2P5 {
     G2P5MapPtr newest_map_ = nullptr;
 
     /// 前端相关
-    std::mutex frontend_mutex_;                                         // 前端锁
     G2P5MapPtr frontend_map_ = nullptr;                                 // 前端最新绘制的地图
-    Keyframe::Ptr frontend_current_ = nullptr;                          // 前端正在绘制的关键帧
+    Keyframe::Ptr frontend_rendered_;  // Last frame committed to frontend_map_, guarded by newest_map_mutex_.
     sys::AsyncMessageProcess<Keyframe::Ptr> draw_frontend_map_thread_;  // 前端绘制地图的线程
 
     /// 后端相关
     std::thread draw_backend_map_thread_;           // 后端重绘的线程
     std::atomic_bool backend_redraw_flag_ = false;  // 后端重绘的flag
-    G2P5MapPtr backend_map_ = nullptr;              // 正在绘制的地图
 
     Vec4d floor_coeffs_ = Vec4d(0, 0, 1.0, 1.0);  // 地面方程参数
 };
