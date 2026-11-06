@@ -61,6 +61,7 @@ SLAM 支持 Lightning-LM 与 Cartographer。上位机、Web 前端及其数据�
 | `ws://HOST:9090` | `rosbridge_server` | ROS 话题订阅/发布、服务和 Action、rosapi 参数读取 | `WEBSOCKET_PORT`，容器固定 9090 |
 | `http://HOST:8089/maps/<name>/status` | `map_3d_server` | 查询三维地图导出状态 | `MAP_3D_PORT`，容器固定 8089 |
 | `http://HOST:8089/maps/<name>/cloud.ply` | `map_3d_server` | 下载三维地图点云 | 同上 |
+| `http://HOST:8092/maps/live` | `live_map_http_server.py` | 按需读取实时 2D 栅格 | `MAP_2D_PORT`，容器固定 8092 |
 | `http://HOST:8090/<pkg>/<relative-path>` | `urdf_mesh_server` | 下载 ROS 包内 mesh、纹理等资源 | `URDF_MESH_PORT`，容器固定 8090 |
 
 ### Windows、WSL 与 Docker 的访问地址
@@ -191,6 +192,7 @@ cp .env.example .env
 | `GAZEBO_GUI` / `START_RVIZ` | `false` | 默认无界面运行 |
 | `WEBSOCKET_PORT` | `9090` | 宿主 WebSocket 端口；容器监听固定 9090 |
 | `MAP_3D_PORT` | `8089` | 三维地图服务的宿主端口；容器 8089 |
+| `MAP_2D_PORT` | `8092` | 实时 2D 地图服务的宿主端口，容器 8092 |
 | `URDF_MESH_PORT` | `8090` | 模型资源服务的宿主端口；容器 8090 |
 | `BACK_UP_MAX_HEADING_ERROR_DEG` | `20.0` | 倒车允许的最大航向误差 |
 
