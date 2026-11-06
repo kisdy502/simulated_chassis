@@ -55,6 +55,6 @@ COPY docker/agv-bridge/launch_bridge.sh /launch_bridge.sh
 RUN sed -i 's/\r$//' /launch_bridge.sh && chmod +x /launch_bridge.sh
 RUN mkdir -p /ros2_ws/maps /ros2_ws/process_logs
 
-EXPOSE 9090 8089 8090 8091
+EXPOSE 9090 8089 8090 8091 8092
 
 ENTRYPOINT ["/launch_bridge.sh"]

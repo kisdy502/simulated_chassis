@@ -37,7 +37,7 @@ def generate_launch_description():
         'localization_operation_timeout_sec', 'back_up_max_heading_error_deg', 'slam_algorithm', 'enable_map_3d', 'map_3d_port')}
     bridge_args.update({'robot_package': 'simulated_chassis', 'use_sim_time': 'true',
                         'navigation_use_rviz': 'false',
-                        'topics_sub_glob': "['/odom', '/tf', '/tf_static', '/map', '/plan', "
+                        'topics_sub_glob': "['/odom', '/tf', '/tf_static', '/plan', "
                                            "'/local_plan', '/joint_states', '/agv/status', '/agv/localization_operation', "
                                            "'/scan_1', '/scan_2', '/agv/pose', '/tracked_pose']",
                         'services_glob': "['/rosapi/*', '/agv/set_control', '/agv/get_map', "

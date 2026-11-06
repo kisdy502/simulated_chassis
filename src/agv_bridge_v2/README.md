@@ -39,9 +39,28 @@ AGV 上位机与仿真机器人之间的对接层。**rosbridge 架构**：业�
 | `/agv/arm_move` | `srv/ArmMove` | 机械臂绝对关节目标（UR5e 单臂 C++ 适配、双臂 profile；见机械臂专门文档） |
 | TF `map → <agv_id>/base_link` | TF | 车体位姿 |
 
+实时建图预览走独立的 HTTP 服务，默认监听 8092。上位机通过
+`GET /maps/live` 按需读取最近一帧。响应是 gzip 压缩的 OccupancyGrid
+JSON，保留 `header.frame_id`、`info` 和 `data`。收到 `ETag` 后可在
+下次请求带上 `If-None-Match`，没有更新时返回 304。尚未收到地图时返回
+503。ROS 内部的 `/map` 继续供 RViz、Nav2 和存图使用。
+
+上位机从 `SIM_AGV_WS_URL` 统一获取机器人主机名。各服务使用下表端口。
+Docker 网络内使用容器端口。上位机从 Docker 外访问时，使用可访问这些端口的机器人主机名。
+
+| 服务 | 默认端口 |
+| --- | ---: |
+| rosbridge 控制与状态 | 9090 |
+| 3D 地图 | 8089 |
+| mesh | 8090 |
+| 原生地图导入导出 | 8091 |
+| 实时 2D 地图 | 8092 |
+
+原生地图传输启用时，上位机和机器人配置相同的 `NATIVE_MAP_TOKEN`。
+
 上位机同时通过 rosbridge 直接访问仿真侧的标准话题（默认白名单）：
 
-- 上报（subscribe）：`/odom`、`/tf`、`/tf_static`、`/map`、`/plan`、`/local_plan`、
+- 上报（subscribe）：`/odom`、`/tf`、`/tf_static`、`/plan`、`/local_plan`、
   `/joint_states`、`/scan_1`、`/scan_2`、`/agv/status`、`/agv/pose`
 - 下发（publish）：`/cmd_vel`、`/initialpose`、`/goal_pose`
 - 参数读取（params_glob）：`/agv_nav_server/*`、`/robot_state_publisher/*`

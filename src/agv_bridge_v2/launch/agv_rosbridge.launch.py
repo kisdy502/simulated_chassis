@@ -32,6 +32,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, EmitEvent
 from ament_index_python.packages import get_package_prefix
 from launch.events import Shutdown
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, EnvironmentVariable
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -314,7 +315,7 @@ def generate_launch_description():
         # 依据 simulated_chassis 的实际话题核对：
         #   /odom              nav_msgs/Odometry        里程计位姿+速度（odom_relay_node 转发）
         #   /tf,/tf_static     tf2_msgs/TFMessage       map->odom->base_link，算位姿必须
-        #   /map               nav_msgs/OccupancyGrid   cartographer 占据栅格，1Hz
+        #   /map 由独立 HTTP 服务读取，避免占用控制 WebSocket
         #   /plan /local_plan  nav_msgs/Path            全局/局部路径，可视化和监控用
         #   /joint_states      sensor_msgs/JointState   三舵轮转角
         #   /agv/status        AgvStatus                本包的 1Hz 业务状态
@@ -322,7 +323,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "topics_sub_glob",
             default_value=(
-                "['/odom', '/tf', '/tf_static', '/map', '/plan', '/local_plan', "
+                "['/odom', '/tf', '/tf_static', '/plan', '/local_plan', "
                 "'/joint_states', '/agv/status', '/agv/localization_operation', '/scan_1', '/scan_2', '/agv/pose']"
             ),
             description="允许上位机订阅（上报）的 topic 白名单",
@@ -442,6 +443,10 @@ def generate_launch_description():
     )
 
     args += [
+        DeclareLaunchArgument("enable_map_2d_http", default_value="true",
+                              description="启动实时栅格地图 HTTP 服务"),
+        DeclareLaunchArgument("map_2d_http_port", default_value="8092",
+                              description="实时栅格地图 HTTP 端口"),
         DeclareLaunchArgument("enable_map_3d", default_value="true",
                               description="启动三维地图后台导出 + HTTP 文件服务（pbstream/lightning 双格式）"),
         DeclareLaunchArgument("map_3d_port", default_value="8089",
@@ -454,6 +459,10 @@ def generate_launch_description():
         map_saver_lifecycle_manager,
         rosbridge,
         rosapi,
+        Node(package="agv_bridge_v2", executable="live_map_http_server.py",
+             arguments=["--port", LaunchConfiguration("map_2d_http_port")],
+             condition=IfCondition(LaunchConfiguration("enable_map_2d_http")),
+             output="screen"),
         OpaqueFunction(function=_map_3d_server),
         OpaqueFunction(function=_native_map_server),
     ])

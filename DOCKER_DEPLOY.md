@@ -93,7 +93,7 @@ Docker 上位机与机器人必须加入同一个 Docker 网络才可用服务�
 **浏览器访问地址与后端访问地址分别配置：**
 
 - Docker 后端连接机器人：`ws://agv-bridge:9090`。
-- Docker 后端代理地图时：`MAP3D_BASE_URL=http://agv-bridge:8089`。
+- Docker 后端通过 `SIM_AGV_WS_URL=ws://agv-bridge:9090` 统一确定机器人主机名。
   浏览器访问该后端的 `/api/v1/map-3d/...`，不直接访问机器人；此时无需让浏览器使用 8089。
 - 浏览器直连 Docker 地图服务时：用 `http://HOST:8089`。
 - 浏览器直接加载 Docker mesh 时：`VITE_URDF_MESH_BASE=http://HOST:8090`，
@@ -150,8 +150,8 @@ package://ur_description/meshes/ur5e/visual/base.dae
 这是已保存地图的点云浏览功能；二维 PGM/YAML 与 Nav2 仍继续使用。
 
 上位机若使用现有 Java 代理，接口为 `/api/v1/map-3d/<name>/status` 和
-`/api/v1/map-3d/<name>/cloud.ply`，其机器人服务地址可通过上位机的
-`MAP3D_BASE_URL` 配置；该变量不属于本仓库 Compose。
+`/api/v1/map-3d/<name>/cloud.ply`，其机器人服务地址取自上位机的 `SIM_AGV_WS_URL` 主机名，使用 8089 端口。
+实时 2D 栅格使用同一主机的 `GET :8092/maps/live`。
 
 ### 通信方向
 

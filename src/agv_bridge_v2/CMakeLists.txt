@@ -101,6 +101,8 @@ install(TARGETS agv_nav_server urdf_mesh_server native_map_server
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(PROGRAMS scripts/live_map_http_server.py DESTINATION lib/${PROJECT_NAME})
+
 install(DIRECTORY launch scripts
   DESTINATION share/${PROJECT_NAME}
 )
