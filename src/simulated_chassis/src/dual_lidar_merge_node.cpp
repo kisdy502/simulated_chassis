@@ -35,7 +35,9 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <cmath>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 namespace simulated_chassis {
@@ -47,6 +49,10 @@ public:
     target_frame_ = declare_parameter<std::string>("target_frame", "base_link");
     time_mode_ = declare_parameter<std::string>("time_mode", "zero");
     scan_period_ms_ = declare_parameter<double>("scan_period_ms", 66.7);
+    const double max_pair_skew_ms = declare_parameter<double>("max_pair_skew_ms", 5.0);
+    if (!std::isfinite(max_pair_skew_ms) || max_pair_skew_ms < 0.0) {
+      throw std::invalid_argument("max_pair_skew_ms must be finite and non-negative");
+    }
 
     const std::string topic_front = declare_parameter<std::string>("cloud_front_topic", "/points2_1");
     const std::string topic_rear = declare_parameter<std::string>("cloud_rear_topic", "/points2_2");
@@ -62,12 +68,14 @@ public:
     sub_rear_.subscribe(this, topic_rear, rmw_qos_profile_sensor_data,
                         rclcpp::SubscriptionOptions());
     sync_ = std::make_shared<Sync>(SyncPolicy(10), sub_front_, sub_rear_);
+    sync_->setMaxIntervalDuration(rclcpp::Duration::from_seconds(max_pair_skew_ms / 1000.0));
     sync_->registerCallback(
         std::bind(&DualLidarMergeNode::onCloudPair, this, std::placeholders::_1, std::placeholders::_2));
 
     RCLCPP_INFO(get_logger(),
-                "dual lidar merge: %s + %s -> %s (frame=%s, time_mode=%s, period=%.1fms)", topic_front.c_str(),
-                topic_rear.c_str(), topic_out.c_str(), target_frame_.c_str(), time_mode_.c_str(), scan_period_ms_);
+                "dual lidar merge: %s + %s -> %s (frame=%s, time_mode=%s, period=%.1fms, max_pair_skew=%.1fms)",
+                topic_front.c_str(), topic_rear.c_str(), topic_out.c_str(), target_frame_.c_str(),
+                time_mode_.c_str(), scan_period_ms_, max_pair_skew_ms);
   }
 
 private:
@@ -155,7 +163,16 @@ private:
 
     const uint32_t cols = cloud.width;
     const uint32_t rows = cloud.height;
+    uint32_t written = 0;
     for (uint32_t i = 0; i < n_in; ++i, ++ix, ++iy, ++iz) {
+      const float intensity = ii ? **ii : 0.0f;
+      if (ii) {
+        ++(*ii);
+      }
+      if (!std::isfinite(*ix) || !std::isfinite(*iy) || !std::isfinite(*iz)) {
+        continue;
+      }
+
       const tf2::Vector3 p = tf * tf2::Vector3(*ix, *iy, *iz);
       *ox = static_cast<float>(p.x());
       ++ox;
@@ -164,12 +181,7 @@ private:
       *oz = static_cast<float>(p.z());
       ++oz;
 
-      if (ii) {
-        *oi = **ii;
-        ++(*ii);
-      } else {
-        *oi = 0.0f;
-      }
+      *oi = intensity;
       ++oi;
 
       *ot = linear ? static_cast<float>(static_cast<double>(i) / static_cast<double>(n_in) * scan_period_ms_) : 0.0f;
@@ -177,8 +189,12 @@ private:
 
       *oring = rows > 1 ? static_cast<uint16_t>(i / cols) : 0u;  // 有组织点云：行号即 ring
       ++oring;
+      ++written;
     }
 
+    out.width = base + written;
+    out.row_step = out.width * out.point_step;
+    out.data.resize(out.row_step);
     return true;
   }
 
