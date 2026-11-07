@@ -90,6 +90,9 @@ struct NavState {
         timestamp_ += dt;
         pos_ += vec.middleRows(kPosIdx, kBlockDim) * dt;
         rot_ = rot_ * SO3::exp(vec.middleRows(kRotIdx, kBlockDim) * dt);
+        // sim-chassis 补丁（已回退）：曾按上游 #137/#142 恢复此行速度递推（连同 #125 将
+        // predict_cov_inflation_ 改 1.0），本地实测（双雷达合流快照点云 + 仅 6 维位姿观测）
+        // 重影反而加重，已整体回退恢复上游原状。详见 docs/lightning_upstream_issue_research.md。
         // vel_ += vec.middleRows(kVelIdx, kBlockDim) * dt;
         bg_ += vec.middleRows(kBgIdx, kBlockDim) * dt;
     }

@@ -82,8 +82,15 @@ class ESKF {
 
         double predict_cov_inflation_ = 1.01;
         double min_cov_diag_ = 1e-9;
-        double degeneracy_threshold_ratio_ = 1e-3;
-        double degeneracy_cov_inflation_ = 1.02;
+        // sim-chassis 补丁：关闭观测退化特殊处理（上游 issue #144，作者答复
+        // “这部分确实效果不好，可以关掉。退化应该引入轮速计，单 IMU+lidar 缺速度观测”）。
+        // threshold_ratio 置 0 后不再按相对阈值掩掉弱观测方向——长走廊内错误掩码
+        // 会使 dx 在可观/不可观方向间跳变，是墙体错位的候选来源；inflation 同步
+        // 置 1.0，P 不因退化标记被额外放大。
+        // 注：曾按 #125 试验 predict_cov_inflation_ 1.01→1.0（叠加 #137 速度递推恢复），
+        // 实测重影加重，已回退；膨胀值保持上游 1.01。
+        double degeneracy_threshold_ratio_ = 0.0;
+        double degeneracy_cov_inflation_ = 1.0;
         double max_update_translation_step_ = 0.5;
         double max_update_rotation_step_deg_ = 5.0;
         double max_update_velocity_step_ = 2.0;
