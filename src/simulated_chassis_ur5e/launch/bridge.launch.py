@@ -32,7 +32,7 @@ def generate_launch_description():
         # F1.3:放行 robot_state_publisher 参数(上位机 /api/v1/robot/urdf 读 robot_description)
         'params_glob': "['robot_description', '/agv_nav_server/*', '/robot_state_publisher/*']",
         'topics_sub_glob': "['/odom', '/tf', '/tf_static', '/plan', '/local_plan', '/joint_states', '/agv/status', '/agv/localization_operation', '/scan_1', '/scan_2', '/agv/pose', '/arm_manager/status', '/wrist_camera/image_raw', '/wrist_camera/camera_info', '/gripper/width', '/gripper/status']",
-        'services_glob': "['/rosapi/*', '/agv/set_control', '/agv/set_charging', '/agv/get_map', '/agv/load_map', '/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/relocalize', '/agv/get_localization_operation', '/agv/arm_move', '/arm_manager/save_teach_point', '/arm_manager/list_teach_points', '/arm_manager/delete_teach_point', '/arm_manager/cancel', '/arm_manager/reset_fault', '/wrist_camera/take_photo', '/gripper/set_closed']"})
+        'services_glob': "['/rosapi/*', '/agv/set_control', '/agv/set_charging', '/agv/get_map', '/agv/load_map', '/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/cancel_mapping', '/agv/relocalize', '/agv/get_localization_operation', '/agv/arm_move', '/arm_manager/save_teach_point', '/arm_manager/list_teach_points', '/arm_manager/delete_teach_point', '/arm_manager/cancel', '/arm_manager/reset_fault', '/wrist_camera/take_photo', '/gripper/set_closed']"})
     declarations = [DeclareLaunchArgument(key, default_value=value, choices=['true', 'false'])
                     if key in ('manage_navigation', 'mesh_server', 'enable_map_3d')
                     else DeclareLaunchArgument(key, default_value=value)

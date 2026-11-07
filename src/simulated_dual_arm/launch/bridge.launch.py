@@ -42,7 +42,7 @@ def generate_launch_description():
                                            "'/scan_1', '/scan_2', '/agv/pose', '/tracked_pose']",
                         'services_glob': "['/rosapi/*', '/agv/set_control', '/agv/get_map', "
                                          "'/agv/load_map', '/agv/list_maps', '/agv/start_mapping', "
-                                         "'/agv/save_map', '/agv/relocalize', '/agv/get_localization_operation', '/agv/arm_move']",
+                                         "'/agv/save_map', '/agv/cancel_mapping', '/agv/relocalize', '/agv/get_localization_operation', '/agv/arm_move']",
                         'params_glob': "['robot_description', '/agv_nav_server/*', '/robot_state_publisher/*']"})
     declarations = [DeclareLaunchArgument(key, default_value=value,
                                           choices=['true', 'false'])
