@@ -72,11 +72,6 @@ source install/setup.bash
 | 7 | `cmake/packages.cmake` | SSE 编译选项限定 x86；arm64 跳过 | 上游硬编码 `-msse*` 在 arm64 gcc 不识别，直接编译失败 |
 | 8 | `src/core/system/slam.{h,cc}` + `lightning_slam.launch.py` | SLAM 模式实时可视化：发布 `/tracked_pose`（LIO 逐帧位姿）与 `/map`（g2p5 栅格，1Hz 限流，TRANSIENT_LOCAL）；launch 加 tracked_pose_tf_node 重锚定 map→odom | 上游建图期无任何输出话题，RViz 完全看不到进度，问题只能保存后才发现（回环失败导致的鬼影墙等无法在建图中纠正） |
 | 9 | `src/core/lio/imu_processing.hpp` | LIO 初始化时世界系对齐重力：R0 = R(mean_acc→+z)，重力恒 (0,0,-G) | 上游 R0=I 且 grav=-mean_acc，初始化窗口（20 批 IMU）内的瞬态（机器人落体回弹/加减速）被固化为世界系恒定倾角——RViz 机器人与地图垂直、g2p5 沿倾斜轴投影产生花纹噪点、定位初始位姿继承倾角 |
-| 10 | `src/core/lio/eskf.hpp` | 关闭观测退化特殊处理：`degeneracy_threshold_ratio_` 1e-3→0、`degeneracy_cov_inflation_` 1.02→1.0 | 上游 #144 作者：“这部分确实效果不好，可以关掉”；长走廊内弱观测方向被错误掩码，dx 在可观/不可观方向间跳变，墙体错位候选来源 |
-| 11 | `src/core/loop_closing/loop_closing.cc` | 回环子图与当前帧点云拷贝后 `RemoveGround(z>0.1)` 去地面 | 上游 #122 作者：“把地面部分去了”；防走廊场景大面积地面主导 NDT 产生高分误匹配 |
-| 12 | `src/core/loop_closing/loop_closing.cc` | NDT 后追加 ICP 精化+二次校验（不收敛 / fitness>0.2 / 偏移>0.5m / 转角>5° 拒绝） | 上游 #122 用户验证“加上 icp 做二次校验还挺有效”；#132 亦建议“ndt+icp 细化” |
-
-试验记录：曾按上游 #137/#142 恢复 `nav_state.h` `oplus()` 的速度递推、并按 #125 将 `predict_cov_inflation_` 1.01→1.0，本地实测（双雷达合流快照点云 + 仅 6 维位姿观测的 ESKF）重影反而加重，已整体回退恢复上游原状。
 
 ## 4. 建图对比测试
 

@@ -10,7 +10,6 @@
 
 #include <pcl/common/transforms.h>
 #include <pcl/registration/ndt.h>
-#include <pcl/registration/icp.h>
 #include <cmath>
 
 #include "core/opti_algo/algo_select.h"
@@ -183,13 +182,9 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
             }
 
             auto kf = all_keyframes_[id];
-            // sim-chassis 补丁：回环子图去除地面点（上游 #122 作者建议“把地面部分去了，
-            // 把 roi 里的 height_min 设高一些”）。关键帧点云在车体系（base_link 离地 0.15m，
-            // 地面 z≈-0.15），仅保留 z>0.1（地面上方约 0.25m）的点，防止大面积地面在
-            // 走廊场景主导 NDT 给出高分误匹配。GetCloud() 返回共享指针，必须拷贝后过滤，
-            // 不改动关键帧原始点云（g2p5 栅格与存图共用）。
-            CloudPtr cloud(new PointCloudType(*kf->GetCloud()));
-            RemoveGround(cloud, 0.1f);
+            CloudPtr cloud = kf->GetCloud();
+
+            // RemoveGround(cloud, 0.1);
 
             if (cloud->empty()) {
                 continue;
@@ -212,9 +207,7 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
 
     auto submap_kf1 = build_submap(kf1->GetID(), true);
 
-    // sim-chassis 补丁：当前帧点云同样去地面（车体系 z>0.1），拷贝后过滤，不动关键帧原始云
-    CloudPtr submap_kf2(new PointCloudType(*kf2->GetCloud()));
-    RemoveGround(submap_kf2, 0.1f);
+    CloudPtr submap_kf2 = kf2->GetCloud();
 
     if (submap_kf1->empty() || submap_kf2->empty()) {
         c.ndt_score_ = 0;
@@ -250,46 +243,6 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
         Tw2 = ndt.getFinalTransformation();
 
         c.ndt_score_ = ndt.getTransformationProbability();
-    }
-
-    /// sim-chassis 补丁：ICP 精化 + 二次校验（上游 #122 用户验证“加上 icp 做二次校验，
-    /// 还挺有效”，#132 亦建议“ndt+icp 细化”）。NDT 在走廊等弱约束场景可能给出高
-    /// TransformationProbability 的错误匹配：以 NDT 结果为初值做 ICP 精化，
-    /// 若收敛位姿偏离 NDT 过远或对应点残差过大，则拒绝该回环候选。
-    {
-        CloudPtr icp_source(new PointCloudType);
-        pcl::transformPointCloud(*rough_map2, *icp_source, Tw2);
-
-        pcl::IterativeClosestPoint<PointType, PointType> icp;
-        icp.setInputTarget(rough_map1);
-        icp.setInputSource(icp_source);
-        icp.setMaxCorrespondenceDistance(1.0);
-        icp.setMaximumIterations(20);
-        icp.setTransformationEpsilon(1e-4);
-
-        CloudPtr icp_aligned(new PointCloudType);
-        icp.align(*icp_aligned);
-        if (!icp.hasConverged() || !icp.getFinalTransformation().allFinite()) {
-            LOG(INFO) << "loop rejected by icp check (not converged), kf " << c.idx1_ << " vs " << c.idx2_;
-            c.ndt_score_ = 0;
-            return;
-        }
-
-        const double icp_fitness = icp.getFitnessScore(1.0);
-        const Mat4f T_refined = (Tw2 * icp.getFinalTransformation()).eval();
-        const float dt_icp = (T_refined.block<3, 1>(0, 3) - Tw2.block<3, 1>(0, 3)).norm();
-        const Eigen::Matrix3f dR = Tw2.block<3, 3>(0, 0).transpose() * T_refined.block<3, 3>(0, 3);
-        const double dangle =
-            std::acos(std::min(1.0, std::max(-1.0, 0.5 * (dR.trace() - 1.0))));
-
-        if (icp_fitness > 0.2 || dt_icp > 0.5 || dangle > 5.0 * M_PI / 180.0) {
-            LOG(INFO) << "loop rejected by icp check, fitness: " << icp_fitness << ", dt: " << dt_icp
-                      << ", dangle(deg): " << dangle * 180.0 / M_PI << ", kf " << c.idx1_ << " vs " << c.idx2_;
-            c.ndt_score_ = 0;
-            return;
-        }
-
-        Tw2 = T_refined;
     }
 
     Mat4d T = Tw2.cast<double>();
