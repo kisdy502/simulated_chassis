@@ -24,7 +24,7 @@ fasterlio:
 
   skip_lidar_num: 0
   point_filter_num: 2          # 双雷达合流后 ~8640 点/帧（270x16x2），16线室内偏稀，取 1/2
-  max_iteration: 4
+  max_iteration: 6
   filter_size_scan: 0.2        # 室内小场景，比默认 0.5 更细
   filter_size_map: 0.2
 
@@ -84,7 +84,7 @@ loop_closing:
   loop_kf_gap: 20              # 成功闭环一次后，隔 20 个关键帧（≈16m）允许下次检测（原50≈100m太苛刻）
   min_id_interval: 10          # 同一次重访中，相邻回环边最小ID间隔（≈8m 一条边，图更刚）
   closest_id_th: 20            # 候选历史帧与当前帧最小ID差（原50 + kf_dis_th=2.0 → 需100m才有首个候选，回环从未触发）
-  max_range: 30.0              # 与仿真雷达量程一致
+  max_range: 5.0               # 候选帧与当前位姿距离门限：仿真世界小，30m 等于全图都在候选，只取真邻域
   ndt_score_th: 0.75           # 16线稀疏云NDT分偏低，1.0会把真回环拒掉
   with_height: true            # 平面AGV：加 z≈0 先验边，抑制z漂（z漂会 feeding 重影到2.5D栅格）
 
