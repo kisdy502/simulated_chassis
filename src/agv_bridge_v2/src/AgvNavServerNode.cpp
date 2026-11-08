@@ -111,9 +111,47 @@ namespace agv_bridge
                 }
                 else
                 {
+                    // 两种情况：传了目录内文件（…/foo/global.pcd，父目录即地图目录），
+                    // 或路径根本不存在（最后一级才是意图的地图名）。
                     const auto slash = artifact.rfind('/');
-                    artifact = slash == std::string::npos ? "" : artifact.substr(0, slash);
-                    name = baseName(artifact);
+                    const std::string parent =
+                        slash == std::string::npos ? "" : artifact.substr(0, slash);
+                    const std::string last =
+                        slash == std::string::npos ? artifact : artifact.substr(slash + 1);
+                    if (::stat((parent + "/global.pcd").c_str(), &st) == 0)
+                    {
+                        artifact = parent;
+                        name = baseName(parent);
+                    }
+                    else
+                    {
+                        name = last;
+                        artifact.clear();
+                    }
+                }
+
+                // 容错：解析出的地图目录必须含 global.pcd（launch 侧仅校验目录存在，
+                // 失败时定位进程秒退且报错指向中间目录，难排查）。无效时按地图名
+                // 回退到 maps_dir 下同名目录——与 launch 侧 maps_dir 的工作区纠正
+                // 逻辑对齐，README 旧示例路径（如 ~/maps/<name>）也能正常启动。
+                if (name.empty() || artifact.empty() ||
+                    ::stat((artifact + "/global.pcd").c_str(), &st) != 0)
+                {
+                    const std::string fallback = map_file_manager_->mapDirectory(name);
+                    if (!name.empty() &&
+                        ::stat((fallback + "/global.pcd").c_str(), &st) == 0)
+                    {
+                        RCLCPP_WARN(this->get_logger(),
+                                    "pbstream_file '%s' 解析出的地图目录无效，已回退到 maps_dir 下的 %s",
+                                    pbstream_file_.c_str(), fallback.c_str());
+                        artifact = fallback;
+                    }
+                    else
+                    {
+                        RCLCPP_ERROR(this->get_logger(),
+                                     "地图 '%s' 在 pbstream_file 路径与 maps_dir（%s）下均无 global.pcd，初始定位将失败",
+                                     name.c_str(), map_file_manager_->mapsDir().c_str());
+                    }
                 }
             }
             else
