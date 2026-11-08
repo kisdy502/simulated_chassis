@@ -276,7 +276,8 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
         const double icp_fitness = icp.getFitnessScore(1.0);
         const Mat4f T_refined = (Tw2 * icp.getFinalTransformation()).eval();
         const float dt_icp = (T_refined.block<3, 1>(0, 3) - Tw2.block<3, 1>(0, 3)).norm();
-        const Eigen::Matrix3f dR = Tw2.block<3, 3>(0, 0).transpose() * T_refined.block<3, 3>(0, 3);
+        // bb8d9ad 原版此处写 block<3,3>(0,3)（列越界），首个回环候选即触发 Eigen 断言崩溃
+        const Eigen::Matrix3f dR = Tw2.block<3, 3>(0, 0).transpose() * T_refined.block<3, 3>(0, 0);
         const double dangle =
             std::acos(std::min(1.0, std::max(-1.0, 0.5 * (dR.trace() - 1.0))));
 
