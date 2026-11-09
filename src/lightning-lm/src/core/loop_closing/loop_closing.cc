@@ -274,7 +274,10 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
         }
 
         const double icp_fitness = icp.getFitnessScore(1.0);
-        const Mat4f T_refined = (Tw2 * icp.getFinalTransformation()).eval();
+        // icp_source has already been transformed by Tw2 into the target/world
+        // frame. ICP therefore returns a correction in that frame, which must
+        // be left-multiplied to recover the transform from the original source.
+        const Mat4f T_refined = (icp.getFinalTransformation() * Tw2).eval();
         const float dt_icp = (T_refined.block<3, 1>(0, 3) - Tw2.block<3, 1>(0, 3)).norm();
         // bb8d9ad 原版此处写 block<3,3>(0,3)（列越界），首个回环候选即触发 Eigen 断言崩溃
         const Eigen::Matrix3f dR = Tw2.block<3, 3>(0, 0).transpose() * T_refined.block<3, 3>(0, 0);
