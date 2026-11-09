@@ -1,5 +1,6 @@
 """Smoke-test mesh and live-map routes on the unified production HTTP server."""
 import gzip
+import io
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import zipfile
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -93,6 +95,75 @@ class UnifiedRoutes(unittest.TestCase):
             urlopen(request, timeout=2)
         self.assertEqual(error.exception.code, 304)
         self.assertEqual(error.exception.read(), b"")
+
+    def test_lightning_native_route_requires_configuration_and_round_trips_zip(self):
+        disabled_status = None
+        for _ in range(100):
+            try:
+                urlopen(self.base + "/native/lightning/source", timeout=0.25)
+            except HTTPError as error:
+                disabled_status = error.code
+                error.close()
+                break
+            except Exception:
+                time.sleep(0.05)
+        self.assertEqual(disabled_status, 404, "unconfigured native route should return 404")
+
+        maps = self.temp / "native-maps"
+        source = maps / "source"
+        source.mkdir(parents=True)
+        (source / "map.yaml").write_text("image: map.pgm\n")
+        (source / "map.pgm").write_bytes(b"pgm-data")
+        (source / "global.pcd").write_bytes(b"pcd-data")
+        (source / "index.txt").write_text("tile index\n# functional points\n")
+
+        token = "http-test-token"
+        env = os.environ.copy()
+        env["NATIVE_MAP_TOKEN"] = token
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        process = subprocess.Popen([
+            SERVER, "--maps-dir", str(maps), "--address", "127.0.0.1",
+            "--port", str(port), "--enable-map-3d", "false", "--source-format", "pcd"],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            unauthorized = None
+            for _ in range(100):
+                try:
+                    urlopen(base + "/native/lightning/source", timeout=0.2)
+                except HTTPError as error:
+                    unauthorized = error.code
+                    error.close()
+                    break
+                except Exception:
+                    time.sleep(0.05)
+            self.assertEqual(unauthorized, 401, "native route did not become ready")
+
+            request = Request(base + "/native/lightning/source", headers={
+                "Authorization": f"Bearer {token}"})
+            with urlopen(request, timeout=2) as response:
+                archive_bytes = response.read()
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.headers["Content-Type"], "application/zip")
+            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+                self.assertEqual(set(archive.namelist()), {
+                    "map.yaml", "map.pgm", "global.pcd", "index.txt"})
+
+            imported = Request(base + "/native/lightning/imported", data=archive_bytes,
+                               headers={"Authorization": f"Bearer {token}"}, method="PUT")
+            with urlopen(imported, timeout=3) as response:
+                self.assertEqual(response.status, 204)
+            self.assertEqual((maps / "imported" / "global.pcd").read_bytes(), b"pcd-data")
+
+            duplicate = Request(base + "/native/lightning/imported", data=archive_bytes,
+                                headers={"Authorization": f"Bearer {token}"}, method="PUT")
+            with urlopen(duplicate, timeout=3) as response:
+                self.assertEqual(response.status, 204)
+        finally:
+            process.send_signal(signal.SIGTERM)
+            process.wait(timeout=5)
 
 
 if __name__ == "__main__":
