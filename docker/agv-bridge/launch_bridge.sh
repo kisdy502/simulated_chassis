@@ -20,6 +20,7 @@ if [[ -n "$pbstream" && ! -e "$pbstream" ]]; then
 fi
 args=(
     agv_id:="${AGV_ID:-AGV001}" port:="${WEBSOCKET_PORT:-9090}"
+    http_port:="${HTTP_PORT:-8080}"
     use_sim_time:="${USE_SIM_TIME:-true}"
     slam_algorithm:="$algorithm"
     robot_package:="${ROBOT_PACKAGE:-simulated_chassis}"
@@ -33,6 +34,7 @@ if [[ -n "$pbstream" ]]; then args+=(pbstream_file:="$pbstream"); fi
 if [[ "${ROBOT_PROFILE:-chassis_3d_ur5e}" == chassis_3d_ur5e ]]; then
     # This profile fixes robot_package and use_sim_time internally.
     profile_args=(agv_id:="${AGV_ID:-AGV001}" port:="${WEBSOCKET_PORT:-9090}"
+      http_port:="${HTTP_PORT:-8080}"
       tool_type:="${TOOL_TYPE:-gripper}"
       maps_dir:="${MAPS_DIR:-/ros2_ws/maps}" manage_navigation:="${MANAGE_NAVIGATION:-true}"
       back_up_max_heading_error_deg:="${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}"

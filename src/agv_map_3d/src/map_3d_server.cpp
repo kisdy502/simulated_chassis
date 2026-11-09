@@ -1,15 +1,42 @@
 #include "agv_map_3d/assets.hpp"
+#include <ament_index_cpp/get_package_prefix.hpp>
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <zlib.h>
+#include <archive.h>
+#include <archive_entry.h>
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 
+#include <algorithm>
+#include <array>
 #include <charconv>
+#include <chrono>
 #include <cmath>
+#include <cctype>
+#include <condition_variable>
 #include <csignal>
+#include <cstdlib>
+#include <deque>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <regex>
+#include <sstream>
+#include <stdexcept>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
+#include <unistd.h>
+#include <random>
+#include <tuple>
 
 namespace net = boost::asio;
 namespace beast = boost::beast;
@@ -21,12 +48,289 @@ using agv_map_3d::Assets;
 
 namespace
 {
+class LatestGrid
+{
+public:
+  LatestGrid();
+  void update(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
+  std::tuple<unsigned, std::string, std::string> get(const std::string & known_etag);
+
+private:
+  static std::string makeInstance();
+  std::mutex mutex_;
+  std::optional<nav_msgs::msg::OccupancyGrid> message_;
+  std::string instance_;
+  std::uint64_t version_ = 0;
+  std::string encoded_;
+};
+
 int hex(char c)
 {
   if (c >= '0' && c <= '9') return c - '0';
   if (c >= 'a' && c <= 'f') return c - 'a' + 10;
   if (c >= 'A' && c <= 'F') return c - 'A' + 10;
   return -1;
+}
+
+constexpr std::size_t MAX_ZIP = 128 * 1024 * 1024;
+constexpr std::size_t MAX_EXPANDED = 512 * 1024 * 1024;
+constexpr std::size_t MAX_FILES = 1024;
+const std::regex FILE_NAME("[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}");
+const std::regex TILE_ID("[0-9]+");
+const std::string NATIVE_ROUTE = "/native/lightning/";
+
+using MapFiles = std::map<std::string, fs::path>;
+
+void checkArchive(int result)
+{
+  if (result != ARCHIVE_OK) throw std::invalid_argument("invalid Lightning ZIP");
+}
+
+MapFiles readMapFiles(const fs::path & directory)
+{
+  MapFiles files;
+  std::size_t size = 0;
+  for (const auto & file : fs::directory_iterator(directory)) {
+    const auto name = file.path().filename().string();
+    if (name == "last_pose.yaml" || !std::regex_match(name, FILE_NAME) ||
+      !fs::is_regular_file(file.symlink_status())) continue;
+    const auto file_size = file.file_size();
+    if (files.size() == MAX_FILES || file_size > MAX_EXPANDED - size) {
+      throw std::invalid_argument("Lightning map exceeds limits");
+    }
+    size += file_size;
+    files.emplace(name, file.path());
+  }
+  for (const auto * name : {"map.yaml", "map.pgm", "global.pcd", "index.txt"}) {
+    const auto file = files.find(name);
+    if (file == files.end() || fs::file_size(file->second) == 0) {
+      throw std::invalid_argument("incomplete Lightning map");
+    }
+  }
+  std::ifstream yaml(files.at("map.yaml"));
+  std::string line;
+  std::size_t image_fields = 0;
+  while (std::getline(yaml, line)) {
+    if (line.rfind("image:", 0) != 0) continue;
+    std::istringstream value(line.substr(6));
+    std::string image;
+    value >> image;
+    if (++image_fields != 1 || image != "map.pgm") {
+      throw std::invalid_argument("map.yaml must reference map.pgm");
+    }
+  }
+  if (image_fields != 1) throw std::invalid_argument("map.yaml is missing image");
+  std::ifstream index(files.at("index.txt"));
+  if (!std::getline(index, line)) throw std::invalid_argument("empty Lightning index");
+  while (std::getline(index, line)) {
+    if (line == "# functional points" || line == "# functional points\r") break;
+    std::istringstream row(line);
+    std::string id;
+    int x, y;
+    if (row >> id && (!std::regex_match(id, TILE_ID) || !(row >> x >> y) ||
+      files.count(id + ".pcd") == 0)) {
+      throw std::invalid_argument("Lightning index references an invalid tile");
+    }
+  }
+  return files;
+}
+
+la_ssize_t writeZip(struct archive *, void * client, const void * data, std::size_t size)
+{
+  auto & zip = *static_cast<std::string *>(client);
+  if (size > MAX_ZIP - zip.size()) return -1;
+  try {zip.append(static_cast<const char *>(data), size);}
+  catch (const std::exception &) {return -1;}
+  return static_cast<la_ssize_t>(size);
+}
+
+std::string exportMap(const fs::path & directory)
+{
+  const auto files = readMapFiles(directory);
+  std::string zip;
+  std::unique_ptr<struct archive, decltype(&archive_write_free)> writer(
+    archive_write_new(), archive_write_free);
+  checkArchive(archive_write_set_format_zip(writer.get()));
+  checkArchive(archive_write_set_bytes_in_last_block(writer.get(), 1));
+  checkArchive(archive_write_open(writer.get(), &zip, nullptr, writeZip, nullptr));
+  std::array<char, 64 * 1024> buffer;
+  for (const auto & [name, path] : files) {
+    std::unique_ptr<struct archive_entry, decltype(&archive_entry_free)> entry(
+      archive_entry_new(), archive_entry_free);
+    archive_entry_set_pathname(entry.get(), name.c_str());
+    archive_entry_set_filetype(entry.get(), AE_IFREG);
+    archive_entry_set_perm(entry.get(), 0644);
+    const auto size = fs::file_size(path);
+    archive_entry_set_size(entry.get(), size);
+    checkArchive(archive_write_header(writer.get(), entry.get()));
+    std::ifstream input(path, std::ios::binary);
+    std::uintmax_t written = 0;
+    while (input.read(buffer.data(), buffer.size()) || input.gcount() != 0) {
+      if (archive_write_data(writer.get(), buffer.data(), input.gcount()) != input.gcount()) {
+        throw std::invalid_argument("Lightning ZIP exceeds limits");
+      }
+      written += input.gcount();
+    }
+    if (written != size || !input.eof()) throw std::runtime_error("map file changed during export");
+    checkArchive(archive_write_finish_entry(writer.get()));
+  }
+  checkArchive(archive_write_close(writer.get()));
+  return zip;
+}
+
+std::string mimeType(const fs::path & path)
+{
+  auto extension = path.extension().string();
+  std::transform(extension.begin(), extension.end(), extension.begin(),
+    [](unsigned char c) {return static_cast<char>(std::tolower(c));});
+  if (extension == ".dae") return "model/vnd.collada+xml";
+  if (extension == ".stl") return "model/stl";
+  if (extension == ".obj") return "model/obj";
+  if (extension == ".mtl") return "text/plain";
+  if (extension == ".png") return "image/png";
+  if (extension == ".jpg" || extension == ".jpeg") return "image/jpeg";
+  if (extension == ".tga") return "image/x-tga";
+  if (extension == ".bmp") return "image/bmp";
+  if (extension == ".svg") return "image/svg+xml";
+  if (extension == ".urdf" || extension == ".xacro" || extension == ".xml") return "application/xml";
+  return "application/octet-stream";
+}
+
+class StagingDirectory
+{
+public:
+  explicit StagingDirectory(const fs::path & root)
+  {
+    const auto pattern = (root / ".install-XXXXXX").string();
+    std::vector<char> name(pattern.begin(), pattern.end());
+    name.push_back('\0');
+    if (!mkdtemp(name.data())) throw std::runtime_error("cannot create map staging directory");
+    path = name.data();
+  }
+  ~StagingDirectory()
+  {
+    std::error_code error;
+    fs::remove_all(path, error);
+  }
+  fs::path path;
+};
+
+void extractMap(const std::string & zip, const fs::path & directory)
+{
+  std::unique_ptr<struct archive, decltype(&archive_read_free)> reader(
+    archive_read_new(), archive_read_free);
+  checkArchive(archive_read_support_format_zip(reader.get()));
+  checkArchive(archive_read_open_memory(reader.get(), zip.data(), zip.size()));
+  struct archive_entry * entry = nullptr;
+  std::array<char, 64 * 1024> buffer;
+  std::size_t files = 0;
+  std::size_t size = 0;
+  int result;
+  while ((result = archive_read_next_header(reader.get(), &entry)) != ARCHIVE_EOF) {
+    checkArchive(result);
+    const char * pathname = archive_entry_pathname(entry);
+    if (++files > MAX_FILES || !pathname || !std::regex_match(pathname, FILE_NAME) ||
+      std::string(pathname) == "last_pose.yaml" || archive_entry_filetype(entry) != AE_IFREG ||
+      archive_entry_hardlink(entry) || archive_entry_symlink(entry) || fs::exists(directory / pathname)) {
+      throw std::invalid_argument("invalid native map entry");
+    }
+    std::ofstream output(directory / pathname, std::ios::binary);
+    output.exceptions(std::ios::badbit | std::ios::failbit);
+    la_ssize_t count;
+    while ((count = archive_read_data(reader.get(), buffer.data(), buffer.size())) > 0) {
+      if (static_cast<std::size_t>(count) > MAX_EXPANDED - size) {
+        throw std::invalid_argument("Lightning map exceeds expanded size limit");
+      }
+      size += count;
+      output.write(buffer.data(), count);
+    }
+    if (count < 0) throw std::invalid_argument("invalid Lightning ZIP data");
+    output.close();
+  }
+}
+
+bool sameFiles(const MapFiles & left, const MapFiles & right)
+{
+  if (left.size() != right.size()) return false;
+  for (const auto & [name, path] : left) {
+    const auto other = right.find(name);
+    if (other == right.end() || fs::file_size(path) != fs::file_size(other->second)) return false;
+    std::ifstream a(path, std::ios::binary), b(other->second, std::ios::binary);
+    if (!a || !b || !std::equal(std::istreambuf_iterator<char>(a), {},
+      std::istreambuf_iterator<char>(b), {})) return false;
+  }
+  return true;
+}
+
+http::status installMap(const fs::path & target, const std::string & zip)
+{
+  StagingDirectory staging(target.parent_path());
+  const auto directory = staging.path / "map";
+  fs::create_directory(directory);
+  extractMap(zip, directory);
+  const auto files = readMapFiles(directory);
+  if (fs::is_symlink(target)) return http::status::conflict;
+  if (fs::exists(target)) {
+    try {
+      if (fs::is_directory(target) && sameFiles(files, readMapFiles(target))) {
+        return http::status::no_content;
+      }
+    } catch (const std::invalid_argument &) {
+      // An incomplete map at this name is preserved; callers can choose another name.
+    }
+    return http::status::conflict;
+  }
+  fs::rename(directory, target);
+  return http::status::no_content;
+}
+
+bool authorized(const std::string & expected, beast::string_view actual)
+{
+  if (expected.empty() || actual.size() != expected.size()) return false;
+  unsigned char difference = 0;
+  for (std::size_t i = 0; i < expected.size(); ++i) difference |= expected[i] ^ actual[i];
+  return difference == 0;
+}
+
+std::optional<fs::path> resourcePath(beast::string_view target)
+{
+  target = target.substr(0, target.find('?'));
+  if (target.empty() || target.front() != '/') return std::nullopt;
+  std::string decoded;
+  for (std::size_t i = 0; i < target.size(); ++i) {
+    unsigned char value = target[i];
+    if (value == '%') {
+      if (i + 2 >= target.size() || hex(target[i + 1]) < 0 || hex(target[i + 2]) < 0) {
+        return std::nullopt;
+      }
+      value = static_cast<unsigned char>(hex(target[i + 1]) * 16 + hex(target[i + 2]));
+      i += 2;
+    }
+    if (value < 32 || value == 127 || value == '\\') return std::nullopt;
+    decoded.push_back(static_cast<char>(value));
+  }
+  std::vector<std::string> parts;
+  for (std::size_t start = 1; start < decoded.size();) {
+    const auto end = decoded.find('/', start);
+    const auto part = decoded.substr(start, end - start);
+    if (part == "." || part == "..") return std::nullopt;
+    if (!part.empty()) parts.push_back(part);
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  if (parts.size() < 2 || !std::all_of(parts[0].begin(), parts[0].end(), [](unsigned char c) {
+      return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '_';
+    })) return std::nullopt;
+  try {
+    fs::path result = ament_index_cpp::get_package_share_directory(parts[0]);
+    for (std::size_t i = 1; i < parts.size(); ++i) result /= parts[i];
+    std::error_code error;
+    if (!fs::is_regular_file(result, error) || error) return std::nullopt;
+    return result;
+  } catch (const ament_index_cpp::PackageNotFoundError &) {
+    return std::nullopt;
+  }
 }
 
 std::vector<std::string> route(beast::string_view target)
@@ -59,10 +363,14 @@ std::vector<std::string> route(beast::string_view target)
 class Session : public std::enable_shared_from_this<Session>
 {
 public:
-  Session(tcp::socket socket, Assets & assets) : stream_(std::move(socket)), assets_(assets)
+  Session(tcp::socket socket, Assets * assets, const std::string & token,
+    const fs::path & root, LatestGrid & grid, bool mesh_enabled, bool live_enabled,
+    bool native_enabled)
+  : stream_(std::move(socket)), assets_(assets), token_(token), root_(root), grid_(grid),
+    mesh_enabled_(mesh_enabled), live_enabled_(live_enabled), native_enabled_(native_enabled)
   {
     parser_.header_limit(8192);
-    parser_.body_limit(1024);
+    parser_.body_limit(MAX_ZIP);
   }
   void run()
   {
@@ -75,7 +383,7 @@ private:
   template<class Body>
   void send(http::response<Body> response)
   {
-    response.set(http::field::server, "map_3d_server");
+    response.set(http::field::server, "robot_http_server");
     response.set(http::field::access_control_allow_origin, "*");
     response.keep_alive(false);
     auto message = std::make_shared<http::response<Body>>(std::move(response));
@@ -108,45 +416,57 @@ private:
   {
     try {
       const auto & request = parser_.get();
+      if (request.target().starts_with(NATIVE_ROUTE)) {
+        if (!native_enabled_) return sendJson(http::status::not_found, {{"error", "Unknown route"}});
+        return respondNative();
+      }
+      if (request.method() == http::verb::put) {
+        return sendJson(http::status::method_not_allowed,
+          {{"error", "Only GET, HEAD and OPTIONS are supported"}});
+      }
       if (request.method() == http::verb::options) {
         http::response<http::empty_body> response{http::status::no_content, request.version()};
+        const auto target_parts = route(request.target());
         response.set(http::field::access_control_allow_methods, "GET, HEAD, OPTIONS");
         response.set(http::field::access_control_allow_headers, "Content-Type");
+        response.set(http::field::access_control_allow_origin, "*");
         return send(std::move(response));
       }
       if (request.method() != http::verb::get && request.method() != http::verb::head) {
         return sendJson(http::status::method_not_allowed, {{"error", "Only GET, HEAD and OPTIONS are supported"}});
       }
       const auto parts = route(request.target());
-      if (parts.size() != 3 || parts[0] != "maps" || (parts[2] != "status" && parts[2] != "cloud.ply")) {
-        return sendJson(http::status::not_found, {{"error", "Unknown 3D asset route"}});
+      if (parts.size() == 2 && parts[0] == "maps" && parts[1] == "live") {
+        if (!live_enabled_) return sendJson(http::status::not_found, {{"error", "Unknown route"}});
+        return sendLiveMap();
       }
-      const auto state = assets_.status(parts[1]);
-      if (parts[2] == "status") return sendJson(http::status::ok, state);
-      if (state.value("status", "") != "ready") {
-        return sendJson(http::status::conflict, {{"error", "3D map is not ready"}});
+      if (parts.size() == 3 && parts[0] == "maps" &&
+        (parts[2] == "status" || parts[2] == "cloud.ply")) {
+        if (!assets_) return sendJson(http::status::not_found, {{"error", "Unknown 3D asset route"}});
+        return respond3d(parts);
       }
-      http::file_body::value_type body;
-      beast::error_code error;
-      body.open(assets_.cloud(parts[1], state.at("version").get<std::string>()).c_str(), beast::file_mode::scan, error);
-      if (error) return sendJson(http::status::conflict, {{"error", "3D asset changed; request status again"}});
-      const auto size = body.size();
-      if (size != state.at("size_bytes").get<uint64_t>()) {
-        return sendJson(http::status::conflict, {{"error", "3D asset changed; request status again"}});
-      }
-      if (request.method() == http::verb::head) {
-        http::response<http::empty_body> response{http::status::ok, request.version()};
-        response.set(http::field::content_type, "application/octet-stream");
-        response.set(http::field::cache_control, "no-cache");
+      if (parts.size() >= 2) {
+        if (!mesh_enabled_) return sendJson(http::status::not_found, {{"error", "Unknown route"}});
+        const auto resource = resourcePath(request.target());
+        if (!resource) return sendMeshText(http::status::not_found, "mesh not found\n");
+        http::file_body::value_type resource_body;
+        beast::error_code resource_error;
+        resource_body.open(resource->c_str(), beast::file_mode::scan, resource_error);
+        if (resource_error) return sendMeshText(http::status::internal_server_error, "read error\n");
+        const auto size = resource_body.size();
+        if (request.method() == http::verb::head) {
+          http::response<http::empty_body> response{http::status::ok, request.version()};
+          response.set(http::field::content_type, mimeType(*resource));
+          response.content_length(size);
+          return send(std::move(response));
+        }
+        http::response<http::file_body> response{http::status::ok, request.version()};
+        response.set(http::field::content_type, mimeType(*resource));
         response.content_length(size);
+        response.body() = std::move(resource_body);
         return send(std::move(response));
       }
-      http::response<http::file_body> response{http::status::ok, request.version()};
-      response.set(http::field::content_type, "application/octet-stream");
-      response.set(http::field::cache_control, "no-cache");
-      response.content_length(size);
-      response.body() = std::move(body);
-      send(std::move(response));
+      return sendJson(http::status::not_found, {{"error", "Unknown 3D asset route"}});
     } catch (const agv_map_3d::Changed & error) {
       sendJson(http::status::conflict, {{"error", error.what()}});
     } catch (const agv_map_3d::NotFound & error) {
@@ -154,21 +474,176 @@ private:
     } catch (const agv_map_3d::InvalidPath & error) {
       sendJson(http::status::bad_request, {{"error", error.what()}});
     } catch (const std::exception & error) {
-      std::cerr << "3D request: " << error.what() << '\n';
-      sendJson(http::status::internal_server_error, {{"error", "3D asset request failed"}});
+      std::cerr << "HTTP request: " << error.what() << '\n';
+      sendJson(http::status::internal_server_error, {{"error", "HTTP request failed"}});
     }
+  }
+  void respond3d(const std::vector<std::string> & parts)
+  {
+    const auto & request = parser_.get();
+    const auto state = assets_->status(parts[1]);
+    if (parts[2] == "status") return sendJson(http::status::ok, state);
+    if (state.value("status", "") != "ready") {
+      return sendJson(http::status::conflict, {{"error", "3D map is not ready"}});
+    }
+    http::file_body::value_type body;
+    beast::error_code error;
+    body.open(assets_->cloud(parts[1], state.at("version").get<std::string>()).c_str(), beast::file_mode::scan, error);
+    if (error) return sendJson(http::status::conflict, {{"error", "3D asset changed; request status again"}});
+    const auto size = body.size();
+    if (size != state.at("size_bytes").get<uint64_t>()) {
+      return sendJson(http::status::conflict, {{"error", "3D asset changed; request status again"}});
+    }
+    if (request.method() == http::verb::head) {
+      http::response<http::empty_body> response{http::status::ok, request.version()};
+      response.set(http::field::content_type, "application/octet-stream");
+      response.set(http::field::cache_control, "no-cache");
+      response.content_length(size);
+      return send(std::move(response));
+    }
+    http::response<http::file_body> response{http::status::ok, request.version()};
+    response.set(http::field::content_type, "application/octet-stream");
+    response.set(http::field::cache_control, "no-cache");
+    response.content_length(size);
+    response.body() = std::move(body);
+    send(std::move(response));
+  }
+  void sendMeshText(http::status code, const std::string & value)
+  {
+    if (parser_.get().method() == http::verb::head) {
+      http::response<http::empty_body> response{code, parser_.get().version()};
+      response.set(http::field::content_type, "text/plain; charset=utf-8");
+      response.set(http::field::access_control_allow_origin, "*");
+      response.content_length(value.size());
+      return send(std::move(response));
+    }
+    http::response<http::string_body> response{code, parser_.get().version()};
+    response.set(http::field::content_type, "text/plain; charset=utf-8");
+    response.set(http::field::access_control_allow_origin, "*");
+    if (code == http::status::method_not_allowed) response.set(http::field::allow, "GET, HEAD, OPTIONS");
+    response.body() = value;
+    response.prepare_payload();
+    send(std::move(response));
+  }
+  void sendLiveMap()
+  {
+    const auto [status, etag, body] = grid_.get(parser_.get()[http::field::if_none_match].to_string());
+    http::response<http::string_body> response{
+      static_cast<http::status>(status), parser_.get().version()};
+    response.set(http::field::cache_control, "no-cache");
+    response.set(http::field::content_type, "application/json");
+    response.content_length(body.size());
+    if (!etag.empty()) response.set(http::field::etag, etag);
+    if (status == 200) response.set(http::field::content_encoding, "gzip");
+    if (status != 304) response.body() = body;
+    if (status == 304) response.content_length(0);
+    else response.prepare_payload();
+    send(std::move(response));
+  }
+  void respondNative()
+  {
+    const auto & request = parser_.get();
+    if (request.method() == http::verb::put) {
+      if (!authorized(token_, request[http::field::authorization])) {
+        http::response<http::string_body> response{http::status::unauthorized, request.version()};
+        response.keep_alive(false);
+        response.prepare_payload();
+        return send(std::move(response));
+      }
+      if (!parser_.content_length() || *parser_.content_length() == 0) {
+        http::response<http::string_body> response{http::status::payload_too_large, request.version()};
+        response.keep_alive(false);
+        response.prepare_payload();
+        return send(std::move(response));
+      }
+      stream_.expires_after(std::chrono::seconds(30));
+      http::async_read(stream_, buffer_, parser_,
+        [self = shared_from_this()](beast::error_code error, std::size_t) {
+          if (!error) self->finishNativeUpload();
+        });
+      return;
+    }
+    if (request.method() != http::verb::get) {
+      http::response<http::string_body> response{http::status::method_not_allowed, request.version()};
+      response.keep_alive(false);
+      response.prepare_payload();
+      return send(std::move(response));
+    }
+    http::response<http::string_body> response{http::status::bad_request, request.version()};
+    response.keep_alive(false);
+    if (!authorized(token_, request[http::field::authorization])) {
+      response.result(http::status::unauthorized);
+    } else {
+      const std::string path(request.target());
+      const auto name = path.substr(NATIVE_ROUTE.size());
+      if (std::regex_match(name, FILE_NAME)) {
+        const auto target = root_ / name;
+        try {
+          if (request.method() == http::verb::get) {
+            if (fs::is_symlink(target) || !fs::is_directory(target)) {
+              response.result(http::status::not_found);
+            } else {
+              response.body() = exportMap(target);
+              response.result(http::status::ok);
+              response.set(http::field::content_type, "application/zip");
+            }
+          } else {
+            response.result(http::status::method_not_allowed);
+          }
+        } catch (const std::invalid_argument &) {
+          response.result(http::status::unprocessable_entity);
+        } catch (const std::exception & error) {
+          std::cerr << "Lightning map transfer failed: " << error.what() << '\n';
+          response.result(http::status::internal_server_error);
+        }
+      }
+    }
+    if (response.result() != http::status::no_content) response.prepare_payload();
+    send(std::move(response));
+  }
+  void finishNativeUpload()
+  {
+    const auto & request = parser_.get();
+    http::response<http::string_body> response{http::status::bad_request, request.version()};
+    response.keep_alive(false);
+    const std::string name = std::string(request.target()).substr(NATIVE_ROUTE.size());
+    if (!authorized(token_, request[http::field::authorization])) {
+      response.result(http::status::unauthorized);
+    } else if (!parser_.content_length() || *parser_.content_length() == 0) {
+      response.result(http::status::payload_too_large);
+    } else if (!std::regex_match(name, FILE_NAME)) {
+      response.result(http::status::bad_request);
+    } else {
+      try {response.result(installMap(root_ / name, request.body()));}
+      catch (const std::invalid_argument &) {response.result(http::status::unprocessable_entity);}
+      catch (const std::exception & error) {
+        std::cerr << "Lightning map transfer failed: " << error.what() << '\n';
+        response.result(http::status::internal_server_error);
+      }
+    }
+    response.prepare_payload();
+    send(std::move(response));
   }
   beast::tcp_stream stream_;
   beast::flat_buffer buffer_;
   http::request_parser<http::string_body> parser_;
-  Assets & assets_;
+  Assets * assets_;
+  std::string token_;
+  fs::path root_;
+  LatestGrid & grid_;
+  bool mesh_enabled_;
+  bool live_enabled_;
+  bool native_enabled_;
 };
 
 class Server
 {
 public:
-  Server(net::io_context & context, const tcp::endpoint & endpoint, Assets & assets)
-  : acceptor_(context), assets_(assets)
+  Server(net::io_context & context, const tcp::endpoint & endpoint, Assets * assets,
+    const std::string & token, const fs::path & root, LatestGrid & grid, bool mesh_enabled,
+    bool live_enabled, bool native_enabled)
+  : acceptor_(context), assets_(assets), token_(token), root_(root), grid_(grid),
+    mesh_enabled_(mesh_enabled), live_enabled_(live_enabled), native_enabled_(native_enabled)
   {
     acceptor_.open(endpoint.protocol());
     acceptor_.set_option(net::socket_base::reuse_address(true));
@@ -181,14 +656,82 @@ private:
   void accept()
   {
     acceptor_.async_accept([this](beast::error_code error, tcp::socket socket) {
-      if (!error) std::make_shared<Session>(std::move(socket), assets_)->run();
+      if (!error) std::make_shared<Session>(std::move(socket), assets_, token_, root_, grid_,
+        mesh_enabled_, live_enabled_, native_enabled_)->run();
       else if (error != net::error::operation_aborted) std::cerr << "3D accept: " << error.message() << '\n';
       if (acceptor_.is_open()) accept();
     });
   }
   tcp::acceptor acceptor_;
-  Assets & assets_;
+  Assets * assets_;
+  std::string token_;
+  fs::path root_;
+  LatestGrid & grid_;
+  bool mesh_enabled_;
+  bool live_enabled_;
+  bool native_enabled_;
 };
+
+LatestGrid::LatestGrid() : instance_(makeInstance()) {}
+
+void LatestGrid::update(const nav_msgs::msg::OccupancyGrid::SharedPtr message)
+{
+  if (!message || message->data.empty() ||
+    message->data.size() != message->info.width * message->info.height) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  message_ = *message;
+  ++version_;
+  encoded_.clear();
+}
+
+std::tuple<unsigned, std::string, std::string> LatestGrid::get(const std::string & known_etag)
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!message_) return {503, "", "{\"error\":\"map not available\"}"};
+  const auto etag = "\"" + instance_ + "-" + std::to_string(version_) + "\"";
+  if (known_etag == etag) return {304, etag, ""};
+  if (encoded_.empty()) {
+    const auto & msg = *message_;
+    const auto & info = msg.info;
+    const auto & pos = info.origin.position;
+    const auto & rot = info.origin.orientation;
+    json payload = {
+      {"header", {{"frame_id", msg.header.frame_id}}},
+      {"info", {{"width", info.width}, {"height", info.height}, {"resolution", info.resolution},
+        {"origin", {{"position", {{"x", pos.x}, {"y", pos.y}, {"z", pos.z}}},
+          {"orientation", {{"x", rot.x}, {"y", rot.y}, {"z", rot.z}, {"w", rot.w}}}}}}},
+      {"data", msg.data}};
+    const auto text = payload.dump(-1, ' ', false, json::error_handler_t::replace);
+    z_stream stream{};
+    if (deflateInit2(&stream, 1, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+      throw std::runtime_error("gzip initialization failed");
+    }
+    stream.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(text.data()));
+    stream.avail_in = static_cast<uInt>(text.size());
+    std::array<unsigned char, 65536> buffer{};
+    int result;
+    do {
+      stream.next_out = buffer.data();
+      stream.avail_out = buffer.size();
+      result = deflate(&stream, Z_FINISH);
+      if (result != Z_OK && result != Z_STREAM_END && result != Z_BUF_ERROR) {
+        deflateEnd(&stream);
+        throw std::runtime_error("gzip encoding failed");
+      }
+      encoded_.append(reinterpret_cast<const char *>(buffer.data()), buffer.size() - stream.avail_out);
+    } while (result != Z_STREAM_END);
+    deflateEnd(&stream);
+  }
+  return {200, etag, encoded_};
+}
+
+std::string LatestGrid::makeInstance()
+{
+  std::random_device random;
+  std::ostringstream value;
+  value << std::hex << random() << random();
+  return value.str();
+}
 
 double number(const std::string & text)
 {
@@ -202,16 +745,30 @@ double number(const std::string & text)
 int main(int argc, char ** argv)
 {
   try {
+    LatestGrid grid;
+    rclcpp::Node::SharedPtr ros_node;
+    std::unique_ptr<rclcpp::executors::SingleThreadedExecutor> executor;
+    std::thread ros_thread;
+    if (!rclcpp::ok()) rclcpp::init(argc, argv);
+    ros_node = std::make_shared<rclcpp::Node>("robot_http_server");
+    auto subscription = ros_node->create_subscription<nav_msgs::msg::OccupancyGrid>(
+      "/map", rclcpp::QoS(rclcpp::KeepLast(1)).transient_local(),
+      [&grid](nav_msgs::msg::OccupancyGrid::SharedPtr message) {grid.update(message);});
+    (void)subscription;
     agv_map_3d::Options options;
     const auto directory = fs::read_symlink("/proc/self/exe").parent_path();
     options.pbstream_exporter = directory / "pbstream_to_ply";
     options.pcd_exporter = directory / "pcd_to_ply";
     std::string address = "0.0.0.0";
-    unsigned int port = 8089;
+    unsigned int port = 8080;
+    bool mesh_enabled = true;
+    bool live_enabled = true;
+    bool maps_3d_enabled = true;
+    const char * raw_token = std::getenv("NATIVE_MAP_TOKEN");
     for (int i = 1; i < argc; ++i) {
       const std::string key = argv[i];
       if (key == "--help" || key == "-h") {
-        std::cout << "Usage: map_3d_server --maps-dir DIR [--address IP] [--port 8089] [--voxel 0.1]\n"
+        std::cout << "Usage: robot_http_server --maps-dir DIR [--address IP] [--port 8080] [--voxel 0.1]\n"
           << "  [--exporter FILE] [--exporter-pcd FILE] [--source-format auto|pcd|pbstream] [--settle-seconds 2]\n"
           << "  [--scan-seconds 10] [--export-timeout 300] [--retry-seconds 30]\n";
         return 0;
@@ -223,6 +780,9 @@ int main(int argc, char ** argv)
       else if (key == "--exporter") options.pbstream_exporter = fs::absolute(value);
       else if (key == "--exporter-pcd") options.pcd_exporter = fs::absolute(value);
       else if (key == "--source-format") options.source_format = value;
+      else if (key == "--enable-mesh") mesh_enabled = value == "true" || value == "1";
+      else if (key == "--enable-live-map") live_enabled = value == "true" || value == "1";
+      else if (key == "--enable-map-3d") maps_3d_enabled = value == "true" || value == "1";
       else if (key == "--voxel") options.voxel = number(value);
       else if (key == "--settle-seconds") options.settle_seconds = number(value);
       else if (key == "--scan-seconds") options.scan_seconds = number(value);
@@ -235,6 +795,7 @@ int main(int argc, char ** argv)
         }
       } else throw std::runtime_error("Unknown option: " + key);
     }
+    const bool native_enabled = raw_token && *raw_token && options.source_format == "pcd";
     if (options.root.empty()) throw std::runtime_error("--maps-dir is required");
     if (options.source_format != "auto" && options.source_format != "pcd" && options.source_format != "pbstream")
       throw std::runtime_error("--source-format must be auto, pcd or pbstream");
@@ -243,19 +804,35 @@ int main(int argc, char ** argv)
     {
       throw std::runtime_error("Invalid voxel/timing options (voxel must be >=0.001 and <10 meters)");
     }
-    Assets assets(options);
+    const std::string token = native_enabled ? "Bearer " + std::string(raw_token) : "";
+    fs::create_directories(options.root);
+    const fs::path root = options.root;
+    std::unique_ptr<Assets> assets;
+    if (maps_3d_enabled) assets = std::make_unique<Assets>(options);
     net::io_context context{1};
-    Server server(context, {net::ip::make_address(address), static_cast<unsigned short>(port)}, assets);
+    Server server(context, {net::ip::make_address(address), static_cast<unsigned short>(port)},
+      assets.get(), token, root, grid, mesh_enabled, live_enabled, native_enabled);
+    if (assets) assets->start();
+    executor = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
+    executor->add_node(ros_node);
+    ros_thread = std::thread([&executor]() {executor->spin();});
     net::signal_set signals(context, SIGINT, SIGTERM);
-    signals.async_wait([&](beast::error_code, int) {assets.stop(); context.stop();});
-    assets.start();
-    std::cout << "[map_3d_server] listening on " << address << ':' << server.port()
+    signals.async_wait([&](beast::error_code, int) {
+      if (assets) assets->stop();
+      executor->cancel();
+      context.stop();
+    });
+    std::cout << "[robot_http_server] listening on " << address << ':' << server.port()
               << "; maps=" << fs::absolute(options.root) << std::endl;
     context.run();
-    assets.stop();
+    if (assets) assets->stop();
+    executor->cancel();
+    if (ros_thread.joinable()) ros_thread.join();
+    rclcpp::shutdown();
     return 0;
   } catch (const std::exception & error) {
-    std::cerr << "[map_3d_server] " << error.what() << '\n';
+    if (rclcpp::ok()) rclcpp::shutdown();
+    std::cerr << "[robot_http_server] " << error.what() << '\n';
     return 1;
   }
 }

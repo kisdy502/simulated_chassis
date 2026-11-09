@@ -16,14 +16,12 @@ SLAM 支持 Lightning-LM 与 Cartographer。上位机、Web 前端及其数据�
 ```text
 上位机 / Web 前端
   ├─ WebSocket :9090 → :9090 ─ rosbridge_server / rosapi
-  ├─ HTTP :8089 → :8089 ────── map_3d_server（已保存地图的三维点云）
-  └─ HTTP :8090 → :8090 ────── urdf_mesh_server（模型 mesh / 纹理资源）
+  └─ HTTP :8080 → :8080 ────── robot_http_server（地图、mesh 与实时地图路由）
                                       │
                          agv-bridge 容器 172.28.0.11
                          ├─ agv_nav_server：地图、任务与状态接口
                          ├─ 托管 Lightning 或 Cartographer、定位、Nav2
-                         ├─ map_3d_server + 两种点云导出器
-                         ├─ urdf_mesh_server
+                         ├─ robot_http_server + 两种点云导出器
                          └─ 就绪检查 → MoveIt / arm_manager / arm_move_adapter
                                       ↕ ROS 2 DDS
                          robot-simulation 容器 172.28.0.10
@@ -45,7 +43,7 @@ SLAM 支持 Lightning-LM 与 Cartographer。上位机、Web 前端及其数据�
 通过后才启动。重启 bridge 不会重新生成机器人或将机械臂恢复折叠姿态。
 
 `ROBOT_PROFILE=chassis_3d` 使用纯底盘入口，不启动 UR5e、腕部相机、机械臂业务节点
-或 8090 模型资源服务；8089 地图服务仍由通用 bridge 启动。
+或 HTTP 8080 服务；统一服务按配置启用对应路由。
 当前 Docker 脚本只接受这两个 profile 和 `ROBOT_TYPE=omni_3wd`。
 仓库中的双臂、其他机械臂演示包没有因此自动加入 Docker 部署。
 
@@ -59,10 +57,11 @@ SLAM 支持 Lightning-LM 与 Cartographer。上位机、Web 前端及其数据�
 | 地址 | 提供方 | 用途 | 宿主端口配置 |
 |---|---|---|---|
 | `ws://HOST:9090` | `rosbridge_server` | ROS 话题订阅/发布、服务和 Action、rosapi 参数读取 | `WEBSOCKET_PORT`，容器固定 9090 |
-| `http://HOST:8089/maps/<name>/status` | `map_3d_server` | 查询三维地图导出状态 | `MAP_3D_PORT`，容器固定 8089 |
-| `http://HOST:8089/maps/<name>/cloud.ply` | `map_3d_server` | 下载三维地图点云 | 同上 |
-| `http://HOST:8092/maps/live` | `live_map_http_server.py` | 按需读取实时 2D 栅格 | `MAP_2D_PORT`，容器固定 8092 |
-| `http://HOST:8090/<pkg>/<relative-path>` | `urdf_mesh_server` | 下载 ROS 包内 mesh、纹理等资源 | `URDF_MESH_PORT`，容器固定 8090 |
+| `http://HOST:8080/maps/<name>/status` | `robot_http_server` | 查询三维地图导出状态 | `HTTP_PORT`，容器固定 8080 |
+| `http://HOST:8080/maps/<name>/cloud.ply` | `robot_http_server` | 下载三维地图点云 | 同上 |
+| `http://HOST:8080/maps/live` | `robot_http_server` | 按需读取实时 2D 栅格 | 同上 |
+| `http://HOST:8080/<pkg>/<relative-path>` | `robot_http_server` | 下载 ROS 包内 mesh、纹理等资源 | 同上 |
+| `http://HOST:8080/native/lightning/<name>` | `robot_http_server` | Lightning 地图 ZIP 上传/下载 | 同上；Lightning 且配置 token |
 
 ### Windows、WSL 与 Docker 的访问地址
 
@@ -70,15 +69,14 @@ SLAM 支持 Lightning-LM 与 Cartographer。上位机、Web 前端及其数据�
 WSL 的 localhost 转发/镜像网络与 Docker Desktop 发布端口都可能使用 Windows
 宿主入口；两台机器人若都通过 `localhost:9090` 访问，这个地址没有机器人选择能力。
 因此本部署约定：WSL 与 Docker 仿真交替运行，先完整停止一套的仿真和 bridge，
-再启动另一套。两种方式均使用标准端口 9090、8089、8090，不增加端口偏移。
+再启动另一套。两种方式均使用标准端口 9090、8080，不增加端口偏移。
 如果以后需要同机同时运行，再为其中一套配置不同宿主机端口。
 Docker 内部端口、ROS launch 默认端口和 Dockerfile EXPOSE 均保持原值。
 
 | 服务 | Windows 访问 WSL 机器人 | Windows/浏览器访问 Docker 机器人 | 同 Docker 网络的上位机访问 Docker 机器人 |
 |---|---|---|---|
 | WebSocket / ROS API | `ws://localhost:9090` | `ws://localhost:9090` | `ws://agv-bridge:9090` |
-| 3D 地图 HTTP | `http://localhost:8089` | `http://localhost:8089` | `http://agv-bridge:8089` |
-| mesh/纹理 HTTP | `http://localhost:8090` | `http://localhost:8090` | `http://agv-bridge:8090` |
+| 机器人 HTTP API（含 mesh/纹理） | `http://localhost:8080` | `http://localhost:8080` | `http://agv-bridge:8080` |
 
 Windows 访问 WSL 通常可用 localhost；用宿主机局域网 IP 访问 WSL 则还取决于
 NAT/镜像网络模式、监听地址、防火墙及端口转发，不能当作始终等同。
@@ -95,12 +93,12 @@ Docker 上位机与机器人必须加入同一个 Docker 网络才可用服务�
 
 - Docker 后端连接机器人：`ws://agv-bridge:9090`。
 - Docker 后端通过 `SIM_AGV_WS_URL=ws://agv-bridge:9090` 统一确定机器人主机名。
-  浏览器访问该后端的 `/api/v1/map-3d/...`，不直接访问机器人；此时无需让浏览器使用 8089。
-- 浏览器直连 Docker 地图服务时：用 `http://HOST:8089`。
-- 浏览器直接加载 Docker mesh 时：`VITE_URDF_MESH_BASE=http://HOST:8090`，
-  不能写只有 Docker 内部可解析的 `agv-bridge:8090`。当前约定下同一宿主地址
+  浏览器访问该后端的 `/api/v1/map-3d/...`，不直接访问机器人；此时无需让浏览器直连机器人 HTTP。
+- 浏览器直连 Docker 机器人 HTTP API 时：用 `http://HOST:8080`。
+- 浏览器直接加载 Docker mesh 时：`VITE_URDF_MESH_BASE=http://HOST:8080`，
+  不能写只有 Docker 内部可解析的 `agv-bridge:8080`。当前约定下同一宿主地址
   指向当时运行的那套机器人，不用于同时选择两台机器人。
-  若 mesh 也由后端反向代理，浏览器改用该代理的外部地址，代理内部仍访问 `agv-bridge:8090`。
+  若 mesh 也由后端反向代理，浏览器改用该代理的外部地址，代理内部访问 `agv-bridge:8080`。
 - URDF 文本由后端经所选机器人的 WebSocket/rosapi 读取；仅改 mesh URL 不会切换
   URDF 或 `/joint_states` 的来源。每套上位机的 WebSocket、地图来源和 mesh 来源必须一致。
 - `VITE_*` 通常为前端构建配置，更改后需按上位机项目的方式重建前端；
@@ -119,28 +117,28 @@ Nav2、MoveIt、Gazebo 和 DDS 的内部通信不发布到宿主机。
 
 配置修改后可在安排停机时执行 `bash deploy.sh restart` 重建两容器；
 仅改此端口映射不需要重编译镜像，`docker compose restart` 则不会更新端口绑定。
-检查 `docker compose ps` 应显示 `9090->9090`、`8089->8089`、`8090->8090`。
+检查 `docker compose ps` 应显示 `9090->9090`、`8080->8080`。
 
 ### URDF 文本与模型资源是两条链路
 
 整机 URDF 文本来自 `robot_state_publisher` 的 `robot_description` 参数，
 上位机通过 rosbridge/rosapi 读取。上位机项目中的 `/api/v1/robot/urdf`
-是其自己的接口，不是机器人 8090 服务提供的接口。
+是其自己的接口，不是机器人 HTTP 资源路由提供的接口。
 
-8090 的 C++ `urdf_mesh_server` 通过 ament 索引定位已安装的 ROS 包资源。例如：
+8080 的 C++ `robot_http_server` 通过 ament 索引定位已安装的 ROS 包资源。例如：
 
 ```text
 package://ur_description/meshes/ur5e/visual/base.dae
-  → http://HOST:8090/ur_description/meshes/ur5e/visual/base.dae
+  → http://HOST:8080/ur_description/meshes/ur5e/visual/base.dae
 ```
 
 前端使用 `VITE_URDF_MESH_BASE` 时，应将其配置为浏览器可访问的
-`http://HOST:8090`（宿主端口改变时同步修改）。服务支持 GET/HEAD/OPTIONS 和 CORS，
+`http://HOST:8080`（宿主端口改变时同步修改）。服务支持 GET/HEAD/OPTIONS 和 CORS，
 不提供目录列表。能连接 9090 不代表模型资源的 HTTP 地址也配置正确。
 
 ### 三维地图服务
 
-8089 运行 C++ `map_3d_server`，后台调用 `pbstream_to_ply` 或 `pcd_to_ply`：
+8080 上的 C++ `robot_http_server` 后台调用 `pbstream_to_ply` 或 `pcd_to_ply`：
 
 - Cartographer：从保存的 `.pbstream` 导出三维占据点云。
 - Lightning：从地图目录的 `global.pcd` 降采样导出 PLY。
@@ -151,8 +149,9 @@ package://ur_description/meshes/ur5e/visual/base.dae
 这是已保存地图的点云浏览功能；二维 PGM/YAML 与 Nav2 仍继续使用。
 
 上位机若使用现有 Java 代理，接口为 `/api/v1/map-3d/<name>/status` 和
-`/api/v1/map-3d/<name>/cloud.ply`，其机器人服务地址取自上位机的 `SIM_AGV_WS_URL` 主机名，使用 8089 端口。
-实时 2D 栅格使用同一主机的 `GET :8092/maps/live`。
+`/api/v1/map-3d/<name>/cloud.ply`，其机器人 HTTP base URL 使用上位机配置的机器人主机名和 8080 端口。
+机器人侧 path、method、认证头及请求/响应格式不变；上位机改连接 URL 即可。
+实时 2D 栅格使用同一 base URL 下的 `GET /maps/live`。
 
 ### 通信方向
 
@@ -191,9 +190,7 @@ cp .env.example .env
 | `BUILD_JOBS` | `2` | 镜像内编译并行度；内存不足可改为 1 |
 | `GAZEBO_GUI` / `START_RVIZ` | `false` | 默认无界面运行 |
 | `WEBSOCKET_PORT` | `9090` | 宿主 WebSocket 端口；容器监听固定 9090 |
-| `MAP_3D_PORT` | `8089` | 三维地图服务的宿主端口；容器 8089 |
-| `MAP_2D_PORT` | `8092` | 实时 2D 地图服务的宿主端口，容器 8092 |
-| `URDF_MESH_PORT` | `8090` | 模型资源服务的宿主端口；容器 8090 |
+| `HTTP_PORT` | `8080` | 机器人 HTTP 服务的宿主端口；容器监听 8080 |
 | `BACK_UP_MAX_HEADING_ERROR_DEG` | `20.0` | 倒车允许的最大航向误差 |
 
 新 `.env.example` 显式选择 Lightning。为兼容已有部署，旧 `.env` 若未设置
@@ -298,7 +295,7 @@ Lightning 当前定位接入不保证任意初始位置的全局重定位，首�
 组合 bridge 已在 rosbridge 白名单中放行上述话题和拍照服务。
 拍照成功后 `message` 返回仿真容器内 PNG 路径，每次拍照创建独立目录，
 包含 `image.png`、`metadata.json`；这个文件路径不是浏览器下载 URL，
-8090 也不是照片文件服务器。照片可从下节的宿主挂载目录取出。
+机器人 HTTP 服务也不是照片文件服务器。照片可从下节的宿主挂载目录取出。
 
 当前传感器持续出图，但只有调用 take_photo 才保存PNG；尚无照片HTTP下载接口。
 请求/响应、预览、元数据和末端按需拍照流程见 [相机接口文档](docs/camera_api.md)。
@@ -391,15 +388,15 @@ ros2 service call /wrist_camera/take_photo std_srvs/srv/Trigger '{}'
 从能访问机器人主机的机器检查 HTTP（地图名称换成实际已保存的地图）：
 
 ```bash
-curl -I http://HOST:8090/ur_description/meshes/ur5e/visual/base.dae
-curl http://HOST:8089/maps/lm_map/status
+curl -I http://HOST:8080/ur_description/meshes/ur5e/visual/base.dae
+curl http://HOST:8080/maps/lm_map/status
 # status 为 ready 后下载
-curl -o lm_map.ply http://HOST:8089/maps/lm_map/cloud.ply
+curl -o lm_map.ply http://HOST:8080/maps/lm_map/cloud.ply
 ```
 
 | 现象 | 检查方向 |
 |---|---|
-| WebSocket 正常但模型缺失 | `robot_description` 参数读取白名单、前端 mesh base、8090→8090 映射及具体资源 URL |
+| WebSocket 正常但模型缺失 | `robot_description` 参数读取白名单、前端 mesh base、8080 HTTP 映射及具体资源 URL |
 | 三维地图返回 409 | 等待导出，查看 status；确认地图保存完成和所选 SLAM 来源一致 |
 | bridge 因地图不存在退出 | `.env` 的容器内路径、`maps/` 挂载、地图后端是否匹配 |
 | 机械臂节点没有启动 | bridge 的就绪检查日志、模型一致性、JTC 是否 active、DDS 连接 |

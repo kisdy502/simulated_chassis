@@ -14,9 +14,6 @@ endif()
 #   对外通信由 rosbridge_server 承担，对外契约由 agv_bridge_v2_interfaces 的 IDL 定义。
 find_package(ament_cmake REQUIRED)
 find_package(ament_index_cpp REQUIRED)
-find_package(Boost 1.71 REQUIRED COMPONENTS system)
-find_package(Threads REQUIRED)
-find_package(LibArchive REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 find_package(rclcpp_action REQUIRED)
@@ -89,19 +86,9 @@ target_include_directories(agv_nav_server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/in
 ament_target_dependencies(agv_nav_server ${AGV_ROS_DEPS})
 
 # ==================== 安装 ====================
-add_executable(urdf_mesh_server src/urdf_mesh_server.cpp)
-ament_target_dependencies(urdf_mesh_server ament_index_cpp)
-target_link_libraries(urdf_mesh_server Boost::system Threads::Threads)
+install(TARGETS agv_nav_server DESTINATION lib/${PROJECT_NAME})
 
-add_executable(native_map_server src/native_map_server.cpp)
-target_include_directories(native_map_server PRIVATE ${LibArchive_INCLUDE_DIRS})
-target_link_libraries(native_map_server Boost::system Threads::Threads ${LibArchive_LIBRARIES})
 
-install(TARGETS agv_nav_server urdf_mesh_server native_map_server
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-install(PROGRAMS scripts/live_map_http_server.py DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch scripts
   DESTINATION share/${PROJECT_NAME}
@@ -113,10 +100,6 @@ ament_export_dependencies(${AGV_ROS_DEPS})
 if(BUILD_TESTING)
   find_program(BASH_EXECUTABLE bash REQUIRED)
   find_program(CURL_EXECUTABLE curl REQUIRED)
-  add_test(NAME test_urdf_mesh_server
-    COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_urdf_mesh_server.sh
-      $<TARGET_FILE:urdf_mesh_server>)
-  set_tests_properties(test_urdf_mesh_server PROPERTIES TIMEOUT 45)
   find_program(PYTHON3_EXECUTABLE python3 REQUIRED)
   add_test(NAME test_navigation_admission
     COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_navigation_admission.py

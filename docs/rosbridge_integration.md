@@ -310,7 +310,7 @@ yaw 解算：`theta = 2*atan2(qz, qw)`（平面机器人 roll/pitch≈0 时成�
 | `simulated_dual_arm`（F1） | + 双臂 14 + 腰 2（合并单帧发布） | `arm_left_joint_1..7` / `arm_right_joint_1..7` / `waist_joint_1..2` |
 
 URDF 读取：`/rosapi/get_param {name:"/robot_state_publisher:robot_description"}`
-（params_glob 已放行）；mesh 经 `http://<host>:8090/<pkg>/<相对路径>` 静态服务获取。
+（params_glob 已放行）；mesh 经 `http://<host>:8080/<pkg>/<相对路径>` 统一 HTTP 服务获取。
 
 ### 4.7 `/rosapi/*` —— 图元数据与 DTO 自动生成
 
@@ -597,7 +597,7 @@ py = height - (y - origin.y) / resolution
 每点角度为 `angle_min + i * angle_increment`，过滤非有限值和超出 range_min/range_max 的量测。
 用消息 `header.frame_id` 查询 TF 后变换到 map 系，不能假定两部雷达都位于 base_link 原点。
 若其他机器人 profile 不发布双 LaserScan，再按实际话题接入转换器并补白名单。
-保存地图的三维查看使用 [8089 点云下载](map_model_api.md)，与实时雷达显示是两条链路。
+保存地图的三维查看使用 [8080 点云下载](map_model_api.md)，与实时雷达显示是两条链路。
 
 ### 7.4 导航到目标点（交互流）
 

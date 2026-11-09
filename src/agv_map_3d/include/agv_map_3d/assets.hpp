@@ -14,9 +14,6 @@
 
 namespace agv_map_3d
 {
-struct NotFound : std::runtime_error {using std::runtime_error::runtime_error;};
-struct InvalidPath : std::runtime_error {using std::runtime_error::runtime_error;};
-struct Changed : std::runtime_error {using std::runtime_error::runtime_error;};
 struct Options
 {
   std::filesystem::path root, pbstream_exporter, pcd_exporter;
@@ -27,6 +24,10 @@ struct Options
   double timeout_seconds = 300.0;
   double retry_seconds = 30.0;
 };
+
+struct NotFound : std::runtime_error {using std::runtime_error::runtime_error;};
+struct InvalidPath : std::runtime_error {using std::runtime_error::runtime_error;};
+struct Changed : std::runtime_error {using std::runtime_error::runtime_error;};
 
 class Assets
 {

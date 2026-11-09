@@ -47,6 +47,7 @@ services:
       BACK_UP_MAX_HEADING_ERROR_DEG: ${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}
       # Internal listener stays at 9090; WEBSOCKET_PORT in .env is host-only.
       WEBSOCKET_PORT: "9090"
+      HTTP_PORT: "8080"
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-1}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
       CYCLONEDDS_URI: file:///etc/cyclonedds.xml
@@ -70,9 +71,7 @@ services:
     ports:
       # Standard host ports; stop the native WSL robot before starting Docker.
       - "${WEBSOCKET_PORT:-9090}:9090"
-      - "${MAP_3D_PORT:-8089}:8089"
-      - "${MAP_2D_PORT:-8092}:8092"
-      - "${URDF_MESH_PORT:-8090}:8090"
+      - "${HTTP_PORT:-8080}:8080"
     depends_on:
       robot-simulation:
         condition: service_started

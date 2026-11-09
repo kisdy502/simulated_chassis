@@ -99,41 +99,34 @@ def _resolve_maps_dir(context):
 
 
 def _map_3d_server(context):
-    """三维地图后台导出 + HTTP 文件服务（8089）。
+    """统一 HTTP 路由服务及三维地图后台导出（默认 8080）。
 
     同时支持 Cartographer pbstream 与 lightning global.pcd 两种地图来源，
     按 slam_algorithm 选择来源，避免同名旧地图混用；
     上位机统一通过 /maps/<name>/status 与 /cloud.ply 消费。"""
-    if LaunchConfiguration("enable_map_3d").perform(context).lower() != "true":
-        return []
     try:
         executable_dir = os.path.join(get_package_prefix("agv_map_3d"), "lib", "agv_map_3d")
     except Exception:
         print("[agv_rosbridge] agv_map_3d 未安装，跳过三维地图服务")
         return []
-    for executable in ("map_3d_server", "pbstream_to_ply", "pcd_to_ply"):
+    required_executables = ["robot_http_server"]
+    if LaunchConfiguration("enable_map_3d").perform(context).lower() == "true":
+        required_executables.extend(("pbstream_to_ply", "pcd_to_ply"))
+    for executable in required_executables:
         if not os.access(os.path.join(executable_dir, executable), os.X_OK):
             print("[agv_rosbridge] 三维地图安装不完整，请重新编译 agv_map_3d，跳过三维地图服务")
             return []
     return [ExecuteProcess(
-        cmd=[os.path.join(executable_dir, "map_3d_server"),
+        cmd=[os.path.join(executable_dir, "robot_http_server"),
              "--exporter", os.path.join(executable_dir, "pbstream_to_ply"),
              "--exporter-pcd", os.path.join(executable_dir, "pcd_to_ply"),
              "--source-format", "pcd" if LaunchConfiguration("slam_algorithm").perform(context) == "lightning" else "pbstream",
              "--maps-dir", _resolve_maps_dir(context),
+             "--enable-mesh", "true" if LaunchConfiguration("mesh_server").perform(context).lower() == "true" else "false",
+             "--enable-live-map", "true" if LaunchConfiguration("enable_map_2d_http").perform(context).lower() == "true" else "false",
+             "--enable-map-3d", "true" if LaunchConfiguration("enable_map_3d").perform(context).lower() == "true" else "false",
              "--address", "0.0.0.0",
-             "--port", LaunchConfiguration("map_3d_port")],
-        output="screen",
-    )]
-
-
-def _native_map_server(context):
-    if (not os.environ.get("NATIVE_MAP_TOKEN") or
-            LaunchConfiguration("slam_algorithm").perform(context) != "lightning"):
-        return []
-    executable = os.path.join(get_package_prefix("agv_bridge_v2"), "lib", "agv_bridge_v2", "native_map_server")
-    return [ExecuteProcess(
-        cmd=[executable, "--maps-dir", _resolve_maps_dir(context)],
+             "--port", LaunchConfiguration("http_port")],
         output="screen",
     )]
 
@@ -444,13 +437,13 @@ def generate_launch_description():
 
     args += [
         DeclareLaunchArgument("enable_map_2d_http", default_value="true",
-                              description="启动实时栅格地图 HTTP 服务"),
-        DeclareLaunchArgument("map_2d_http_port", default_value="8092",
-                              description="实时栅格地图 HTTP 端口"),
+                              description="启用实时栅格地图 HTTP 路由"),
         DeclareLaunchArgument("enable_map_3d", default_value="true",
-                              description="启动三维地图后台导出 + HTTP 文件服务（pbstream/lightning 双格式）"),
-        DeclareLaunchArgument("map_3d_port", default_value="8089",
-                              description="三维地图 HTTP 服务端口"),
+                              description="启用三维地图后台导出和 HTTP 路由（pbstream/lightning 双格式）"),
+        DeclareLaunchArgument("http_port", default_value="8080",
+                              description="统一 HTTP 服务端口"),
+        DeclareLaunchArgument("mesh_server", default_value="true",
+                              description="启用 URDF mesh/纹理 HTTP 路由"),
     ]
 
     return LaunchDescription(args + [
@@ -459,10 +452,5 @@ def generate_launch_description():
         map_saver_lifecycle_manager,
         rosbridge,
         rosapi,
-        Node(package="agv_bridge_v2", executable="live_map_http_server.py",
-             arguments=["--port", LaunchConfiguration("map_2d_http_port")],
-             condition=IfCondition(LaunchConfiguration("enable_map_2d_http")),
-             output="screen"),
         OpaqueFunction(function=_map_3d_server),
-        OpaqueFunction(function=_native_map_server),
     ])

@@ -1,7 +1,7 @@
 # 3D 地图、URDF 与地图业务接口
 
-核对日期：2026-10-23。依据当前工作区的 `map_3d_server.cpp`、`assets.cpp`、
-`urdf_mesh_server.cpp`、launch 配置、`.srv/.action/.msg` 和本机 Humble rosapi 实现。
+核对日期：2026-11-09。依据当前工作区的统一 `robot_http_server`、`assets.cpp`、
+launch 配置、`.srv/.action/.msg` 和本机 Humble rosapi 实现。
 `HOST` 为机器人主机；示例中的地图名仅作示例。以下是机器人侧接口，
 上位机 Java 的 `/api/v1/map-3d/*`、`/api/v1/robot/urdf` 属于另一层代理，不由本仓库实现。
 
@@ -9,27 +9,23 @@
 
 ## 1. 接入地址与启动条件
 
-下面的 9090/8089/8090 示例是原生 WSL 监听地址或 Docker 内部地址。
-从 Windows/浏览器访问 Docker 机器人时，对应端口为 **9090/8089/8090**；
-同 Docker 网络的后端仍使用 `agv-bridge:9090/8089/8090`。
+HTTP 接口统一监听 8080。WebSocket rosbridge 仍使用 9090。
+从 Windows/浏览器访问 Docker 机器人使用 `http://HOST:8080`；同 Docker 网络的后端
+使用 `http://agv-bridge:8080`。合并只改变 base URL 端口，现有 HTTP path、method、
+认证头、请求体和响应格式保持不变。
 完整访问矩阵和代理配置见 [Docker 部署说明](../DOCKER_DEPLOY.md#2-对外端口与上位机接入)。
 
 | 地址 | 用途 | 启动条件 |
 | --- | --- | --- |
 | `ws://HOST:9090/` | rosbridge：业务 service/action、状态订阅、URDF 参数查询 | 通用 bridge |
-| `http://HOST:8089/maps/<name>/status` | 已保存地图三维导出状态 | `enable_map_3d:=true`，默认开启 |
-| `http://HOST:8089/maps/<name>/cloud.ply` | 下载三维点云 | 同上，导出 ready 后可下载 |
-| `http://HOST:8090/<package>/<path>` | 下载 URDF 引用的 mesh/纹理等包资源 | UR5e/双臂组合 bridge 的 `mesh_server:=true` |
+| `http://HOST:8080/maps/<name>/status` | 已保存地图三维导出状态 | `enable_map_3d:=true`，默认开启 |
+| `http://HOST:8080/maps/<name>/cloud.ply` | 下载三维点云 | 同上，导出 ready 后可下载 |
+| `http://HOST:8080/maps/live` | 读取实时二维栅格 | `enable_map_2d_http:=true`，默认开启 |
+| `http://HOST:8080/<package>/<path>` | 下载 URDF 引用的 mesh/纹理等包资源 | `mesh_server:=true`，默认开启 |
+| `http://HOST:8080/native/lightning/<name>` | Lightning 地图 ZIP 导入/导出 | Lightning 且配置 `NATIVE_MAP_TOKEN` |
 
-通用 `agv_rosbridge.launch.py` 不启动 8090 服务；纯底盘要用该服务时可单独启动：
-
-```bash
-ros2 run agv_bridge_v2 urdf_mesh_server --host 0.0.0.0 --port 8090
-```
-
-Docker 中 `WEBSOCKET_PORT` / `MAP_3D_PORT` / `URDF_MESH_PORT` 只改宿主机映射，
-默认 9090 / 8089 / 8090，容器内部固定 9090 / 8089 / 8090。
-ROS launch 通过 `map_3d_port`、组合 profile 的 `mesh_server_port` 改服务端口。
+通用 bridge 启动一个 C++ `robot_http_server` 进程承载 HTTP 路由。Docker 通过
+`HTTP_PORT` 修改宿主映射，容器监听固定 8080；ROS launch 通过 `http_port` 修改监听端口。
 
 ## 2. 3D 地图 HTTP 契约
 
@@ -40,7 +36,7 @@ UTF-8 字节长度为 1～128，不能含 `..`、`/`、反斜杠或 NUL；建议
 没有 HTTP `voxel`、`force`、`refresh` 等请求参数。
 
 ```bash
-curl -i http://HOST:8089/maps/map1022Pro/status
+curl -i http://HOST:8080/maps/map1022Pro/status
 ```
 
 成功返回 `200`，`Content-Type: application/json; charset=utf-8`，`Cache-Control: no-store`。
@@ -94,7 +90,7 @@ curl -i http://HOST:8089/maps/map1022Pro/status
 `Content-Type: application/octet-stream`，`Content-Length` 是实际大小，`Cache-Control: no-cache`。
 
 ```bash
-curl --fail -o map1022Pro.ply http://HOST:8089/maps/map1022Pro/cloud.ply
+curl --fail -o map1022Pro.ply http://HOST:8080/maps/map1022Pro/cloud.ply
 ```
 
 响应是 **PLY 文件字节**，不是 JSON。文件为 `binary_little_endian 1.0`，
@@ -129,7 +125,7 @@ Lightning：`maps/<name>/global.pcd`。bridge 根据 `slam_algorithm` 固定选�
 | CLI 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--maps-dir` | 必填 | 地图根目录；同一根目录不允许重复启动服务 |
-| `--address` / `--port` | `0.0.0.0` / `8089` | HTTP 监听地址和端口 |
+| `--address` / `--port` | `0.0.0.0` / `8080` | HTTP 监听地址和端口 |
 | `--source-format` | `auto` | `auto` / `pcd` / `pbstream`；auto 优先嵌套 pbstream、平铺 pbstream、pcd |
 | `--voxel` | `0.1` | 米，范围 `0.001 <= voxel < 10` |
 | `--settle-seconds` | `2` | 源文件签名稳定等待时间，>=0 |
@@ -144,7 +140,7 @@ Lightning：`maps/<name>/global.pcd`。bridge 根据 `slam_algorithm` 固定选�
 ## 3. 获取当前完整 URDF（WebSocket）
 
 **当前展开后的 URDF 来自 `/robot_state_publisher` 的 `robot_description` 参数。**
-8090 只按包路径读取文件，不执行 xacro，不负责生成当前机器人完整 URDF。
+资源路由只按包路径读取文件，不执行 xacro，不负责生成当前机器人完整 URDF。
 
 在 `ws://HOST:9090/` 发送：
 
@@ -198,18 +194,18 @@ ros2 service call /rosapi/get_param rosapi_msgs/srv/GetParam \
 
 URDF读取成功但模型外观缺失时，继续检查下一节的mesh地址、HTTP状态和上位机资源地址配置。
 
-## 4. 下载 URDF 引用资源（HTTP 8090）
+## 4. 下载 URDF 引用资源（HTTP 8080）
 
 `GET /{package}/{relative_path}`，无请求体。`package` 是已安装 ROS 包名，
 服务通过 ament 索引寻找其 share 目录。URI 重写示例：
 
 ```text
 package://ur_description/meshes/ur5e/visual/base.dae
-  -> http://HOST:8090/ur_description/meshes/ur5e/visual/base.dae
+  -> http://HOST:8080/ur_description/meshes/ur5e/visual/base.dae
 ```
 
 ```bash
-curl -I http://HOST:8090/ur_description/meshes/ur5e/visual/base.dae
+curl -I http://HOST:8080/ur_description/meshes/ur5e/visual/base.dae
 ```
 
 成功 `200`，正文为资源文件原始字节，带 `Content-Length`；`HEAD` 无正文；
@@ -260,7 +256,7 @@ curl -I http://HOST:8090/ur_description/meshes/ur5e/visual/base.dae
 必须区分外层 `result`（服务调用层）和内层 `values.success`（业务层）。
 建图、保存、切图、重定位涉及异步线程，成功响应可能只表示已接受，
 **不能把 save_map 的 success 当作 PLY 已生成或 Nav2 已激活**。
-观察 `/agv/status.mode/map_name`、核实二维档案保存结果后，再查询 8089；遇到 404 需结合保存状态重试。
+观察 `/agv/status.mode/map_name`、核实二维档案保存结果后，再查询 `:8080/maps/{name}/status`；遇到 404 需结合保存状态重试。
 `NAVIGATION` 和 `pose_initialized=true` 也不保证 Nav2 所有节点已激活。
 当前 `AgvStatus.msg` 没有 `nav_ready` 字段，启动窗口内 action 仍可能以 status=6 和具体原因失败。
 

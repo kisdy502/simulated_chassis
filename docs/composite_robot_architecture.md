@@ -132,22 +132,22 @@ Lightning 模式下也可传地图目录；名称沿用并不代表 Lightning �
 ## 5. URDF 资源 HTTP 服务的 C++ 替换
 
 URDF 文本来自 `robot_state_publisher` 的 `robot_description` 参数，经 rosapi
-供上位机读取。8090 服务提供的是 URDF 引用的 mesh、纹理等包资源，不生成 URDF，
+供上位机读取。机器人统一 HTTP 服务提供的是 URDF 引用的 mesh、纹理等包资源，不生成 URDF，
 也不参与 SLAM、TF 或运动控制。
 
 ```text
 package://ur_description/meshes/ur5e/visual/base.dae
-  → 浏览器重写为 http://<机器人>:8090/ur_description/meshes/ur5e/visual/base.dae
+  → 浏览器重写为 http://<机器人>:8080/ur_description/meshes/ur5e/visual/base.dae
   → ament_index_cpp 查找 package share
   → Boost.Beast file_body 发送文件
 ```
 
-替换后的实现是 `agv_bridge_v2/src/urdf_mesh_server.cpp`：
+当前实现整合进统一 `agv_map_3d/src/map_3d_server.cpp` (`robot_http_server`)：
 
 - C++17；HTTP 协议、异步网络与文件响应使用 Boost.Beast/Asio。
 - 显式依赖 `boost`（Ubuntu 开发包 `libboost-system-dev`）和已有的
   `ament_index_cpp`。不使用 TLS，无需为本服务增加 OpenSSL 配置或独立 Web 容器。
-- 保留 `--host`、`--port`、默认 0.0.0.0:8090 和原资源 URL。
+- 保留原资源 URL path；HTTP base URL 统一到默认 0.0.0.0:8080。
 - 支持 GET、HEAD、OPTIONS；跨域响应包含 `Access-Control-Allow-Origin: *`。
 - 文件响应使用 `file_body`，避免像旧实现一样将完整大 mesh 读入字符串。
 - 单个异步事件循环处理多连接；读写超时 30 秒，限制请求头/请求体大小。
@@ -155,7 +155,7 @@ package://ur_description/meshes/ur5e/visual/base.dae
 - 保留 symlink-install 资源访问。已安装包与其中的符号链接视为受信任资源；
   这不是允许不可信用户上传文件的通用文件服务器。
 - SIGINT/SIGTERM 结束事件循环；端口占用或非法参数启动失败并返回非零退出码。
-- UR5e 与双臂两个 bridge 入口均改为从 ament 可执行目录启动同一个 C++ 程序。
+- UR5e 与双臂两个 bridge 入口均经通用 bridge 启动同一个 C++ HTTP 服务进程。
 
 构建与验证（在已安装工作空间依赖的 WSL 环境）：
 
@@ -163,11 +163,11 @@ package://ur_description/meshes/ur5e/visual/base.dae
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 # 仅在依赖尚未安装时需要：sudo apt-get install libboost-system-dev
-colcon build --symlink-install --packages-select agv_bridge_v2 simulated_chassis_ur5e simulated_dual_arm
+colcon build --symlink-install --packages-up-to agv_map_3d simulated_chassis_ur5e simulated_dual_arm
 source install/setup.bash
-colcon test --packages-select agv_bridge_v2 --ctest-args -R test_urdf_mesh_server --output-on-failure
+python3 src/agv_map_3d/tests/test_asset_server.py install/agv_map_3d/lib/agv_map_3d/robot_http_server
 colcon test-result --verbose
-ros2 run agv_bridge_v2 urdf_mesh_server --host 127.0.0.1 --port 18090
+ros2 run agv_map_3d robot_http_server --address 127.0.0.1 --port 18080 --maps-dir /tmp/maps
 ```
 
 HTTP 测试使用独立临时 ament 包、符号链接和高位端口，验证真实网络访问、编码路径、

@@ -92,7 +92,7 @@ Image字段：header、height、width、encoding、is_bigendian、step、data。
 节流只限制客户端转发，不关闭相机；不需要预览就不订阅，用完发送unsubscribe。
 
 **已拍照片目前没有HTTP下载接口**：响应message是机器人文件路径，不是浏览器URL。
-8089只提供地图，8090只提供ROS包资源，都不是照片服务器。
+统一 HTTP 服务只提供地图和 ROS 包资源，不是照片服务器。
 尚未实现照片列表、下载、删除、拍照结果图片话题或service内返回base64图片。
 WSL文件在运行仿真用户的output_dir；Docker默认在仿真容器
 `/root/.ros/wrist_camera/photos/`，宿主映射为

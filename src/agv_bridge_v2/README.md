@@ -1,12 +1,12 @@
 # agv_bridge_v2
 
-当前接口契约（2026-10-23 核对）：[3D 地图 HTTP、URDF/mesh 和地图业务参数/响应](../../docs/map_model_api.md)。
+当前接口契约（2026-11-09 核对）：[HTTP 地图、URDF/mesh 和地图业务参数/响应](../../docs/map_model_api.md)。
 
 [腕部相机与按需拍照](../../docs/camera_api.md)：触发参数/响应、元数据、预览与照片展示能力边界。
 
 AGV 上位机与仿真机器人之间的对接层。**rosbridge 架构**：业务通信暴露标准 ROS 2
-接口，由 `rosbridge_server` 对外提供 JSON over WebSocket。独立 C++ 程序
-`urdf_mesh_server` 使用 Boost.Beast 提供浏览器需要的 mesh/纹理静态资源。
+接口，由 `rosbridge_server` 对外提供 JSON over WebSocket。统一 C++ 程序
+`robot_http_server` 使用 Boost.Beast 提供地图、实时栅格、mesh/纹理和原生地图传输路由。
 
 👉 **上位机对接细节见 [`docs/rosbridge_integration.md`](../../docs/rosbridge_integration.md)**
 
@@ -39,24 +39,22 @@ AGV 上位机与仿真机器人之间的对接层。**rosbridge 架构**：业�
 | `/agv/arm_move` | `srv/ArmMove` | 机械臂绝对关节目标（UR5e 单臂 C++ 适配、双臂 profile；见机械臂专门文档） |
 | TF `map → <agv_id>/base_link` | TF | 车体位姿 |
 
-实时建图预览走独立的 HTTP 服务，默认监听 8092。上位机通过
-`GET /maps/live` 按需读取最近一帧。响应是 gzip 压缩的 OccupancyGrid
+所有 HTTP 接口由同一个 C++ `robot_http_server` 进程承载，默认监听 8080。
+实时建图预览通过 `GET /maps/live` 按需读取最近一帧。响应是 gzip 压缩的 OccupancyGrid
 JSON，保留 `header.frame_id`、`info` 和 `data`。收到 `ETag` 后可在
 下次请求带上 `If-None-Match`，没有更新时返回 304。尚未收到地图时返回
 503。ROS 内部的 `/map` 继续供 RViz、Nav2 和存图使用。
 
-上位机从 `SIM_AGV_WS_URL` 统一获取机器人主机名。各服务使用下表端口。
-Docker 网络内使用容器端口。上位机从 Docker 外访问时，使用可访问这些端口的机器人主机名。
+上位机可统一使用 `http://<robot>:8080` 作为 HTTP base URL；Docker 网络内使用
+`http://agv-bridge:8080`。path、method、认证头、请求/响应格式维持现有契约。
+WebSocket ROS 接口仍独立使用 9090。
 
 | 服务 | 默认端口 |
 | --- | ---: |
 | rosbridge 控制与状态 | 9090 |
-| 3D 地图 | 8089 |
-| mesh | 8090 |
-| 原生地图导入导出 | 8091 |
-| 实时 2D 地图 | 8092 |
+| 机器人 HTTP API（地图、mesh、实时地图、原生地图传输） | 8080 |
 
-原生地图传输启用时，上位机和机器人配置相同的 `NATIVE_MAP_TOKEN`。
+Lightning 原生地图传输启用时，上位机和机器人配置相同的 `NATIVE_MAP_TOKEN`。
 
 上位机同时通过 rosbridge 直接访问仿真侧的标准话题（默认白名单）：
 
@@ -72,7 +70,7 @@ Docker 网络内使用容器端口。上位机从 Docker 外访问时，使用�
 |---|---|
 | `agv_bridge_v2 agv_rosbridge.launch.py` | 无附加（纯底盘） |
 | `simulated_chassis_ur5e bridge.launch.py` | + C++ `/agv/arm_move` 适配器、MoveIt/arm_manager、URDF mesh 服务 |
-| `simulated_dual_arm bridge.launch.py` | + `/agv/arm_move`、合并 `/joint_states`（舵轮+双臂 14+腰 2）、8090 mesh 静态服务 |
+| `simulated_dual_arm bridge.launch.py` | + `/agv/arm_move`、合并 `/joint_states`（舵轮+双臂 14+腰 2）、统一 HTTP mesh 路由 |
 
 **SLAM 后端**：`slam_algorithm:=cartographer|lightning`（默认 cartographer）。
 两后端 `/agv/*` 接口与 mode 语义完全一致；建图期契约（/map ≤5s、TF ≥10Hz）由

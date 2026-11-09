@@ -9,6 +9,11 @@
   <depend>cartographer</depend>
   <depend>libpcl-all-dev</depend>
   <depend>boost</depend>
+  <depend>ament_index_cpp</depend>
+  <depend>libarchive</depend>
+  <depend>rclcpp</depend>
+  <depend>nav_msgs</depend>
+  <depend>zlib</depend>
   <depend>nlohmann_json</depend>
   <test_depend>python3</test_depend>
   <export><build_type>ament_cmake</build_type></export>

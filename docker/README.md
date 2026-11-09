@@ -3,7 +3,7 @@
 完整部署说明统一维护在 [DOCKER_DEPLOY.md](../DOCKER_DEPLOY.md)，包括：
 
 - 双容器进程架构及 Lightning/Cartographer 的选择。
-- Docker 宿主端口 9090 rosbridge、8089 三维地图、8090 模型资源，分别映射到容器内 9090、8089、8090。
+- Docker 宿主端口 9090 rosbridge、8080 统一机器人 HTTP API，分别映射到容器内相同端口。
 - URDF 文本读取与模型资源下载的区别。
 - UR5e、MoveIt、机械臂适配接口、腕部相机和拍照。
 - 构建启动、离线镜像迁移、数据备份、运行检查及故障排查。

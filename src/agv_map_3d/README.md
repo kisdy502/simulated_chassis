@@ -3,7 +3,7 @@
 完整请求参数、响应字段、状态码与 URDF/模型接口联调见
 [当前接口契约（2026-10-23）](../../docs/map_model_api.md)。
 
-机器人侧生产功能使用 C++17：`map_3d_server`（Boost.Beast/Asio HTTP、Boost.Process 导出任务）、`pbstream_to_ply`（Cartographer）、`pcd_to_ply`（PCL）。Python 仅用于测试；ROS Python launch 保留为启动配置。
+机器人侧生产功能使用 C++17：`robot_http_server`（统一 Boost.Beast/Asio HTTP 路由、ROS 实时地图订阅和地图导出任务）、`pbstream_to_ply`（Cartographer）、`pcd_to_ply`（PCL）。Python 仅用于测试；ROS Python launch 保留为启动配置。
 
 ## 数据链路与边界
 
@@ -24,12 +24,12 @@ source install/setup.bash
 ros2 launch agv_bridge_v2 agv_rosbridge.launch.py maps_dir:=/absolute/path/maps
 ```
 
-默认 HTTP 8089；`map_3d_port:=8089` 改端口，`enable_map_3d:=false` 关闭。UR5e、双臂组合的 bridge launch 也转发这两个参数。需要重新构建并在下次启动 bridge 时加载，新旧服务不要同时占用同一地图根目录。服务不发送机器人控制指令。
+统一 HTTP 默认端口 8080；`http_port:=8080` 改端口，`enable_map_3d:=false` 仅关闭 3D 路由和导出后台，其他 HTTP 路由仍共享监听器。`mesh_server:=false` 关闭 mesh 路由，`enable_map_2d_http:=false` 关闭实时地图路由。需要重新构建并在下次启动 bridge 时加载。服务不发送机器人控制指令。
 
 独立运行：
 
 ```bash
-ros2 run agv_map_3d map_3d_server --maps-dir /absolute/path/maps --port 8089 --source-format pcd
+ros2 run agv_map_3d robot_http_server --maps-dir /absolute/path/maps --port 8080 --source-format pcd
 ros2 run agv_map_3d pcd_to_ply input.pcd output.ply 0.1
 ros2 run agv_map_3d pbstream_to_ply input.pbstream output.ply 0.1 0.55
 ```
@@ -37,8 +37,8 @@ ros2 run agv_map_3d pbstream_to_ply input.pbstream output.ply 0.1 0.55
 ## API 与任务处理
 
 ```bash
-curl http://localhost:8089/maps/map1008Pro/status
-curl -o map1008Pro.ply http://localhost:8089/maps/map1008Pro/cloud.ply
+curl http://localhost:8080/maps/map1008Pro/status
+curl -o map1008Pro.ply http://localhost:8080/maps/map1008Pro/cloud.ply
 ```
 
 状态 JSON 的 `status` 为 `generating`、`ready` 或 `failed`，包含地图名、`frame_id`、版本、体素大小，完成后包含点数、字节数；失败含 `message`。下载未就绪返回 409，地图不存在返回 404。支持 GET/HEAD/OPTIONS 与 CORS。PLY 为二进制 little-endian float XYZ。
@@ -49,9 +49,9 @@ curl -o map1008Pro.ply http://localhost:8089/maps/map1008Pro/cloud.ply
 
 ## Docker 与上位机
 
-Docker 构建已加入本包及依赖，bridge 容器内部固定 8089，Compose `MAP_3D_PORT` 设置宿主机端口（默认 8089）。同 Docker 网络的后端使用 `http://agv-bridge:8089`，宿主机/浏览器直连使用 `http://HOST:8089`。WSL 与 Docker 仿真交替运行，避免标准端口被同时占用。详见[部署网络与端口说明](../../DOCKER_DEPLOY.md)。端口映射更改后需重建容器，无需仅为映射重编译镜像。
+Docker 构建已加入本包及依赖，bridge 容器内部固定 8080，Compose `HTTP_PORT` 设置宿主机端口（默认 8080）。同 Docker 网络的后端使用 `http://agv-bridge:8080`，宿主机/浏览器直连使用 `http://HOST:8080`。WSL 与 Docker 仿真交替运行，避免标准端口被同时占用。详见[部署网络与端口说明](../../DOCKER_DEPLOY.md)。端口映射更改后需重建容器，无需仅为映射重编译镜像。
 
-上位机 `D:\workspace\testDispatch` 中 Java 代理位于 `modules/app`，提供 `/api/v1/map-3d/{robot_map_name}/status`、`/cloud.ply`，从 `SIM_AGV_WS_URL` 取机器人主机名并访问 8089。Three.js 保留 Z 向上，按高度着色，支持缩放旋转。二维入口继续可用；机器人的页面箭头只表示平面位置和 yaw，不表示完整 roll/pitch/Z。
+上位机 Java 代理的 HTTP path 由上位机项目管理；机器人侧统一 base URL 为 `http://<robot>:8080`。path、HTTP method、认证头、请求与响应格式不变，上位机连接配置只需改为统一端口。Three.js 保留 Z 向上，按高度着色，支持缩放旋转。二维入口继续可用；机器人的页面箭头只表示平面位置和 yaw，不表示完整 roll/pitch/Z。
 
 ## 验证与已修复问题
 

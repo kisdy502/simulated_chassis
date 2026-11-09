@@ -565,7 +565,7 @@ src → colcon / CMake → build 中间产物 → install 执行文件和配置
 | TF 新鲜但位置偏移 | 地图、初值、拓扑坐标 | start_managed_localization、last_pose、LocalizationMonitor |
 | 电量始终 100% | FULL、连接状态、时钟、发布者 | BatteryGateway、Model::rate / advance |
 | 状态不更新 | 进程、回调组、执行器、QoS | create_timers、publish_status |
-| 机械臂模型不显示 | 启动包、URDF、mesh HTTP | 组合 launch、urdf_mesh_server |
+| 机械臂模型不显示 | 启动包、URDF、mesh HTTP | 组合 launch、robot_http_server |
 
 这是排查入口，不是仅凭症状确定根因。优先只读采样，不用不停重启替代分析。
 

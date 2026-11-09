@@ -33,7 +33,7 @@ Docker 默认 `ROBOT_PROFILE=chassis_3d_ur5e`；需要原纯底盘时设为 `cha
 
 ## 原纯底盘启动顺序（不适用于当前 UR5e 整机）
 
-当前带机械臂的机器人应使用上面的 `simulated_chassis_ur5e` 组合入口。下面通用 `agv_rosbridge.launch.py` 不启动机械臂运行节点和8090 mesh服务，不能替代组合 bridge。
+当前带机械臂的机器人应使用上面的 `simulated_chassis_ur5e` 组合入口。下面通用 `agv_rosbridge.launch.py` 不启动机械臂运行节点和整机上装，但提供统一 HTTP 服务。
 
 ### 1仿真机器人
 
@@ -73,7 +73,7 @@ ros2 launch simulated_chassis_ur5e bridge.launch.py \
   pbstream_file:=/home/kisdy/maps/map1025L
 ```
 
-组合 bridge 包含通用导航桥接、机械臂运行节点以及8090 mesh服务；无需单独启动 `urdf_mesh_server`。完整配置以 [组合包启动说明](src/simulated_chassis_ur5e/README.md#启动) 为准。
+组合 bridge 包含通用导航桥接、机械臂运行节点以及统一 HTTP 服务（默认 8080）；无需单独启动 mesh server。完整配置以 [组合包启动说明](src/simulated_chassis_ur5e/README.md#启动) 为准。
 
 ## 重启前清场（重要）
 
