@@ -26,6 +26,8 @@ ros2 launch agv_bridge_v2 agv_rosbridge.launch.py maps_dir:=/absolute/path/maps
 
 统一 HTTP 默认端口 8080；`http_port:=8080` 改端口，`enable_map_3d:=false` 仅关闭 3D 路由和导出后台，其他 HTTP 路由仍共享监听器。`mesh_server:=false` 关闭 mesh 路由，`enable_map_2d_http:=false` 关闭实时地图路由。需要重新构建并在下次启动 bridge 时加载。服务不发送机器人控制指令。
 
+Lightning 原生地图使用 `PUT/GET /native/lightning/<地图名>` 上传/下载 ZIP，认证头为 `Authorization: Bearer <NATIVE_MAP_TOKEN>`。首次导入及同名同内容重复导入返回 `204`；失败时返回含 `status`、稳定 `code`、可展示 `message` 和 `map_name` 的 JSON。上位机代理应读取非 2xx 响应体并将 `message` 转发给上层，不能只转发状态码。状态码与错误码表见[地图接口契约](../../docs/map_model_api.md#25-lightning-原生地图传输)。
+
 独立运行：
 
 ```bash

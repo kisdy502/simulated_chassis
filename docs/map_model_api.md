@@ -137,6 +137,42 @@ Lightning：`maps/<name>/global.pcd`。bridge 根据 `slam_algorithm` 固定选�
 这些是启动参数，不是 HTTP 查询参数。通用 bridge 目前只转发根目录、端口、后端和导出器路径，
 其他项目使用上述默认值。源文件变化会自动重导出；生成串行进行，输出原子替换。
 
+## 2.5 Lightning 原生地图传输
+
+接口为 `PUT` 上传、`GET` 下载：`/native/lightning/{map_name}`。请求头使用
+`Authorization: Bearer <NATIVE_MAP_TOKEN>`；上传请求体是 ZIP 文件，最大 128 MiB。
+首次上传成功和同名同内容重复上传均返回 `204 No Content`。同名地图内容不同时不会覆盖，返回 `409`。
+
+所有错误响应为 `application/json; charset=utf-8`，字段如下：
+
+```json
+{
+  "status": 409,
+  "code": "MAP_ALREADY_EXISTS",
+  "message": "地图已存在且内容不同: map1109H，请更换地图名",
+  "error": "地图已存在且内容不同: map1109H，请更换地图名",
+  "map_name": "map1109H"
+}
+```
+
+`message` 是可直接展示给用户的中文提示；`error` 与 `message` 相同，供旧客户端兼容。
+上位机代理应读取非 2xx HTTP 响应体，把 `message` 传给上层，而不是只转发 HTTP 状态码。
+`code` 用于程序分支，建议未知 code 时仍展示 `message`。
+
+| HTTP | `code` | 含义与上位机提示建议 |
+| --- | --- | --- |
+| 400 | `MAP_NAME_INVALID` | 地图名格式无效，请检查地图名称 |
+| 401 | `MAP_AUTH_FAILED` | 地图传输认证失败，请检查 Token 配置 |
+| 404 | `MAP_NOT_FOUND` / `MAP_TRANSFER_DISABLED` | 下载地图不存在，或机器人未启用 Lightning 地图传输 |
+| 405 | `METHOD_NOT_ALLOWED` | 仅支持 GET 下载和 PUT 上传 |
+| 409 | `MAP_ALREADY_EXISTS` / `MAP_PATH_CONFLICT` | 同名地图内容不同，或目标路径冲突；更换地图名后重试 |
+| 413 | `MAP_UPLOAD_EMPTY` / `MAP_UPLOAD_TOO_LARGE` | 上传内容为空或 ZIP 超过 128 MiB |
+| 422 | `MAP_ARCHIVE_INVALID`、`MAP_CONTENT_INCOMPLETE`、`MAP_CONTENT_INVALID`、`MAP_CONTENT_TOO_LARGE` | ZIP 损坏、地图缺少必需文件、地图配置/索引无效或内容超限；按 `message` 处理 |
+| 500 | `MAP_IMPORT_FAILED` / `MAP_EXPORT_FAILED` | 机器人导入/导出地图失败，请检查磁盘空间、目录权限和服务端日志 |
+
+传输接口及这些具体错误响应由 `robot_http_server` 提供，修改后需重新构建和部署
+`agv_map_3d`；只重编译 `agv_bridge_v2` 不会更新 HTTP 服务。
+
 ## 3. 获取当前完整 URDF（WebSocket）
 
 **当前展开后的 URDF 来自 `/robot_state_publisher` 的 `robot_description` 参数。**

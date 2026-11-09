@@ -81,9 +81,21 @@ const std::string NATIVE_ROUTE = "/native/lightning/";
 
 using MapFiles = std::map<std::string, fs::path>;
 
+class MapFormatError : public std::invalid_argument
+{
+public:
+  MapFormatError(std::string code, std::string message)
+  : std::invalid_argument(message), code(std::move(code)), message(std::move(message)) {}
+
+  std::string code;
+  std::string message;
+};
+
 void checkArchive(int result)
 {
-  if (result != ARCHIVE_OK) throw std::invalid_argument("invalid Lightning ZIP");
+  if (result != ARCHIVE_OK) {
+    throw MapFormatError("MAP_ARCHIVE_INVALID", "地图 ZIP 压缩包无效或已损坏");
+  }
 }
 
 MapFiles readMapFiles(const fs::path & directory)
@@ -96,7 +108,7 @@ MapFiles readMapFiles(const fs::path & directory)
       !fs::is_regular_file(file.symlink_status())) continue;
     const auto file_size = file.file_size();
     if (files.size() == MAX_FILES || file_size > MAX_EXPANDED - size) {
-      throw std::invalid_argument("Lightning map exceeds limits");
+      throw MapFormatError("MAP_CONTENT_TOO_LARGE", "地图文件数量或总大小超过限制");
     }
     size += file_size;
     files.emplace(name, file.path());
@@ -104,7 +116,7 @@ MapFiles readMapFiles(const fs::path & directory)
   for (const auto * name : {"map.yaml", "map.pgm", "global.pcd", "index.txt"}) {
     const auto file = files.find(name);
     if (file == files.end() || fs::file_size(file->second) == 0) {
-      throw std::invalid_argument("incomplete Lightning map");
+      throw MapFormatError("MAP_CONTENT_INCOMPLETE", "地图文件不完整，缺少必需文件或文件为空");
     }
   }
   std::ifstream yaml(files.at("map.yaml"));
@@ -116,12 +128,16 @@ MapFiles readMapFiles(const fs::path & directory)
     std::string image;
     value >> image;
     if (++image_fields != 1 || image != "map.pgm") {
-      throw std::invalid_argument("map.yaml must reference map.pgm");
+      throw MapFormatError("MAP_CONTENT_INVALID", "地图配置 map.yaml 必须引用 map.pgm");
     }
   }
-  if (image_fields != 1) throw std::invalid_argument("map.yaml is missing image");
+  if (image_fields != 1) {
+    throw MapFormatError("MAP_CONTENT_INVALID", "地图配置 map.yaml 缺少 image 字段");
+  }
   std::ifstream index(files.at("index.txt"));
-  if (!std::getline(index, line)) throw std::invalid_argument("empty Lightning index");
+  if (!std::getline(index, line)) {
+    throw MapFormatError("MAP_CONTENT_INCOMPLETE", "地图索引 index.txt 为空");
+  }
   while (std::getline(index, line)) {
     if (line == "# functional points" || line == "# functional points\r") break;
     std::istringstream row(line);
@@ -129,7 +145,7 @@ MapFiles readMapFiles(const fs::path & directory)
     int x, y;
     if (row >> id && (!std::regex_match(id, TILE_ID) || !(row >> x >> y) ||
       files.count(id + ".pcd") == 0)) {
-      throw std::invalid_argument("Lightning index references an invalid tile");
+      throw MapFormatError("MAP_CONTENT_INVALID", "地图索引 index.txt 引用了无效或缺失的分块");
     }
   }
   return files;
@@ -229,22 +245,27 @@ void extractMap(const std::string & zip, const fs::path & directory)
   while ((result = archive_read_next_header(reader.get(), &entry)) != ARCHIVE_EOF) {
     checkArchive(result);
     const char * pathname = archive_entry_pathname(entry);
-    if (++files > MAX_FILES || !pathname || !std::regex_match(pathname, FILE_NAME) ||
+    if (++files > MAX_FILES) {
+      throw MapFormatError("MAP_CONTENT_TOO_LARGE", "地图文件数量超过限制");
+    }
+    if (!pathname || !std::regex_match(pathname, FILE_NAME) ||
       std::string(pathname) == "last_pose.yaml" || archive_entry_filetype(entry) != AE_IFREG ||
       archive_entry_hardlink(entry) || archive_entry_symlink(entry) || fs::exists(directory / pathname)) {
-      throw std::invalid_argument("invalid native map entry");
+      throw MapFormatError("MAP_ARCHIVE_INVALID", "地图 ZIP 包含非法、重复或不支持的文件路径");
     }
     std::ofstream output(directory / pathname, std::ios::binary);
     output.exceptions(std::ios::badbit | std::ios::failbit);
     la_ssize_t count;
     while ((count = archive_read_data(reader.get(), buffer.data(), buffer.size())) > 0) {
       if (static_cast<std::size_t>(count) > MAX_EXPANDED - size) {
-        throw std::invalid_argument("Lightning map exceeds expanded size limit");
+        throw MapFormatError("MAP_CONTENT_TOO_LARGE", "地图解压后总大小超过限制");
       }
       size += count;
       output.write(buffer.data(), count);
     }
-    if (count < 0) throw std::invalid_argument("invalid Lightning ZIP data");
+    if (count < 0) {
+      throw MapFormatError("MAP_ARCHIVE_INVALID", "地图 ZIP 压缩包数据损坏");
+    }
     output.close();
   }
 }
@@ -263,7 +284,7 @@ bool sameFiles(const MapFiles & left, const MapFiles & right)
 }
 
 http::status installMap(const fs::path & target, const std::string & zip,
-  std::string & error_message)
+  std::string & error_code, std::string & error_message)
 {
   StagingDirectory staging(target.parent_path());
   const auto directory = staging.path / "map";
@@ -271,7 +292,8 @@ http::status installMap(const fs::path & target, const std::string & zip,
   extractMap(zip, directory);
   const auto files = readMapFiles(directory);
   if (fs::is_symlink(target)) {
-    error_message = "目标地图路径冲突: " + target.filename().string();
+    error_code = "MAP_PATH_CONFLICT";
+    error_message = "目标地图路径不安全，无法覆盖: " + target.filename().string();
     return http::status::conflict;
   }
   if (fs::exists(target)) {
@@ -282,7 +304,8 @@ http::status installMap(const fs::path & target, const std::string & zip,
     } catch (const std::invalid_argument &) {
       // An incomplete map at this name is preserved; callers can choose another name.
     }
-    error_message = "地图已存在且内容不同: " + target.filename().string();
+    error_code = "MAP_ALREADY_EXISTS";
+    error_message = "地图已存在且内容不同: " + target.filename().string() + "，请更换地图名";
     return http::status::conflict;
   }
   fs::rename(directory, target);
@@ -295,6 +318,28 @@ bool authorized(const std::string & expected, beast::string_view actual)
   unsigned char difference = 0;
   for (std::size_t i = 0; i < expected.size(); ++i) difference |= expected[i] ^ actual[i];
   return difference == 0;
+}
+
+void setNativeError(http::response<http::string_body> & response, http::status status,
+  const std::string & code, const std::string & message, const std::string & map_name)
+{
+  response.result(status);
+  response.set(http::field::content_type, "application/json; charset=utf-8");
+  response.set(http::field::cache_control, "no-store");
+  if (status == http::status::method_not_allowed) {
+    response.set(http::field::allow, "GET, PUT");
+  }
+  response.body() = json{
+    {"status", static_cast<unsigned int>(status)}, {"code", code},
+    {"message", message}, {"error", message}, {"map_name", map_name}
+  }.dump(-1, ' ', false, json::error_handler_t::replace);
+}
+
+template<typename StringLike>
+bool hasPrefix(const StringLike & value, const std::string & prefix)
+{
+  return value.size() >= prefix.size() &&
+         std::equal(prefix.begin(), prefix.end(), value.begin());
 }
 
 std::optional<fs::path> resourcePath(beast::string_view target)
@@ -381,7 +426,10 @@ public:
   {
     stream_.expires_after(std::chrono::seconds(30));
     http::async_read(stream_, buffer_, parser_,
-      [self = shared_from_this()](beast::error_code error, std::size_t) {if (!error) self->respond();});
+      [self = shared_from_this()](beast::error_code error, std::size_t) {
+        if (!error) self->respond();
+        else self->handleReadError(error);
+      });
   }
 
 private:
@@ -417,12 +465,39 @@ private:
     response.prepare_payload();
     send(std::move(response));
   }
+  void handleReadError(const beast::error_code & error)
+  {
+    if (error == http::error::body_limit) {
+      const auto & request = parser_.get();
+      const auto target = request.target().to_string();
+      const bool native_map_request = hasPrefix(target, NATIVE_ROUTE);
+      const auto name = native_map_request ? target.substr(NATIVE_ROUTE.size()) : "";
+      http::response<http::string_body> response{
+        http::status::payload_too_large, request.version() == 0 ? 11 : request.version()};
+      response.keep_alive(false);
+      setNativeError(response, http::status::payload_too_large,
+        native_map_request ? "MAP_UPLOAD_TOO_LARGE" : "REQUEST_BODY_TOO_LARGE",
+        native_map_request ? "地图 ZIP 超过最大上传限制（128 MiB）" : "请求内容超过服务器限制",
+        name);
+      response.prepare_payload();
+      return send(std::move(response));
+    }
+    beast::error_code ignored;
+    stream_.socket().shutdown(tcp::socket::shutdown_both, ignored);
+  }
   void respond()
   {
     try {
       const auto & request = parser_.get();
-      if (request.target().starts_with(NATIVE_ROUTE)) {
-        if (!native_enabled_) return sendJson(http::status::not_found, {{"error", "Unknown route"}});
+      if (hasPrefix(request.target(), NATIVE_ROUTE)) {
+        if (!native_enabled_) {
+          http::response<http::string_body> response{http::status::not_found, request.version()};
+          response.keep_alive(false);
+          setNativeError(response, http::status::not_found, "MAP_TRANSFER_DISABLED",
+            "机器人未启用 Lightning 原生地图传输接口", "");
+          response.prepare_payload();
+          return send(std::move(response));
+        }
         return respondNative();
       }
       if (request.method() == http::verb::put) {
@@ -548,16 +623,22 @@ private:
   void respondNative()
   {
     const auto & request = parser_.get();
+    const std::string request_name =
+      std::string(request.target()).substr(NATIVE_ROUTE.size());
     if (request.method() == http::verb::put) {
       if (!authorized(token_, request[http::field::authorization])) {
         http::response<http::string_body> response{http::status::unauthorized, request.version()};
         response.keep_alive(false);
+        setNativeError(response, http::status::unauthorized, "MAP_AUTH_FAILED",
+          "地图传输认证失败，请检查机器人端 Token 配置", request_name);
         response.prepare_payload();
         return send(std::move(response));
       }
       if (!parser_.content_length() || *parser_.content_length() == 0) {
         http::response<http::string_body> response{http::status::payload_too_large, request.version()};
         response.keep_alive(false);
+        setNativeError(response, http::status::payload_too_large, "MAP_UPLOAD_EMPTY",
+          "上传内容为空，请检查地图 ZIP 文件", request_name);
         response.prepare_payload();
         return send(std::move(response));
       }
@@ -565,42 +646,55 @@ private:
       http::async_read(stream_, buffer_, parser_,
         [self = shared_from_this()](beast::error_code error, std::size_t) {
           if (!error) self->finishNativeUpload();
+          else self->handleReadError(error);
         });
       return;
     }
     if (request.method() != http::verb::get) {
       http::response<http::string_body> response{http::status::method_not_allowed, request.version()};
       response.keep_alive(false);
+      setNativeError(response, http::status::method_not_allowed, "METHOD_NOT_ALLOWED",
+        "该地图接口仅支持 GET 下载和 PUT 上传", "");
       response.prepare_payload();
       return send(std::move(response));
     }
     http::response<http::string_body> response{http::status::bad_request, request.version()};
     response.keep_alive(false);
     if (!authorized(token_, request[http::field::authorization])) {
-      response.result(http::status::unauthorized);
+      setNativeError(response, http::status::unauthorized, "MAP_AUTH_FAILED",
+        "地图传输认证失败，请检查机器人端 Token 配置", request_name);
     } else {
-      const std::string path(request.target());
-      const auto name = path.substr(NATIVE_ROUTE.size());
+      const auto & name = request_name;
       if (std::regex_match(name, FILE_NAME)) {
         const auto target = root_ / name;
         try {
           if (request.method() == http::verb::get) {
             if (fs::is_symlink(target) || !fs::is_directory(target)) {
-              response.result(http::status::not_found);
+              setNativeError(response, http::status::not_found, "MAP_NOT_FOUND",
+                "机器人上不存在地图: " + name, name);
             } else {
               response.body() = exportMap(target);
               response.result(http::status::ok);
               response.set(http::field::content_type, "application/zip");
             }
           } else {
-            response.result(http::status::method_not_allowed);
+            setNativeError(response, http::status::method_not_allowed, "METHOD_NOT_ALLOWED",
+              "地图下载仅支持 GET 请求", name);
           }
+        } catch (const MapFormatError & error) {
+          setNativeError(response, http::status::unprocessable_entity,
+            error.code, error.message, name);
         } catch (const std::invalid_argument &) {
-          response.result(http::status::unprocessable_entity);
+          setNativeError(response, http::status::unprocessable_entity, "MAP_CONTENT_INVALID",
+            "地图文件格式无效或内容不完整", name);
         } catch (const std::exception & error) {
           std::cerr << "Lightning map transfer failed: " << error.what() << '\n';
-          response.result(http::status::internal_server_error);
+          setNativeError(response, http::status::internal_server_error, "MAP_EXPORT_FAILED",
+            "机器人导出地图失败，请检查地图目录和磁盘状态", name);
         }
+      } else {
+        setNativeError(response, http::status::bad_request, "MAP_NAME_INVALID",
+          "地图名称格式无效", name);
       }
     }
     if (response.result() != http::status::no_content) response.prepare_payload();
@@ -613,24 +707,35 @@ private:
     response.keep_alive(false);
     const std::string name = std::string(request.target()).substr(NATIVE_ROUTE.size());
     if (!authorized(token_, request[http::field::authorization])) {
-      response.result(http::status::unauthorized);
+      setNativeError(response, http::status::unauthorized, "MAP_AUTH_FAILED",
+        "地图传输认证失败，请检查机器人端 Token 配置", name);
     } else if (!parser_.content_length() || *parser_.content_length() == 0) {
-      response.result(http::status::payload_too_large);
+      setNativeError(response, http::status::payload_too_large, "MAP_UPLOAD_EMPTY",
+        "上传内容为空，请检查地图 ZIP 文件", name);
     } else if (!std::regex_match(name, FILE_NAME)) {
-      response.result(http::status::bad_request);
+      setNativeError(response, http::status::bad_request, "MAP_NAME_INVALID",
+        "地图名称格式无效", name);
     } else {
       try {
+        std::string error_code;
         std::string error_message;
-        response.result(installMap(root_ / name, request.body(), error_message));
+        response.result(installMap(root_ / name, request.body(), error_code, error_message));
         if (!error_message.empty()) {
-          response.set(http::field::content_type, "application/json; charset=utf-8");
-          response.body() = json{{"error", error_message}, {"map_name", name}}.dump();
+          setNativeError(response, http::status::conflict, error_code, error_message, name);
         }
       }
-      catch (const std::invalid_argument &) {response.result(http::status::unprocessable_entity);}
+      catch (const MapFormatError & error) {
+        setNativeError(response, http::status::unprocessable_entity,
+          error.code, error.message, name);
+      }
+      catch (const std::invalid_argument &) {
+        setNativeError(response, http::status::unprocessable_entity, "MAP_ARCHIVE_INVALID",
+          "地图 ZIP 压缩包无效、已损坏或地图文件不完整", name);
+      }
       catch (const std::exception & error) {
         std::cerr << "Lightning map transfer failed: " << error.what() << '\n';
-        response.result(http::status::internal_server_error);
+        setNativeError(response, http::status::internal_server_error, "MAP_IMPORT_FAILED",
+          "机器人保存地图失败，请检查磁盘空间和地图目录权限", name);
       }
     }
     response.prepare_payload();
