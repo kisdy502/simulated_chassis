@@ -262,14 +262,18 @@ bool sameFiles(const MapFiles & left, const MapFiles & right)
   return true;
 }
 
-http::status installMap(const fs::path & target, const std::string & zip)
+http::status installMap(const fs::path & target, const std::string & zip,
+  std::string & error_message)
 {
   StagingDirectory staging(target.parent_path());
   const auto directory = staging.path / "map";
   fs::create_directory(directory);
   extractMap(zip, directory);
   const auto files = readMapFiles(directory);
-  if (fs::is_symlink(target)) return http::status::conflict;
+  if (fs::is_symlink(target)) {
+    error_message = "目标地图路径冲突: " + target.filename().string();
+    return http::status::conflict;
+  }
   if (fs::exists(target)) {
     try {
       if (fs::is_directory(target) && sameFiles(files, readMapFiles(target))) {
@@ -278,6 +282,7 @@ http::status installMap(const fs::path & target, const std::string & zip)
     } catch (const std::invalid_argument &) {
       // An incomplete map at this name is preserved; callers can choose another name.
     }
+    error_message = "地图已存在且内容不同: " + target.filename().string();
     return http::status::conflict;
   }
   fs::rename(directory, target);
@@ -614,7 +619,14 @@ private:
     } else if (!std::regex_match(name, FILE_NAME)) {
       response.result(http::status::bad_request);
     } else {
-      try {response.result(installMap(root_ / name, request.body()));}
+      try {
+        std::string error_message;
+        response.result(installMap(root_ / name, request.body(), error_message));
+        if (!error_message.empty()) {
+          response.set(http::field::content_type, "application/json; charset=utf-8");
+          response.body() = json{{"error", error_message}, {"map_name", name}}.dump();
+        }
+      }
       catch (const std::invalid_argument &) {response.result(http::status::unprocessable_entity);}
       catch (const std::exception & error) {
         std::cerr << "Lightning map transfer failed: " << error.what() << '\n';
