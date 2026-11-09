@@ -29,9 +29,10 @@ agv_rosbridge.launch.py —— rosbridge 架构下的 AGV 对接 launch
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, EmitEvent
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, EmitEvent, RegisterEventHandler
 from ament_index_python.packages import get_package_prefix
 from launch.events import Shutdown
+from launch.event_handlers import OnProcessExit
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, EnvironmentVariable
 from launch_ros.actions import Node
@@ -106,17 +107,22 @@ def _map_3d_server(context):
     上位机统一通过 /maps/<name>/status 与 /cloud.ply 消费。"""
     try:
         executable_dir = os.path.join(get_package_prefix("agv_map_3d"), "lib", "agv_map_3d")
-    except Exception:
-        print("[agv_rosbridge] agv_map_3d 未安装，跳过三维地图服务")
-        return []
+    except Exception as error:
+        raise RuntimeError(
+            f"[agv_rosbridge] 无法找到 agv_map_3d 安装包，统一 HTTP 服务无法启动: {error}") from error
     required_executables = ["robot_http_server"]
     if LaunchConfiguration("enable_map_3d").perform(context).lower() == "true":
         required_executables.extend(("pbstream_to_ply", "pcd_to_ply"))
-    for executable in required_executables:
-        if not os.access(os.path.join(executable_dir, executable), os.X_OK):
-            print("[agv_rosbridge] 三维地图安装不完整，请重新编译 agv_map_3d，跳过三维地图服务")
-            return []
-    return [ExecuteProcess(
+    missing_executables = [
+        executable for executable in required_executables
+        if not os.access(os.path.join(executable_dir, executable), os.X_OK)
+    ]
+    if missing_executables:
+        raise RuntimeError(
+            "[agv_rosbridge] agv_map_3d 安装不完整，缺少可执行文件: "
+            + ", ".join(missing_executables)
+            + "；请重新构建 agv_map_3d")
+    http_server = ExecuteProcess(
         cmd=[os.path.join(executable_dir, "robot_http_server"),
              "--exporter", os.path.join(executable_dir, "pbstream_to_ply"),
              "--exporter-pcd", os.path.join(executable_dir, "pcd_to_ply"),
@@ -128,7 +134,14 @@ def _map_3d_server(context):
              "--address", "0.0.0.0",
              "--port", LaunchConfiguration("http_port")],
         output="screen",
-    )]
+    )
+    return [
+        http_server,
+        RegisterEventHandler(OnProcessExit(
+            target_action=http_server,
+            on_exit=[EmitEvent(event=Shutdown(reason="robot_http_server exited"))],
+        )),
+    ]
 
 
 def _agv_nav_server_node(context):
