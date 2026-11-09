@@ -216,6 +216,10 @@ amd64/arm64 应分别构建对应架构镜像；宿主构建产物不会复制�
 Windows 透明加密软件可能使文件在 Windows 可读、在 WSL/Docker 不可读；
 构建脚本会检查已知加密文件签名，构建源码应保持 Linux 可读明文。
 
+拉取了新的仓库代码后，可直接执行 `bash deploy.sh redeploy`，它会先构建镜像，
+再强制重建两个容器。`bash deploy.sh restart` 只重建容器、不构建镜像；只运行
+`up` 或 `restart` 不会把新 C++ 源码编进已有镜像。
+
 ## 4. 建图、保存与定位
 
 `PBSTREAM_FILE` 名称为历史兼容参数，含义由算法决定：

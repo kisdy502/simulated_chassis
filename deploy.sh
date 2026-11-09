@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p maps runtime/bridge/ros runtime/bridge/process runtime/simulation/ros
 usage() {
-    echo "Usage: $0 {build|export [FILE.tar]|load FILE.tar|up|up-nav|up-slam|start-mapping|save-map NAME|down|restart|logs [SERVICE]|status|shell [SERVICE]}"
+    echo "Usage: $0 {build|redeploy|export [FILE.tar]|load FILE.tar|up|up-nav|up-slam|start-mapping|save-map NAME|down|restart|logs [SERVICE]|status|shell [SERVICE]}"
 }
 check_source_files() {
     local path signature source_dir
@@ -48,6 +48,10 @@ case "${1:-}" in
         docker build -t ros2-base:latest -f docker/ros2-base/Dockerfile .
         docker compose build robot-simulation agv-bridge
         check_image_tf2
+        ;;
+    redeploy)
+        bash "$0" build
+        docker compose up -d --force-recreate robot-simulation agv-bridge
         ;;
     export)
         check_image_tf2

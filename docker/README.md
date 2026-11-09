@@ -28,3 +28,5 @@ TF2/geometry2 最低版本为 `0.25.24`，用于修复局部代价地图内部 T
 `deploy.sh build` 构建后、`deploy.sh export` 导出前都会检查三个镜像中的实际安装版本。
 按 `bash deploy.sh build` 重新构建即可使新增安装层生效，无需清除所有构建缓存。
 已有容器需在安排好的停机窗口重新创建，重启旧容器不会切换到新镜像。
+拉取新源码后也可直接运行 `bash deploy.sh redeploy`，它会先构建镜像再重建容器；
+`bash deploy.sh restart` 只重建容器，不会重新构建镜像。
