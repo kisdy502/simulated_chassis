@@ -153,6 +153,7 @@ class LaserMapping {
 
     /// local map related
     double filter_size_map_min_ = 0;
+    int ivox_reset_grids_ = 0;  // 定位模式：局部地图网格数超过该值时清空并用当前帧重建（0=关闭）
 
     /// params
     std::vector<double> extrinT_{3, 0.0};  // lidar-imu translation

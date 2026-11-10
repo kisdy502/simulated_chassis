@@ -30,6 +30,8 @@ fasterlio:
 
   ivox_grid_resolution: 0.2    # 默认 0.5 偏粗，室内改 0.2
   ivox_nearby_type: 18
+  ivox_capacity: 100000        # 前端局部地图 LRU 上限（网格数），上游默认 100 万对定位模式过大
+  ivox_reset_grids: 30000      # 定位模式：网格数超过即清空并用当前帧重建（清掉 LIO 漂移抹花层），0=关闭
   esti_plane_threshold: 0.1
 
   use_aa: false
