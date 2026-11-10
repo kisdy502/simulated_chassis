@@ -402,6 +402,7 @@ curl -o lm_map.ply http://HOST:8080/maps/lm_map/cloud.ply
 |---|---|
 | WebSocket 正常但模型缺失 | `robot_description` 参数读取白名单、前端 mesh base、8080 HTTP 映射及具体资源 URL |
 | 三维地图返回 409 | 等待导出，查看 status；确认地图保存完成和所选 SLAM 来源一致 |
+| bridge 启动后整体退出，9090 和 8080 都不可用 | 检查 bridge 日志中的 `agv_map_3d 安装不完整` 或 `robot_http_server` 退出原因；确认新镜像已构建、8080 未被占用 |
 | bridge 因地图不存在退出 | `.env` 的容器内路径、`maps/` 挂载、地图后端是否匹配 |
 | 机械臂节点没有启动 | bridge 的就绪检查日志、模型一致性、JTC 是否 active、DDS 连接 |
 | 相机无图像 | 是否使用 UR5e profile、相机 enabled、Xvfb/渲染和仿真日志 |

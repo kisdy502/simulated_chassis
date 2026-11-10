@@ -1,6 +1,6 @@
 # 3D 地图、URDF 与地图业务接口
 
-核对日期：2026-11-09。依据当前工作区的统一 `robot_http_server`、`assets.cpp`、
+核对日期：2026-11-10。依据当前工作区的统一 `robot_http_server`、`assets.cpp`、
 launch 配置、`.srv/.action/.msg` 和本机 Humble rosapi 实现。
 `HOST` 为机器人主机；示例中的地图名仅作示例。以下是机器人侧接口，
 上位机 Java 的 `/api/v1/map-3d/*`、`/api/v1/robot/urdf` 属于另一层代理，不由本仓库实现。
@@ -26,6 +26,10 @@ HTTP 接口统一监听 8080。WebSocket rosbridge 仍使用 9090。
 
 通用 bridge 启动一个 C++ `robot_http_server` 进程承载 HTTP 路由。Docker 通过
 `HTTP_PORT` 修改宿主映射，容器监听固定 8080；ROS launch 通过 `http_port` 修改监听端口。
+该服务是 bridge 启动所需组件：若找不到 `agv_map_3d` 或其必需可执行文件，launch 会报错；
+服务进程启动后若退出（例如端口被占用或参数无效），整个 bridge launch 会关闭，避免
+rosbridge 仍在线但 HTTP 路由不可用。排查时同时检查 bridge 启动日志中的
+`agv_map_3d 安装不完整`、`robot_http_server` 退出原因，以及 8080 端口占用情况。
 
 ## 2. 3D 地图 HTTP 契约
 
