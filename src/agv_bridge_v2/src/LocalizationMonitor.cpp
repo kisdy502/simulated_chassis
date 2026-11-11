@@ -45,9 +45,17 @@ namespace agv_bridge
             // 查找最新变换（时间戳设为 0 表示获取最新可用变换）。
             // 超时必须为 0：10Hz 轮询本身就是重试节奏，在回调内等待会让单次
             // 耗时超过定时器周期（仿真时钟下 0.1s 折合 140-200ms 墙钟），
-            // 回调背靠背执行，独占回调组饿死其他回调（无图启动建图死结的根因）
+            // 回调背靠背执行，独占回调组饿死其他回调（无图启动建图死结的根）
+            //
+            // 同刻合成：先取定位边 map→odom 最新帧的内容时刻 S，再按 S 查整链
+            // map→base_link。若直接 TimePointZero 查链，tf2 会拼接“S 时刻的
+            // 定位边 × 当前时刻的里程计边”，旋转时产生 ω×Δt 跨时刻错位
+            // （Δt = 定位链路延迟，实测随运行时长增长到 134ms+）。
+            auto map_odom = tf_buffer_.lookupTransform(
+                "map", "odom", tf2::TimePointZero, tf2::durationFromSec(0.0));
             auto transform = tf_buffer_.lookupTransform(
-                "map", "base_link", tf2::TimePointZero, tf2::durationFromSec(0.0));
+                "map", "base_link", rclcpp::Time(map_odom.header.stamp),
+                tf2::durationFromSec(0.1));
 
             if (std::abs(parent_node_->now().seconds() -
                          rclcpp::Time(transform.header.stamp).seconds()) >= 1.0) {

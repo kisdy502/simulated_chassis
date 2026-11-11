@@ -1757,10 +1757,14 @@ namespace agv_bridge
             return;
         }
 
-        const auto &pose = pose_opt.value().pose;
+        const auto &latest_pose = pose_opt.value();
+        const auto &pose = latest_pose.pose;
 
         geometry_msgs::msg::TransformStamped transform;
-        transform.header.stamp = this->now();
+        // 用位姿内容的真实时刻（定位边帧时刻）打戳。原先用 now() 重打戳会把
+        // 延迟 100ms+ 的旧内容伪装成“当前位姿”，旋转时点云按它摆放产生
+        // ω×Δt 错位；如实打戳后消费端按 scan 时间戳查 TF 即得一致变换。
+        transform.header.stamp = latest_pose.header.stamp;
         transform.header.frame_id = "map";
         transform.child_frame_id = agv_id_ + "/base_link";
         transform.transform.translation.x = pose.position.x;
