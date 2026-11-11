@@ -13,6 +13,7 @@ class BatteryGatewayTest : public testing::Test {
     node = std::make_shared<rclcpp::Node>("battery_gateway_test");
     gateway = std::make_shared<BatteryGateway>(node.get(), [this] { return busy.load(); }, []{});
     pub = node->create_publisher<B>("/battery_state",10);
+    cpub = node->create_publisher<std_msgs::msg::Bool>("/battery/charging_connected",10);
     service = node->create_service<std_srvs::srv::SetBool>("/battery/set_charging",
       [this](std_srvs::srv::SetBool::Request::SharedPtr req,
              std_srvs::srv::SetBool::Response::SharedPtr res) {
@@ -38,9 +39,14 @@ class BatteryGatewayTest : public testing::Test {
     B msg; msg.percentage=percentage; msg.power_supply_status=state; msg.present=true;
     ASSERT_TRUE(wait([&]{ pub->publish(msg); agv_bridge_v2_interfaces::msg::AgvStatus s; gateway->fill(s); return s.battery_data_valid; }));
   }
+  void publish_contact(bool v) {
+    std_msgs::msg::Bool m; m.data=v;
+    for(int i=0;i<10;++i){ cpub->publish(m); std::this_thread::sleep_for(std::chrono::milliseconds(20)); }
+  }
   rclcpp::Node::SharedPtr node;
   std::shared_ptr<BatteryGateway> gateway;
   rclcpp::Publisher<B>::SharedPtr pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr cpub;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr service;
   rclcpp::executors::MultiThreadedExecutor executor{rclcpp::ExecutorOptions(),3};
   std::thread worker;
@@ -98,4 +104,30 @@ TEST_F(BatteryGatewayTest, ControlTimeoutDoesNotAllowMotion) {
   publish(.5,B::POWER_SUPPLY_STATUS_CHARGING);
   EXPECT_FALSE(gateway->prepareMotion(error));
   EXPECT_NE(error.find("data=false"),std::string::npos);
+}
+TEST_F(BatteryGatewayTest, EvidenceHealsUncertainWithoutManualReset) {
+  publish(.5,B::POWER_SUPPLY_STATUS_CHARGING); delay_ms=2300;
+  std::string error;
+  EXPECT_FALSE(gateway->prepareMotion(error));            // 后端超时 → uncertain_
+  EXPECT_NE(error.find("未确认"),std::string::npos);
+  delay_ms=0;
+  publish(.5,B::POWER_SUPPLY_STATUS_DISCHARGING);          // 事实：放电中
+  publish_contact(false);                                  // 事实：未连接
+  EXPECT_TRUE(wait([this]{ std::string e; return gateway->prepareMotion(e); }));  // 自动解除，无需人工
+}
+TEST_F(BatteryGatewayTest, PluggedEvidenceStaysBlockedWhileBackendBroken) {
+  publish(.5,B::POWER_SUPPLY_STATUS_CHARGING); delay_ms=2300;
+  std::string error;
+  EXPECT_FALSE(gateway->prepareMotion(error));
+  publish(.5,B::POWER_SUPPLY_STATUS_CHARGING);
+  publish_contact(true);                                   // 事实：插着 → 不得按证据放行
+  std::this_thread::sleep_for(std::chrono::milliseconds(600));
+  EXPECT_FALSE(gateway->prepareMotion(error));             // 后端仍坏 + 插着 → 保持阻塞
+}
+TEST_F(BatteryGatewayTest, AutoRetryRecoversWhenBackendReturns) {
+  publish(.5,B::POWER_SUPPLY_STATUS_CHARGING); delay_ms=2300;
+  std::string error;
+  EXPECT_FALSE(gateway->prepareMotion(error));             // uncertain_
+  delay_ms=0;                                              // 后端恢复
+  EXPECT_TRUE(wait([this]{ std::string e; return gateway->prepareMotion(e); }));  // 退避重试 ~1s 自动断开并解除
 }

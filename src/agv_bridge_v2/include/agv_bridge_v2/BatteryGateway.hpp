@@ -23,6 +23,9 @@ class BatteryGateway {
     required_ = node_->declare_parameter("require_battery_state", false);
     timeout_ = node_->declare_parameter("battery_state_timeout_sec", 5.0);
     if (!std::isfinite(timeout_) || timeout_ <= 0) throw std::invalid_argument("battery_state_timeout_sec must be positive");
+    // 证据自愈：uncertain_ 时若接触器真值+电池状态均证明“未连接”，自动解除。
+    // 真实硬件若要求严格回执语义可置 false（仿真默认开启）。
+    evidence_heal_ = node_->declare_parameter("charging_evidence_heal", true);
     const auto backend = node_->declare_parameter<std::string>("charging_backend_service", "/battery/set_charging");
     group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     client_ = node_->create_client<std_srvs::srv::SetBool>(backend, rmw_qos_profile_services_default, group_);
@@ -44,7 +47,9 @@ class BatteryGateway {
       }, opts);
     contact_ = node_->create_subscription<std_msgs::msg::Bool>("/battery/charging_connected", 10,
       [this](std_msgs::msg::Bool::ConstSharedPtr msg) {
-        std::lock_guard<std::mutex> lock(mutex_); connected_ = msg->data;
+        std::lock_guard<std::mutex> lock(mutex_);
+        seen_contact_ = true; received_contact_ = std::chrono::steady_clock::now();
+        connected_ = msg->data;
       }, opts);
     service_ = node_->create_service<std_srvs::srv::SetBool>("/agv/set_charging",
       [this](std_srvs::srv::SetBool::Request::SharedPtr req,
@@ -56,6 +61,11 @@ class BatteryGateway {
         }
         res->success = control(req->data, res->message);
       });
+    // 自愈定时器（专用回调组：healTick 内的 control() 会阻塞至多2秒，
+    // 不得与 /agv/set_charging 服务或其它默认组回调互锁）
+    heal_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    heal_timer_ = node_->create_wall_timer(std::chrono::milliseconds(500),
+                                           [this] { healTick(); }, heal_group_);
   }
 
   bool prepareMotion(std::string &error) {
@@ -68,7 +78,8 @@ class BatteryGateway {
       if (fresh() && level_ <= 0) { error = "电量已耗尽；请先充电再下发移动任务"; return false; }
       if (required_ && fresh() && status_ == 0) { error = "电池充电状态 UNKNOWN；请检查电池驱动状态上报后重试"; return false; }
       disconnect = connected_ || status_ == 1 || status_ == 4;
-      if (uncertain_) { error = "上次充电控制结果未确认；请先调用 /agv/set_charging(data=false) 确认断开后重试"; return false; }
+      if (uncertain_) { error = "上次充电控制结果未确认；系统正按接触器/电池状态自动确认（约1秒），"
+                                "若持续出现请检查充电后端；也可手动调用 /agv/set_charging(data=false)"; return false; }
     }
     if (disconnect && !control(false, error)) {
       error = "移动前停止充电失败，未发送导航目标：" + error; return false;
@@ -96,6 +107,38 @@ class BatteryGateway {
   bool fresh() const {
     return valid_ && std::chrono::duration<double>(std::chrono::steady_clock::now()-received_).count() <= timeout_;
   }
+  bool contactFresh() const {
+    return seen_contact_ &&
+      std::chrono::duration<double>(std::chrono::steady_clock::now()-received_contact_).count() <= timeout_;
+  }
+  // “用事实替代回执”：接触器真值新鲜且为未连接，电池状态新鲜且明确不在充电。
+  // FULL 不算证据——满电插在充电桩上 status 同样可能是 FULL。
+  bool evidenceDisconnected() const {
+    return contactFresh() && !connected_ && fresh() &&
+           (status_ == sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_DISCHARGING ||
+            status_ == sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_NOT_CHARGING);
+  }
+  void armRetry() { stage_ = 0; next_retry_ = std::chrono::steady_clock::now() + std::chrono::seconds(1); }
+  void bumpRetry() {
+    static const int secs[] = {1, 5, 15, 30};
+    if (stage_ < 3) ++stage_;
+    next_retry_ = std::chrono::steady_clock::now() + std::chrono::seconds(secs[stage_]);
+  }
+  // 周期自愈：uncertain_ 时优先按证据解除；无论是否解除，都按退避计划补发一次
+  // control(false) 同步后端（清除后端可能残留的充电标志）。证据不足（真插着/
+  // 数据断流）时保持阻塞，仅由重试+事实在恢复的瞬间自动解开。
+  void healTick() {
+    bool fire = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (!uncertain_) return;
+      if (evidence_heal_ && evidenceDisconnected()) uncertain_ = false;
+      if (std::chrono::steady_clock::now() >= next_retry_) { fire = true; bumpRetry(); }
+    }
+    if (!fire) return;
+    std::string error;
+    control(false, error);
+  }
   bool control(bool enabled, std::string &error) {
     if (!client_->service_is_ready()) { error = "充电后端服务不可用，请检查 /battery/set_charging 或 charging_backend_service 配置"; return false; }
     auto req = std::make_shared<std_srvs::srv::SetBool::Request>(); req->data = enabled;
@@ -103,8 +146,8 @@ class BatteryGateway {
       auto future = client_->async_send_request(req);
       if (future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
         client_->remove_pending_request(future);
-        std::lock_guard<std::mutex> lock(mutex_); uncertain_ = true;
-        error = "充电后端2秒内未确认，当前连接状态未知；恢复后请显式停止充电再重试"; return false;
+        std::lock_guard<std::mutex> lock(mutex_); uncertain_ = true; armRetry();
+        error = "充电后端2秒内未确认，当前连接状态未知；系统将按接触器状态自动确认并重试断开"; return false;
       }
       auto result = future.get(); error = result->message;
       if (!result->success) return false;
@@ -112,7 +155,7 @@ class BatteryGateway {
       connected_ = enabled; uncertain_ = false;
       return true;
     } catch(const std::exception &e) {
-      std::lock_guard<std::mutex> lock(mutex_); uncertain_ = true;
+      std::lock_guard<std::mutex> lock(mutex_); uncertain_ = true; armRetry();
       error = std::string("充电后端通信异常：") + e.what(); return false;
     }
   }
@@ -120,14 +163,18 @@ class BatteryGateway {
   std::function<bool()> busy_;
   std::function<void()> empty_;
   bool required_, seen_ = false, valid_ = false, connected_ = false, uncertain_ = false;
+  bool evidence_heal_ = true, seen_contact_ = false;
   double timeout_, level_ = 100.0;
   uint8_t status_ = 0;
-  std::chrono::steady_clock::time_point received_{};
+  std::chrono::steady_clock::time_point received_{}, received_contact_{}, next_retry_{};
+  int stage_ = 0;
   std::mutex mutex_;
   rclcpp::CallbackGroup::SharedPtr group_;
+  rclcpp::CallbackGroup::SharedPtr heal_group_;
   rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr client_;
   rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr contact_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr service_;
+  rclcpp::TimerBase::SharedPtr heal_timer_;
 };
 } // namespace agv_bridge
