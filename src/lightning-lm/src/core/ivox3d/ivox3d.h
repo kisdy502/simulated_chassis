@@ -87,12 +87,6 @@ class IVox {
     /// get number of valid grids
     size_t NumValidGrids() const;
 
-    /// clear all grids (定位模式周期性重建局部地图，清除漂移抹花层)
-    void Clear() {
-        grids_map_.clear();
-        grids_cache_.clear();
-    }
-
     /// get statistics of the points
     std::vector<float> StatGridPoints() const;
 

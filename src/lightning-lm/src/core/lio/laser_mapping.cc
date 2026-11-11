@@ -66,16 +66,6 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
         ivox_nearby_type = yaml["fasterlio"]["ivox_nearby_type"].as<int>();
         use_aa_ = yaml["fasterlio"]["use_aa"].as<bool>();
 
-        // 可选：前端局部地图容量（LRU 上限）与定位模式重建阈值，缺省保持原行为
-        if (yaml["fasterlio"]["ivox_capacity"]) {
-            ivox_options_.capacity_ = yaml["fasterlio"]["ivox_capacity"].as<int>();
-        }
-        if (yaml["fasterlio"]["ivox_reset_grids"]) {
-            ivox_reset_grids_ = yaml["fasterlio"]["ivox_reset_grids"].as<int>();
-        }
-        LOG(INFO) << "ivox capacity: " << ivox_options_.capacity_ << ", reset grids: " << ivox_reset_grids_
-                  << ", slam mode: " << options_.is_in_slam_mode_;
-
         skip_lidar_num_ = yaml["fasterlio"]["skip_lidar_num"].as<int>();
         enable_skip_lidar_ = skip_lidar_num_ > 0;
 
@@ -397,22 +387,6 @@ void LaserMapping::MakeKF() {
 
     // 有keyframes时更新local map
     Timer::Evaluate([&, this]() { MapIncremental(); }, "    Incremental Mapping");
-
-    /// 定位模式：局部地图随 LIO 漂移被反复抹花且无界增长（实测 16h 从 2k 涨到 116k 格），
-    /// 网格数超阈值时清空并用当前帧世界系点云重建，保持匹配地图干净
-    if (!options_.is_in_slam_mode_ && ivox_reset_grids_ > 0 &&
-        static_cast<int>(ivox_->NumValidGrids()) > ivox_reset_grids_) {
-        IVoxType::PointVector seed;
-        seed.reserve(scan_down_world_->size());
-        for (const auto &pt : scan_down_world_->points) {
-            seed.emplace_back(pt);
-        }
-        const size_t old_grids = ivox_->NumValidGrids();
-        ivox_->Clear();
-        ivox_->AddPoints(seed);
-        LOG(WARNING) << "LIO local map reset: " << old_grids << " -> " << ivox_->NumValidGrids()
-                     << " grids (reseeded with current scan)";
-    }
 
     /// 更新project kfs
     if (proj_kfs_.size() >= options_.max_proj_kfs_) {
