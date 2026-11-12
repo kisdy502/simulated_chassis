@@ -105,8 +105,7 @@ lidar_loc:
   lidar_loc_odom_th: 0.5
   init_with_fp: true
   min_init_confidence: 1.8
-  update_dynamic_cloud: false   # 2026-11-11 定位目标图动态层回写关闭：带位姿误差的 scan 持续写入
-                                # 会让 NDT 目标图越跑越厚（匹配变慢+鬼影），是定位延迟增长的主因
+  update_dynamic_cloud: true
   update_err_h: 0.2
   update_err_v: 0.2
   update_kf_dis: 2.0
@@ -116,10 +115,10 @@ lidar_loc:
 maps:
   delete_when_unload: false
   dyn_cloud_policy: persistent
-  load_dyn_cloud: false         # 不加载跨会话动态层，避免历史污染
+  load_dyn_cloud: true
   load_map_size: 2
   max_pts_dyn_chunk: 100000
-  save_dyn_when_quit: false     # 不再落盘动态层（配合 update_dynamic_cloud: false）
+  save_dyn_when_quit: true
   save_dyn_when_unload: false
   unload_map_size: 4
   with_dyn_area: false

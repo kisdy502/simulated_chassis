@@ -126,9 +126,6 @@ def generate_launch_description():
                         executable="run_loc_online",
                         name="lightning_slam",
                         output="screen",
-                        # glog 降级到 WARNING：每帧 INFO 一晚写 400MB+，加剧 CPU/IO 争抢
-                        # （定位链路延迟增长的帮凶）；WARNING 含子图重建日志不受影响
-                        additional_env={"GLOG_minloglevel": "1"},
                         on_exit=[EmitEvent(event=Shutdown(reason="Lightning localization process exited"))],
                         arguments=[
                             "--config", cfg_file,
