@@ -14,6 +14,7 @@
 #include "agv_bridge_v2_interfaces/srv/get_map.hpp"
 #include "agv_bridge_v2_interfaces/srv/load_map.hpp"
 #include "agv_bridge_v2_interfaces/srv/list_maps.hpp"
+#include "agv_bridge_v2_interfaces/srv/delete_map.hpp"
 #include "agv_bridge_v2_interfaces/srv/start_mapping.hpp"
 #include "agv_bridge_v2_interfaces/srv/save_map.hpp"
 #include "agv_bridge_v2_interfaces/srv/cancel_mapping.hpp"
@@ -51,7 +52,7 @@ namespace agv_bridge
      * 职责边界（这是与旧 AgvBridgeNode 最大的区别）：
      *   ✅ 保留：贝塞尔/直线/倒车路径生成、预旋转、nav2 FollowPath/Spin 调度、限速下发
      *   ❌ 删除：WebSocketServer（libwebsockets）、HttpApiClient（libcurl）、
-     *            bean/* JSON 序列化类、心跳与上报定时器
+     *            bean 目录 JSON 序列化类、心跳与上报定时器
      *
      * 对外只暴露标准 ROS 2 接口，上位机通过 rosbridge_server 以 JSON 协议访问：
      *   action  /agv/follow_edge     agv_bridge_v2_interfaces/action/FollowEdge
@@ -75,6 +76,7 @@ namespace agv_bridge
         using GetMap = agv_bridge_v2_interfaces::srv::GetMap;
         using LoadMap = agv_bridge_v2_interfaces::srv::LoadMap;
         using ListMaps = agv_bridge_v2_interfaces::srv::ListMaps;
+        using DeleteMap = agv_bridge_v2_interfaces::srv::DeleteMap;
         using StartMapping = agv_bridge_v2_interfaces::srv::StartMapping;
         using SaveMap = agv_bridge_v2_interfaces::srv::SaveMap;
         using CancelMapping = agv_bridge_v2_interfaces::srv::CancelMapping;
@@ -149,6 +151,10 @@ namespace agv_bridge
         void handle_list_maps(
             std::shared_ptr<ListMaps::Request> request,
             std::shared_ptr<ListMaps::Response> response);
+
+        void handle_delete_map(
+            std::shared_ptr<DeleteMap::Request> request,
+            std::shared_ptr<DeleteMap::Response> response);
 
         void handle_start_mapping(
             std::shared_ptr<StartMapping::Request> request,
@@ -248,6 +254,10 @@ namespace agv_bridge
                                   const geometry_msgs::msg::Pose &pose,
                                   std::string &error) const;
 
+        /// @brief 更新默认地图记录（maps/.current_map）；失败仅告警，不影响业务。
+        /// 任何一次成功提交的地图切换（显式传参启动/切图/建图保存）后调用。
+        void rememberDefaultMap(const std::string &map_name) const;
+
         // ===== 参数 =====
         std::string agv_id_ = "AGV001";
         double battery_level_ = 100.0;
@@ -320,6 +330,7 @@ namespace agv_bridge
         rclcpp::Service<GetMap>::SharedPtr get_map_srv_;
         rclcpp::Service<LoadMap>::SharedPtr load_map_srv_;
         rclcpp::Service<ListMaps>::SharedPtr list_maps_srv_;
+        rclcpp::Service<DeleteMap>::SharedPtr delete_map_srv_;
         rclcpp::Service<StartMapping>::SharedPtr start_mapping_srv_;
         rclcpp::Service<SaveMap>::SharedPtr save_map_srv_;
         rclcpp::Service<CancelMapping>::SharedPtr cancel_mapping_srv_;

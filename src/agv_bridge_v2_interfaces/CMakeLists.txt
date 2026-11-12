@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetMap.srv"
   "srv/LoadMap.srv"
   "srv/ListMaps.srv"
+  "srv/DeleteMap.srv"
   "srv/StartMapping.srv"
   "srv/SaveMap.srv"
   "srv/CancelMapping.srv"

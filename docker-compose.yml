@@ -58,7 +58,6 @@ services:
       REQUIRE_BATTERY_STATE: ${REQUIRE_BATTERY_STATE:-true}
       MAPS_DIR: /ros2_ws/maps
       NATIVE_MAP_TOKEN: ${NATIVE_MAP_TOKEN:-}
-      PBSTREAM_FILE: ${PBSTREAM_FILE:-}
       SLAM_ALGORITHM: ${SLAM_ALGORITHM:-cartographer}
       START_RVIZ: ${START_RVIZ:-false}
       AGV_PROCESS_LOG_DIR: /ros2_ws/process_logs

@@ -45,13 +45,17 @@ ros2 launch simulated_chassis_ur5e simulation.launch.py gui:=true start_gamepad:
 # 纯底盘入口
 ros2 launch agv_bridge_v2 agv_rosbridge.launch.py \
     robot_package:=simulated_chassis \
-    slam_algorithm:=lightning \                # 缺省 cartographer
-    pbstream_file:=$PWD/maps/my_map            # 首次建图可省略
+    slam_algorithm:=lightning                   # 缺省 cartographer
+# 不传 pbstream_file 时自动加载默认地图记录（见下）
 
 # 组合整机入口（自动带起 MoveIt / arm_manager / RViz）
 ros2 launch simulated_chassis_ur5e bridge.launch.py \
-    slam_algorithm:=lightning pbstream_file:=$PWD/maps/my_map rviz:=true
+    slam_algorithm:=lightning rviz:=true
 ```
+
+启动地图优先级：显式 `pbstream_file` 参数（覆盖默认地图记录）> 默认地图记录
+`maps/.current_map`（切图 / 建图保存成功后自动更新，重启 bridge/容器默认加载）>
+无图待命（等上位机 `start_mapping` 建图或 `load_map` 选图）。
 
 `pbstream_file` 两种后端的写法（地图根目录优先级为：显式 `maps_dir` > 环境变量 `MAPS_DIR` > 初始地图所在根目录 > `~/maps`。WSL 推荐 `$PWD/maps`，不要放回 `/mnt/d` 源码目录；每次建图在 `<maps_dir>/<地图名>/` 下生成独立子目录）：
 
@@ -94,7 +98,10 @@ mode 流转：`NAVIGATION → MAPPING →（save_map）→ RELOCALIZING → NAVI
 
 ### 3.1 带图启动
 
-重启 bridge 并传 `pbstream_file`（写法见 §1 表格）。初始位姿规则：
+重启 bridge 即可：默认地图记录 `maps/.current_map` 会自动加载上次使用的地图
+（上次是切图/建图保存的图，无需再传 `pbstream_file`）。显式传 `pbstream_file`
+可临时指定其他地图，路径在 maps 目录外时会自动复制进 `maps/<name>/` 并更新
+默认地图记录。初始位姿规则：
 
 | 后端 | 有记忆位姿（`maps/<name>/last_pose.yaml`） | 无记忆 |
 |---|---|---|
@@ -112,11 +119,16 @@ lightning **无全局重定位**：机器人须放置在建图起点附近，或
 ros2 service call /agv/relocalize agv_bridge_v2_interfaces/srv/Relocalize \
   "{map_name: lm_test, x: 1.0, y: -0.5, yaw: 1.57}"
 
-# 切换到另一张图（前后端均要求对应地图工件齐备）
+# 切换到另一张图（前后端均要求对应地图工件齐备；切图成功后成为默认地图）
 ros2 service call /agv/load_map agv_bridge_v2_interfaces/srv/LoadMap "{map_name: other_map}"
+
+# 切到当前已在用的图是幂等空操作，不重启定位
 
 # 列出可加载地图
 ros2 service call /agv/list_maps agv_bridge_v2_interfaces/srv/ListMaps "{}"
+
+# 删除不再使用的地图（使用中/默认地图会被拒绝，需先切图）
+ros2 service call /agv/delete_map agv_bridge_v2_interfaces/srv/DeleteMap "{map_name: old_map}"
 ```
 
 定位子进程崩溃时 bridge 自动按当前地图重启（一次重试）；大 pbstream 加载最长等 300s。
@@ -182,7 +194,7 @@ ros2 run tf2_ros tf2_echo map base_link
 |---|---|
 | save_map 后 mode 长时间 MAPPING | 看 `/tmp/agv_slam.log` 与 `/tmp/agv_lightning_save.log`；保存失败可换名重试 |
 | lightning 定位 120s 未就绪 | 机器人是否在起点附近？`/points2_1 /points2_2 /imu` 是否有数据？ |
-| load_map 报"定位节点不由本节点托管" | bridge 启动须带 `pbstream_file`，手动 launch 的定位无法托管 |
+| load_map 报"定位节点不由本节点托管" | 冷启动切图已放行（仅告警 TF 双发风险）；确认外部没有手动 launch 的 cartographer/lightning 在跑 |
 | 建图秒退、mode 回 NAVIGATION | `start_mapping` 参数/配置错，看 `/tmp/agv_slam.log` |
 | 编译报 ament_cmake_python "Is a directory" | 混用 symlink/非 symlink 构建所致，删 `build/<pkg>/ament_cmake_python` 重试 |
 

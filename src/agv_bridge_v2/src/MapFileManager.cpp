@@ -7,12 +7,14 @@
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
+#include <ctime>
 #include <dirent.h>
 #include <fstream>
 #include <set>
 #include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 namespace agv_bridge
 {
@@ -97,6 +99,127 @@ namespace agv_bridge
             y = parts[1];
             yaw = parts.size() >= 3 ? parts[2] : 0.0;
             return true;
+        }
+
+        bool copyFile(const std::string &src, const std::string &dst, std::string &error)
+        {
+            struct stat src_stat
+            {
+            };
+            if (::stat(src.c_str(), &src_stat) != 0 || !S_ISREG(src_stat.st_mode))
+            {
+                error = "无法读取源文件: " + src;
+                return false;
+            }
+            std::ifstream in(src, std::ios::binary);
+            std::ofstream out(dst, std::ios::binary | std::ios::trunc);
+            if (!in.is_open() || !out.is_open())
+            {
+                error = "无法打开复制目标: " + dst;
+                return false;
+            }
+            out << in.rdbuf();
+            struct stat dst_stat
+            {
+            };
+            if (!out || ::stat(dst.c_str(), &dst_stat) != 0 ||
+                dst_stat.st_size != src_stat.st_size)
+            {
+                error = "复制不完整: " + dst;
+                return false;
+            }
+            return true;
+        }
+
+        bool copyTree(const std::string &src, const std::string &dst, std::string &error)
+        {
+            DIR *dir = ::opendir(src.c_str());
+            if (dir == nullptr)
+            {
+                error = "无法打开源目录: " + src;
+                return false;
+            }
+            if (::mkdir(dst.c_str(), 0755) != 0 && errno != EEXIST)
+            {
+                ::closedir(dir);
+                error = "无法创建目标目录 " + dst + ": " + std::strerror(errno);
+                return false;
+            }
+            while (const dirent *entry = ::readdir(dir))
+            {
+                const std::string filename = entry->d_name;
+                if (filename == "." || filename == "..")
+                {
+                    continue;
+                }
+                const std::string child_src = joinPath(src, filename);
+                const std::string child_dst = joinPath(dst, filename);
+                struct stat st
+                {
+                };
+                if (::lstat(child_src.c_str(), &st) != 0)
+                {
+                    continue;
+                }
+                if (S_ISDIR(st.st_mode))
+                {
+                    if (!copyTree(child_src, child_dst, error))
+                    {
+                        ::closedir(dir);
+                        return false;
+                    }
+                }
+                else if (S_ISREG(st.st_mode))
+                {
+                    if (!copyFile(child_src, child_dst, error))
+                    {
+                        ::closedir(dir);
+                        return false;
+                    }
+                }
+            }
+            ::closedir(dir);
+            return true;
+        }
+
+        bool removeTree(const std::string &path)
+        {
+            DIR *dir = ::opendir(path.c_str());
+            if (dir == nullptr)
+            {
+                return ::unlink(path.c_str()) == 0;
+            }
+            while (const dirent *entry = ::readdir(dir))
+            {
+                const std::string filename = entry->d_name;
+                if (filename == "." || filename == "..")
+                {
+                    continue;
+                }
+                const std::string child = joinPath(path, filename);
+                struct stat st
+                {
+                };
+                if (::lstat(child.c_str(), &st) != 0)
+                {
+                    continue;
+                }
+                if (S_ISDIR(st.st_mode))
+                {
+                    if (!removeTree(child))
+                    {
+                        ::closedir(dir);
+                        return false;
+                    }
+                }
+                else if (::unlink(child.c_str()) != 0)
+                {
+                    ::closedir(dir);
+                    return false;
+                }
+            }
+            ::closedir(dir);
+            return ::rmdir(path.c_str()) == 0;
         }
     } // namespace
 
@@ -253,6 +376,164 @@ namespace agv_bridge
     bool MapFileManager::hasPbstream(const std::string &map_name) const
     {
         return fileExists(pbstreamPath(map_name));
+    }
+
+    std::string MapFileManager::currentMapRecordPath() const
+    {
+        return joinPath(maps_dir_, ".current_map");
+    }
+
+    bool MapFileManager::readCurrentMap(std::string &map_name) const
+    {
+        map_name.clear();
+        std::ifstream in(currentMapRecordPath());
+        if (!in.is_open())
+        {
+            return false;
+        }
+        std::string line;
+        while (std::getline(in, line))
+        {
+            const std::string text = trim(line);
+            if (text.rfind("map_name:", 0) != 0)
+            {
+                continue;
+            }
+            const std::string value = trim(text.substr(std::string("map_name:").size()));
+            if (value.empty() || !isValidMapName(value))
+            {
+                return false;
+            }
+            map_name = value;
+            return true;
+        }
+        return false;
+    }
+
+    bool MapFileManager::writeCurrentMap(const std::string &map_name, std::string &error) const
+    {
+        if (!isValidMapName(map_name))
+        {
+            error = "地图名非法，拒绝写入默认地图记录: " + map_name;
+            return false;
+        }
+        const std::string path = currentMapRecordPath();
+        const std::string temporary = path + ".tmp";
+        {
+            std::ofstream out(temporary, std::ios::trunc);
+            if (!out)
+            {
+                error = "无法写入默认地图记录: " + temporary;
+                return false;
+            }
+            out << "map_name: " << map_name << '\n'
+                << "updated_at: " << std::time(nullptr) << '\n';
+            out.flush();
+            if (!out)
+            {
+                error = "写入默认地图记录失败: " + temporary;
+                return false;
+            }
+        }
+        if (std::rename(temporary.c_str(), path.c_str()) != 0)
+        {
+            error = "提交默认地图记录失败: " + path;
+            std::remove(temporary.c_str());
+            return false;
+        }
+        return true;
+    }
+
+    bool MapFileManager::deleteMap(const std::string &map_name, std::string &error) const
+    {
+        if (!isValidMapName(map_name))
+        {
+            error = "地图名非法: " + map_name;
+            return false;
+        }
+        const std::string directory = mapDirectory(map_name);
+        bool removed = false;
+        if (directoryExists(directory))
+        {
+            if (!removeTree(directory))
+            {
+                error = "无法完整删除地图目录 " + directory;
+                return false;
+            }
+            removed = true;
+        }
+        // 旧平铺结构：清掉 maps/<name>.*（yaml/pgm/pbstream 及 .ply/.3d.json 等衍生缓存）
+        const std::string prefix = map_name + ".";
+        DIR *dir = ::opendir(maps_dir_.c_str());
+        if (dir != nullptr)
+        {
+            std::vector<std::string> doomed;
+            while (const dirent *entry = ::readdir(dir))
+            {
+                const std::string filename = entry->d_name;
+                if (filename.size() <= prefix.size() ||
+                    filename.compare(0, prefix.size(), prefix) != 0)
+                {
+                    continue;
+                }
+                const std::string child = joinPath(maps_dir_, filename);
+                if (fileExists(child))
+                {
+                    doomed.push_back(child);
+                }
+            }
+            ::closedir(dir);
+            for (const auto &file : doomed)
+            {
+                if (::unlink(file.c_str()) == 0)
+                {
+                    removed = true;
+                }
+                else
+                {
+                    error = "无法删除平铺地图文件 " + file + ": " + std::strerror(errno);
+                    return false;
+                }
+            }
+        }
+        if (!removed)
+        {
+            error = "地图不存在: " + map_name;
+            return false;
+        }
+        return true;
+    }
+
+    bool MapFileManager::importExternalArtifact(const std::string &artifact, bool lightning_map,
+                                                const std::string &map_name,
+                                                std::string &imported, std::string &error) const
+    {
+        imported.clear();
+        if (!isValidMapName(map_name))
+        {
+            error = "地图名非法: " + map_name;
+            return false;
+        }
+        if (!ensureMapDirectory(map_name, error))
+        {
+            return false;
+        }
+        if (lightning_map)
+        {
+            if (!copyTree(artifact, mapDirectory(map_name), error))
+            {
+                return false;
+            }
+            imported = mapDirectory(map_name);
+            return true;
+        }
+        const std::string target = mapStem(map_name) + ".pbstream";
+        if (!copyFile(artifact, target, error))
+        {
+            return false;
+        }
+        imported = target;
+        return true;
     }
 
     bool MapFileManager::hasLightningMap(const std::string &map_name) const

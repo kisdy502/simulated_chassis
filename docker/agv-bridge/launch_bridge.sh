@@ -8,16 +8,13 @@ if [[ "$RMW_IMPLEMENTATION" == rmw_cyclonedds_cpp ]]; then
 fi
 export AGV_PROCESS_LOG_DIR=${AGV_PROCESS_LOG_DIR:-/ros2_ws/process_logs}
 mkdir -p "$AGV_PROCESS_LOG_DIR" "${MAPS_DIR:-/ros2_ws/maps}"
-pbstream=${PBSTREAM_FILE:-}
+# Initial map is no longer taken from PBSTREAM_FILE: the bridge loads the
+# last-used map recorded in maps/.current_map (updated on load_map/save_map).
 algorithm=${SLAM_ALGORITHM:-cartographer}
 case "$algorithm" in
     lightning|cartographer) ;;
     *) echo "Unsupported SLAM_ALGORITHM: $algorithm" >&2; exit 1 ;;
 esac
-if [[ -n "$pbstream" && ! -e "$pbstream" ]]; then
-    echo "Map does not exist: $pbstream" >&2
-    exit 1
-fi
 args=(
     agv_id:="${AGV_ID:-AGV001}" port:="${WEBSOCKET_PORT:-9090}"
     http_port:="${HTTP_PORT:-8080}"
@@ -29,8 +26,6 @@ args=(
     require_battery_state:="${REQUIRE_BATTERY_STATE:-true}"
     back_up_max_heading_error_deg:="${BACK_UP_MAX_HEADING_ERROR_DEG:-20.0}"
 )
-# ros2 launch rejects an empty CLI value; use the launch default for no initial map.
-if [[ -n "$pbstream" ]]; then args+=(pbstream_file:="$pbstream"); fi
 if [[ "${ROBOT_PROFILE:-chassis_3d_ur5e}" == chassis_3d_ur5e ]]; then
     # This profile fixes robot_package and use_sim_time internally.
     profile_args=(agv_id:="${AGV_ID:-AGV001}" port:="${WEBSOCKET_PORT:-9090}"
@@ -41,7 +36,6 @@ if [[ "${ROBOT_PROFILE:-chassis_3d_ur5e}" == chassis_3d_ur5e ]]; then
       rviz:="${START_RVIZ:-false}")
     profile_args+=(slam_algorithm:="$algorithm")
     profile_args+=(require_battery_state:="${REQUIRE_BATTERY_STATE:-true}")
-    if [[ -n "$pbstream" ]]; then profile_args+=(pbstream_file:="$pbstream"); fi
     exec ros2 launch simulated_chassis_ur5e bridge.launch.py "${profile_args[@]}"
 elif [[ "${ROBOT_PROFILE}" == chassis_3d ]]; then
     exec ros2 launch agv_bridge_v2 agv_rosbridge.launch.py "${args[@]}"

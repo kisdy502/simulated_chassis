@@ -177,8 +177,6 @@ def _agv_nav_server_node(context):
                 "agv_id": agv_id,
                 "use_sim_time": use_sim_time,
                 "feedback_interval_ms": 400,
-                "allow_cold_map_load": bool(os.environ.get("NATIVE_MAP_TOKEN")) and manage_navigation
-                    and slam_algorithm.perform(context) == "lightning",
                 "localization_operation_timeout_sec": ParameterValue(LaunchConfiguration("localization_operation_timeout_sec"), value_type=float),
                 "spin_timeout_sec": ParameterValue(LaunchConfiguration("spin_timeout_sec"), value_type=float),
                 "spin_progress_timeout_sec": ParameterValue(LaunchConfiguration("spin_progress_timeout_sec"), value_type=float),
@@ -273,7 +271,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "pbstream_file",
             default_value="",
-            description="初始定位地图 pbstream（空 = 启动后无定位，可先 start_mapping 建图）",
+            description="初始定位地图（空 = 自动加载默认地图记录 maps/.current_map，无记录则无定位待命）",
         ),
         DeclareLaunchArgument(
             "robot_package",
@@ -339,7 +337,7 @@ def generate_launch_description():
             "services_glob",
             default_value=(
                 "['/rosapi/*', '/agv/set_control', '/agv/set_charging', '/agv/get_map', '/agv/load_map', "
-                "'/agv/list_maps', '/agv/start_mapping', '/agv/save_map', '/agv/cancel_mapping', '/agv/relocalize', '/agv/get_localization_operation', "
+                "'/agv/list_maps', '/agv/delete_map', '/agv/start_mapping', '/agv/save_map', '/agv/cancel_mapping', '/agv/relocalize', '/agv/get_localization_operation', "
                 "'/agv/arm_move']"
             ),
             description="允许上位机调用的 service 白名单",

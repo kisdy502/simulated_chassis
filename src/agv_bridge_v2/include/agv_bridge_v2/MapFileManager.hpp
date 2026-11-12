@@ -71,6 +71,26 @@ namespace agv_bridge
         /// @brief 为新地图创建独立子目录。
         bool ensureMapDirectory(const std::string &map_name, std::string &error) const;
 
+        /// @brief 默认地图记录文件（<maps_dir>/.current_map），重启后按它默认加载。
+        std::string currentMapRecordPath() const;
+
+        /// @brief 读取默认地图记录的地图名；无记录/内容损坏返回 false。
+        bool readCurrentMap(std::string &map_name) const;
+
+        /// @brief 原子写入默认地图记录（tmp + rename）；切图/建图保存/显式传参
+        /// 启动成功后调用。记录只存地图名，后端由 slam_algorithm 参数决定。
+        bool writeCurrentMap(const std::string &map_name, std::string &error) const;
+
+        /// @brief 删除地图（<name>/ 目录 + 旧平铺 <name>.* 文件）。
+        /// 是否默认/使用中由调用方校验，这里只管删。
+        bool deleteMap(const std::string &map_name, std::string &error) const;
+
+        /// @brief 把 maps_dir 外的地图工件复制为标准布局（lightning 整目录，
+        /// cartographer 单 pbstream 文件，同名覆盖），返回 maps_dir 内的新路径。
+        bool importExternalArtifact(const std::string &artifact, bool lightning_map,
+                                    const std::string &map_name,
+                                    std::string &imported, std::string &error) const;
+
         /// @brief 读取 <map_name>.pgm/.yaml 并转换成 OccupancyGrid
         bool loadGrid(const std::string &map_name,
                       nav_msgs::msg::OccupancyGrid &grid,

@@ -88,10 +88,14 @@ namespace agv_bridge
 
         // ROS 接口创建完毕后再异步拉起初始定位。主线程进入 executor 后，
         // 工作线程才能可靠收到 /start_trajectory 的响应。
+        // 启动地图优先级：显式 pbstream_file 参数（覆盖默认地图记录）> 默认地图
+        // 记录（maps/.current_map，切图/建图保存成功后自动更新）> 无图待命。
+        std::string artifact;
+        std::string name;
+        bool remember_startup_map = false;
         if (!pbstream_file_.empty())
         {
-            std::string artifact = absolute_path(pbstream_file_);
-            std::string name;
+            artifact = absolute_path(pbstream_file_);
             if (use_lightning_)
             {
                 // lightning：pbstream_file 允许传地图目录（…/maps/foo）或目录内任意文件
@@ -158,6 +162,72 @@ namespace agv_bridge
             {
                 name = file_stem(artifact);
             }
+
+            // 显式传入的地图在 maps_dir 外时，先导入成标准布局再记为默认地图：
+            // 默认地图记录只存地图名，重启后必须能在 maps_dir 内按名字找回。
+            const auto artifact_ready = [this, &artifact]()
+            {
+                struct stat st
+                {
+                };
+                return use_lightning_
+                           ? !artifact.empty() &&
+                                 ::stat((artifact + "/global.pcd").c_str(), &st) == 0
+                           : ::stat(artifact.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+            };
+            if (artifact_ready())
+            {
+                const std::string maps_root = map_file_manager_->mapsDir();
+                if (artifact != maps_root && artifact.rfind(maps_root + "/", 0) != 0)
+                {
+                    std::string imported;
+                    std::string import_error;
+                    if (map_file_manager_->importExternalArtifact(
+                            artifact, use_lightning_, name, imported, import_error))
+                    {
+                        RCLCPP_INFO(this->get_logger(), "启动地图已导入地图目录: %s",
+                                    imported.c_str());
+                        artifact = imported;
+                        remember_startup_map = true;
+                    }
+                    else
+                    {
+                        RCLCPP_ERROR(this->get_logger(),
+                                     "启动地图导入地图目录失败: %s；本次仍按原路径启动，但不更新默认地图记录",
+                                     import_error.c_str());
+                    }
+                }
+                else
+                {
+                    remember_startup_map = true;
+                }
+            }
+        }
+        else if (map_file_manager_->readCurrentMap(name))
+        {
+            if (hasMapArtifact(name))
+            {
+                artifact = mapArtifactPath(name);
+                RCLCPP_INFO(this->get_logger(),
+                            "未传 pbstream_file：按默认地图记录加载地图 '%s'（记录文件 %s）",
+                            name.c_str(), map_file_manager_->currentMapRecordPath().c_str());
+            }
+            else
+            {
+                RCLCPP_ERROR(this->get_logger(),
+                             "默认地图记录（%s）指向的地图 '%s' 缺失或不完整，启动后无定位；"
+                             "可用 /agv/list_maps 查看后 /agv/load_map 重新选择",
+                             map_file_manager_->currentMapRecordPath().c_str(), name.c_str());
+                name.clear();
+            }
+        }
+
+        if (!name.empty())
+        {
+            if (remember_startup_map)
+            {
+                rememberDefaultMap(name);
+            }
             {
                 std::lock_guard<std::mutex> lock(mode_mutex_);
                 map_name_ = name;
@@ -179,6 +249,14 @@ namespace agv_bridge
                 }
                 transition_in_progress_.store(false);
             });
+        }
+        else
+        {
+            RCLCPP_WARN(this->get_logger(),
+                        "启动时无可用地图（未传 pbstream_file 且无默认地图记录）：启动后无定位。"
+                        "可先 /agv/start_mapping 建图，或 /agv/list_maps + /agv/load_map 加载已有"
+                        "地图；保存/加载成功后该地图自动成为默认地图，重启默认加载"
+                        "（navigation launch 请传 include_localization:=false，避免 cartographer 双开）");
         }
 
         RCLCPP_INFO(this->get_logger(),
@@ -242,7 +320,6 @@ namespace agv_bridge
         // ===== 地图管理 =====
         this->declare_parameter<std::string>("maps_dir", "maps");
         this->declare_parameter<std::string>("pbstream_file", "");
-        this->declare_parameter<bool>("allow_cold_map_load", false);
         this->declare_parameter<std::string>("robot_package", "jzt_robot");
         this->declare_parameter<bool>("manage_navigation", false);
         this->declare_parameter<bool>("navigation_use_rviz", false);
@@ -349,14 +426,6 @@ namespace agv_bridge
         save_map_client_ = this->create_client<nav2_msgs::srv::SaveMap>(
             "/map_saver/save_map", rmw_qos_profile_services_default, cartographer_client_group_);
 
-        if (pbstream_file_.empty())
-        {
-            RCLCPP_WARN(this->get_logger(),
-                        "未配置 pbstream_file：启动后无定位。可先 /agv/start_mapping 建图，"
-                        "再 /agv/save_map 保存后自动进入定位（navigation launch 请传 "
-                        "include_localization:=false，避免 cartographer 双开）");
-        }
-
         // /tracked_pose 探活：lightning 定位就绪判定 + lightning 建图期位姿来源
         //（SLAM 模式无 map→base TF，save_map 的初始位姿从这里取）。
         // best_effort 订阅与 reliable 发布端兼容（反向不兼容，故不用默认 QoS）。
@@ -433,6 +502,12 @@ namespace agv_bridge
         list_maps_srv_ = this->create_service<ListMaps>(
             "/agv/list_maps",
             std::bind(&AgvNavServerNode::handle_list_maps, this,
+                      std::placeholders::_1, std::placeholders::_2));
+
+        // ---- service: /agv/delete_map（删除地图；使用中/默认地图不可删）----
+        delete_map_srv_ = this->create_service<DeleteMap>(
+            "/agv/delete_map",
+            std::bind(&AgvNavServerNode::handle_delete_map, this,
                       std::placeholders::_1, std::placeholders::_2));
 
         // ---- service: /agv/start_mapping（进入在线建图）----
@@ -770,6 +845,71 @@ namespace agv_bridge
                     response->map_names.size());
     }
 
+    void AgvNavServerNode::handle_delete_map(
+        std::shared_ptr<DeleteMap::Request> request,
+        std::shared_ptr<DeleteMap::Response> response)
+    {
+        const std::string &name = request->map_name;
+
+        if (!MapFileManager::isValidMapName(name))
+        {
+            response->success = false;
+            response->message = "地图名非法（非空且不含路径分隔符）: '" + name + "'";
+            return;
+        }
+        if (!map_file_manager_)
+        {
+            response->success = false;
+            response->message = "地图管理未初始化（maps_dir 参数无效）";
+            return;
+        }
+
+        std::string in_use;
+        std::string pre_mapping;
+        bool mapping = false;
+        {
+            std::lock_guard<std::mutex> lock(mode_mutex_);
+            in_use = map_name_;
+            mapping = mode_ == MODE_MAPPING;
+            pre_mapping = pre_mapping_map_name_;
+        }
+        if (name == in_use)
+        {
+            response->success = false;
+            response->message = "地图 '" + name + "' 正在使用中，不能删除；请先 /agv/load_map 切换到其他地图";
+            return;
+        }
+        std::string remembered;
+        map_file_manager_->readCurrentMap(remembered);
+        if (name == remembered)
+        {
+            response->success = false;
+            response->message = "地图 '" + name +
+                                "' 是默认地图（重启后默认加载），不能删除；请先 /agv/load_map 切换到其他地图";
+            return;
+        }
+        if (mapping && name == pre_mapping)
+        {
+            response->success = false;
+            response->message = "地图 '" + name +
+                                "' 是建图前的定位地图（cancel_mapping 的恢复目标），建图期间不能删除";
+            return;
+        }
+
+        std::string error;
+        if (!map_file_manager_->deleteMap(name, error))
+        {
+            response->success = false;
+            response->message = error;
+            return;
+        }
+
+        response->success = true;
+        response->message = "地图 '" + name + "' 已删除";
+
+        RCLCPP_INFO(this->get_logger(), "delete_map(%s) -> 已删除", name.c_str());
+    }
+
     void AgvNavServerNode::handle_load_map(
         std::shared_ptr<LoadMap::Request> request,
         std::shared_ptr<LoadMap::Response> response)
@@ -801,6 +941,13 @@ namespace agv_bridge
 
         {
             std::lock_guard<std::mutex> lock(mode_mutex_);
+            if (name == map_name_ && mode_ == MODE_NAVIGATION)
+            {
+                response->success = true;
+                response->map_name = name;
+                response->message = "该地图已是当前地图，无需切换";
+                return;
+            }
             if (mode_ == MODE_RELOCALIZING &&
                 (transition_in_progress_.load() || localization_operations_->active() ||
                  localization_operations_->allowsModeCompletion()))
@@ -819,18 +966,16 @@ namespace agv_bridge
         }
 
         {
-            // 定位子进程必须由本节点托管，否则无法停掉外部启动的 cartographer
+            // 定位子进程必须由本节点托管，否则无法停掉外部启动的 cartographer。
+            // 无图冷启动（尚未拉起过任何定位）时允许直接切图拉起定位，与
+            // start_mapping 的处理一致：外部若另有 cartographer 在跑只提示 TF 双发风险。
             std::lock_guard<std::mutex> lock(proc_mutex_);
             LocalizationOperationTracker::Status previous_operation;
-            if (localization_pid_ <= 0 && !localization_operations_->lookup("", previous_operation) &&
-                !this->get_parameter("allow_cold_map_load").as_bool())
+            if (localization_pid_ <= 0 && !localization_operations_->lookup("", previous_operation))
             {
-                response->success = false;
-                response->message =
-                    "定位节点不由 agv_nav_server 托管，无法切换地图。"
-                    "请以 pbstream_file:=<abs> 参数启动本节点（同时 navigation launch 传 "
-                    "include_localization:=false），由本节点拉起定位";
-                return;
+                RCLCPP_WARN(this->get_logger(),
+                            "本节点尚未托管定位进程：请确认外部没有 cartographer 在跑"
+                            "（navigation launch 需 include_localization:=false）");
             }
         }
 
@@ -859,6 +1004,8 @@ namespace agv_bridge
             mode_ = MODE_RELOCALIZING;
             map_name_ = name;
         }
+        // 切图受理即更新默认地图记录：之后无论重启节点还是容器都默认加载这张图
+        rememberDefaultMap(name);
 
         const auto operation_id = localization_operations_->begin("LOAD_MAP", name);
         response->operation_id = operation_id;
@@ -966,6 +1113,8 @@ namespace agv_bridge
             map_name_ = name;
             mode_ = MODE_RELOCALIZING;
         }
+        // relocalize 可指定与当前不同的地图名（按给定初始位姿重启定位），同样视为切图
+        rememberDefaultMap(name);
         const auto operation_id = localization_operations_->begin("RELOCALIZE", name);
         response->operation_id = operation_id;
         if (transition_thread_.joinable()) transition_thread_.join();
@@ -1292,6 +1441,8 @@ namespace agv_bridge
                     map_name_ = name;
                     mode_ = MODE_RELOCALIZING;
                 }
+                // 新图保存成功并提交为当前地图：更新默认地图记录
+                rememberDefaultMap(name);
                 const geometry_msgs::msg::Pose *initial_pose =
                     mapping_pose.has_value() ? &mapping_pose->pose : nullptr;
                 if (!start_managed_localization(mapArtifactPath(name), name, initial_pose, error))
@@ -1395,6 +1546,11 @@ namespace agv_bridge
                     }
                     mode_ = restored ? MODE_RELOCALIZING : MODE_NAVIGATION;
                 }
+                if (fallback_to_new)
+                {
+                    // 回退目标是新保存的图（pbstream 完好），同样记为默认地图
+                    rememberDefaultMap(name);
+                }
                 if (restored && fallback_to_new)
                 {
                     // 等定位侧 occupancy_grid 起来发出第一帧 /map（TRANSIENT_LOCAL
@@ -1437,6 +1593,8 @@ namespace agv_bridge
                 map_name_ = name;
                 mode_ = MODE_RELOCALIZING;
             }
+            // 新图三件套保存成功并提交为当前地图：更新默认地图记录
+            rememberDefaultMap(name);
             const geometry_msgs::msg::Pose *initial_pose =
                 mapping_pose.has_value() ? &mapping_pose->pose : nullptr;
             if (!start_managed_localization(pbstream_abs, name, initial_pose, error))
@@ -2407,6 +2565,19 @@ namespace agv_bridge
             return false;
         }
         return true;
+    }
+
+    void AgvNavServerNode::rememberDefaultMap(const std::string &map_name) const
+    {
+        std::string error;
+        if (!map_file_manager_->writeCurrentMap(map_name, error))
+        {
+            RCLCPP_WARN(this->get_logger(),
+                        "默认地图记录写入失败（不影响本次切图，但重启后无法恢复该选择）: %s",
+                        error.c_str());
+            return;
+        }
+        RCLCPP_INFO(this->get_logger(), "默认地图已更新为 '%s'（重启后默认加载）", map_name.c_str());
     }
 
     bool AgvNavServerNode::call_write_state(const std::string &pbstream_abs_path, std::string &error)

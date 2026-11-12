@@ -1,0 +1,10 @@
+# 删除 maps_dir 下的地图（<map_name>/ 目录及旧平铺 <map_name>.* 文件）。
+# 当前使用中 / 默认地图记录（maps/.current_map）指向的地图不可删除，
+# 需先 /agv/load_map 切换到其他地图。
+# 上位机通过 rosbridge 调用：
+#   {"op":"call_service","id":"d1","service":"/agv/delete_map","args":{"map_name":"map0921"}}
+
+string map_name        # 地图名（不带扩展名）
+---
+bool success
+string message

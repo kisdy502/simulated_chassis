@@ -30,8 +30,9 @@ AGV 上位机与仿真机器人之间的对接层。**rosbridge 架构**：业�
 | `/agv/pose` | `geometry_msgs/msg/PoseStamped` | 10Hz 位姿（map 系，与 TF 同源，免解析 /tf） |
 | `/agv/start_mapping` | `srv/StartMapping` | 进入建图（mode=MAPPING） |
 | `/agv/save_map` | `srv/SaveMap` | 保存建图并自动回到定位 |
-| `/agv/load_map` | `srv/LoadMap` | 切换定位地图 |
+| `/agv/load_map` | `srv/LoadMap` | 切换定位地图（成功后成为默认地图，切当前图为幂等空操作） |
 | `/agv/list_maps` | `srv/ListMaps` | 列出可加载地图 |
+| `/agv/delete_map` | `srv/DeleteMap` | 删除地图（使用中/默认地图被拒绝） |
 | `/agv/get_map` | `srv/GetMap` | 导出某张地图栅格（建图后入库用） |
 | `/agv/relocalize` | `srv/Relocalize` | 指定坐标重启定位 |
 | `/agv/localization_operation` | `msg/LocalizationOperation` | 切图/重定位阶段、成功、失败、超时，按 operation_id 关联 |

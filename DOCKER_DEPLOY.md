@@ -181,7 +181,6 @@ cp .env.example .env
 | `ROBOT_TYPE` | `omni_3wd` | 当前部署要求三舵轮 |
 | `ROBOT_PACKAGE` | `simulated_chassis` | 纯底盘 bridge 的机器人配置包；组合入口内部固定此值 |
 | `SLAM_ALGORITHM` | `lightning` | 可改为 `cartographer` |
-| `PBSTREAM_FILE` | 留空 | 初始定位地图，路径必须是容器内路径，见下节 |
 | `MANAGE_NAVIGATION` | `true` | bridge 托管定位/建图/Nav2 |
 | `AGV_ID` | `AGV001` | 机器人标识 |
 | `ROS_DOMAIN_ID` | `1` | 两容器相同，区别于 WSL 原生机器人的 domain 0 |
@@ -220,19 +219,22 @@ Windows 透明加密软件可能使文件在 Windows 可读、在 WSL/Docker 不
 再强制重建两个容器。`bash deploy.sh restart` 只重建容器、不构建镜像；只运行
 `up` 或 `restart` 不会把新 C++ 源码编进已有镜像。
 
-## 4. 建图、保存与定位
+## 4. 建图、保存、定位与默认地图
 
-`PBSTREAM_FILE` 名称为历史兼容参数，含义由算法决定：
+启动加载哪张地图由默认地图记录 `maps/.current_map` 决定，不再通过 `.env` 配置：
 
-| 算法 | `.env` 示例 | 主要地图文件 |
-|---|---|---|
-| Lightning | `PBSTREAM_FILE=/ros2_ws/maps/lm_map` | 地图目录内的分块点云、`global.pcd`、`map.pgm`、`map.yaml` |
-| Cartographer | `PBSTREAM_FILE=/ros2_ws/maps/carto_map/carto_map.pbstream` | `.pbstream`、PGM、YAML |
+- 优先级：launch 显式 `pbstream_file` 参数 > 默认地图记录 > 无图待命。
+- `/agv/load_map` 切图、`/agv/save_map` 保存成功后，bridge 自动把该地图写入
+  默认地图记录；之后无论重启 bridge 容器还是节点，都默认加载这张图，
+  上位机接入后无需再手动选图。
+- 记录只存地图名，后端仍由 `SLAM_ALGORITHM` 决定（Lightning=点云地图目录，
+  Cartographer=pbstream 三件套，两者不能相互替代）。记录指向的地图缺失或
+  后端不匹配时启动无定位待命，用 `/agv/list_maps` + `/agv/load_map`
+  重新选择即可恢复。
+- 宿主机 `maps/` 挂载到 `/ros2_ws/maps`，默认地图记录随地图一起持久化；
+  清空 `maps/` 即回到首次部署状态。
 
-两类地图不能相互替代。宿主机 `maps/` 挂载到 `/ros2_ws/maps`，不要填写宿主机
-Windows 路径。初始地图路径非空但不存在时，bridge 启动脚本会报错退出。
-
-留空时启动后尚无定位和 Nav2；从前端发起建图，或执行：
+首次使用（无任何地图）时启动后尚无定位和 Nav2；从前端发起建图，或执行：
 
 ```bash
 bash deploy.sh start-mapping
@@ -242,9 +244,11 @@ bash deploy.sh save-map lm_map
 
 建图、保存请求是异步操作：`success=true` 表示受理，不表示地图已保存完成。
 查看 `/agv/status`、bridge 日志和生成文件；保存完成后 bridge 切回定位，
-定位 TF 就绪后启动新的 Nav2。将成功保存的地图路径填入 `.env`，
-执行 `bash deploy.sh restart` 后，后续启动即可加载该地图。
+定位 TF 就绪后启动新的 Nav2，该地图同时成为默认地图。
 Lightning 当前定位接入不保证任意初始位置的全局重定位，首次默认靠近建图起点。
+
+不再使用的地图可用 `/agv/delete_map` 删除（使用中或默认地图会被拒绝），
+`/agv/load_map` 切到同名图再次调用即为幂等空操作。
 
 `up-nav` 是 `up` 的别名；`up-slam` 启动同样两个容器后调用建图服务，
 不是增加第三个容器。服务命令最多等待 60 秒（包含 ROS 发现时间）；
@@ -313,7 +317,7 @@ Lightning 当前定位接入不保证任意初始位置的全局重定位，首�
 
 | 宿主路径/卷 | 容器路径 | 内容 |
 |---|---|---|
-| `maps/` | bridge `/ros2_ws/maps` | 两种后端的地图、三维导出缓存及记忆位姿等 |
+| `maps/` | bridge `/ros2_ws/maps` | 两种后端的地图、默认地图记录（`.current_map`）、三维导出缓存及记忆位姿等 |
 | `runtime/bridge/ros/` | bridge `/root/.ros` | ROS 日志、机械臂示教点 |
 | `runtime/bridge/process/` | bridge `/ros2_ws/process_logs` | 定位、导航和建图子进程日志 |
 | `runtime/simulation/ros/` | simulation `/root/.ros` | 仿真 ROS 日志、相机照片 |
@@ -403,7 +407,7 @@ curl -o lm_map.ply http://HOST:8080/maps/lm_map/cloud.ply
 | WebSocket 正常但模型缺失 | `robot_description` 参数读取白名单、前端 mesh base、8080 HTTP 映射及具体资源 URL |
 | 三维地图返回 409 | 等待导出，查看 status；确认地图保存完成和所选 SLAM 来源一致 |
 | bridge 启动后整体退出，9090 和 8080 都不可用 | 检查 bridge 日志中的 `agv_map_3d 安装不完整` 或 `robot_http_server` 退出原因；确认新镜像已构建、8080 未被占用 |
-| bridge 因地图不存在退出 | `.env` 的容器内路径、`maps/` 挂载、地图后端是否匹配 |
+| 启动后无定位 / 未加载默认地图 | 查看 `maps/.current_map` 记录的地图名、`maps/` 挂载、`SLAM_ALGORITHM` 与地图后端是否匹配 |
 | 机械臂节点没有启动 | bridge 的就绪检查日志、模型一致性、JTC 是否 active、DDS 连接 |
 | 相机无图像 | 是否使用 UR5e profile、相机 enabled、Xvfb/渲染和仿真日志 |
 | 参数修改后未生效 | 环境变量修改需 `restart` 重建容器；镜像内文件修改还需 `build` |
