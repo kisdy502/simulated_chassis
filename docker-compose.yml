@@ -1,6 +1,7 @@
 services:
   robot-simulation:
     image: simulated-robot:wheel-3d
+    cpuset: "0,1"
     build:
       context: .
       dockerfile: docker/simulated-robot/Dockerfile
@@ -32,6 +33,7 @@ services:
 
   agv-bridge:
     image: agv-bridge:wheel-3d
+    cpuset: "2-6"
     build:
       context: .
       dockerfile: docker/agv-bridge/Dockerfile

@@ -476,7 +476,7 @@
   <gazebo reference="front_lidar_link">
     <sensor name="front_lidar_sensor" type="gpu_lidar">
       <always_on>true</always_on>
-      <update_rate>15</update_rate>
+      <update_rate>10</update_rate>
       <visualize>true</visualize>
       <topic>/front_lidar/point_cloud</topic>
       <ignition_frame_id>front_lidar_link</ignition_frame_id>
@@ -508,9 +508,9 @@
           <type>gaussian</type>
           <mean>0.0</mean>
           <bias_mean>0.0</bias_mean>
-          <bias_stddev>0.0005</bias_stddev>
+          <bias_stddev>0.002</bias_stddev>
           <precision>0.01</precision>
-          <stddev>0.002</stddev>
+          <stddev>0.02</stddev>
         </noise>
       </lidar>
     </sensor>
@@ -520,7 +520,7 @@
   <gazebo reference="rear_lidar_link">
     <sensor name="rear_lidar_sensor" type="gpu_lidar">
       <always_on>true</always_on>
-      <update_rate>15</update_rate>
+      <update_rate>10</update_rate>
       <visualize>true</visualize>
       <topic>/rear_lidar/point_cloud</topic>
       <ignition_frame_id>rear_lidar_link</ignition_frame_id>
@@ -550,9 +550,9 @@
           <type>gaussian</type>
           <mean>0.0</mean>
           <bias_mean>0.0</bias_mean>
-          <bias_stddev>0.0005</bias_stddev>
+          <bias_stddev>0.002</bias_stddev>
           <precision>0.01</precision>
-          <stddev>0.002</stddev>
+          <stddev>0.02</stddev>
         </noise>
       </lidar>
     </sensor>
