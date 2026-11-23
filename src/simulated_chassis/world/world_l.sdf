@@ -1,0 +1,382 @@
+<?xml version="1.0"?>
+<sdf version='1.9'>
+  <world name='test_world'>
+    <!-- 2ms/500Hz：AGV 仿真精度足够，物理 CPU 减半（控制器 100Hz 仍有 5x 余量） -->
+    <physics name='2ms' type='ignored'>
+      <max_step_size>0.002</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>500</real_time_update_rate>
+    </physics>
+    <plugin name='ignition::gazebo::systems::Physics' filename='ignition-gazebo-physics-system' />
+    <plugin name='ignition::gazebo::systems::UserCommands' filename='ignition-gazebo-user-commands-system' />
+    <plugin name='ignition::gazebo::systems::SceneBroadcaster' filename='ignition-gazebo-scene-broadcaster-system' />
+
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type='adiabatic' />
+    <scene>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <model name='ground_plane'>
+      <static>true</static>
+      <link name='link'>
+        <collision name='collision'>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <!-- 内净空~94.2x63.65(净面积~6000m²)，右墙顶点外凸至29.66m，地板覆盖全部外扩区域 -->
+            <size>100 68</size>
+          </plane>
+        </geometry>
+          <surface>
+            <friction>
+              <ode />
+            </friction>
+            <bounce />
+            <contact />
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 68</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.45 0.45 0.45 1</ambient>
+            <diffuse>0.5 0.5 0.5 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+        </visual>
+        <pose>-18.3 -0.5 0 0 -0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 -0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx><ixy>0</ixy><ixz>0</ixz><iyy>1</iyy><iyz>0</iyz><izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 0 0 0 -0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+
+    <light name='sun' type='directional'>
+      <pose>0 0 10 0 -0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>-0.5 0.1 -0.9</direction>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range><linear>0.01</linear><constant>0.9</constant><quadratic>0.001</quadratic>
+      </attenuation>
+      <spot><inner_angle>0</inner_angle><outer_angle>0</outer_angle><falloff>0</falloff></spot>
+    </light>
+
+    <!-- ==================== 围墙 (内净空~94.2x63.65m, 厚0.15m, 高3m, 面积~6000m²) ====================
+         由 world_m(内净空52.6x47.8)再外扩：x 向西扩约41.7m(西墙-26.3→-66.3)，
+         y 南北各外扩8.1m(南墙-24.3→-32.4，北墙23.3→31.4)。
+         原右墙五边形特征原样保留：顶点仍为(29.66,-0.5)，仅两截角点随新南北
+         墙延长至(26.3,±31.9中心线)，从点云形态可直接辨认+x朝向。
+         原西侧围墙被新西墙取代(原位置不再有墙，老区与新扩区连通)。 -->
+    <model name='wall'>
+      <link name='length_bottom'>
+        <pose>-20 -32.4 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>92.6 0.15 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>92.6 0.15 3</size></box></geometry>
+          <material><ambient>0.55 0.45 0.35 1</ambient><diffuse>0.55 0.45 0.35 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='length_top'>
+        <pose>-20 31.4 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>92.6 0.15 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>92.6 0.15 3</size></box></geometry>
+          <material><ambient>0.4 0.5 0.45 1</ambient><diffuse>0.4 0.5 0.45 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='width_left'>
+        <pose>-66.3 -0.5 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>0.15 63.8 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>0.15 63.8 3</size></box></geometry>
+          <material><ambient>0.5 0.4 0.5 1</ambient><diffuse>0.5 0.4 0.5 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <!-- 右墙两截外拐~6°，角点(26.3,±31.9中心线)随新南北墙，顶点(29.66,-0.5)与world_m一致，各长32.08 -->
+      <link name='width_right_north'>
+        <pose>27.98 15.45 1.5 0 0 0.105</pose>
+        <collision name='c'><geometry><box><size>0.15 32.08 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>0.15 32.08 3</size></box></geometry>
+          <material><ambient>0.45 0.45 0.5 1</ambient><diffuse>0.45 0.45 0.5 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='width_right_south'>
+        <pose>27.98 -16.45 1.5 0 0 -0.105</pose>
+        <collision name='c'><geometry><box><size>0.15 32.08 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>0.15 32.08 3</size></box></geometry>
+          <material><ambient>0.45 0.45 0.5 1</ambient><diffuse>0.45 0.45 0.5 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+
+      <!-- ==================== 内部隔墙 (原world_m的0.72m隔墙全部原样保留，高3m, 轴向对齐) ====================
+           inner_h1a/h1b: 中央走廊南墙拆两段(各7m)，中间14m大开口
+           inner_h2: 走廊北墙 x∈[-13,13]
+           inner_v1: 左上隔断 y∈[6.7,19.1]
+           inner_v2: 右下隔断 y∈[-19.1,-6.7]
+           inner_h3: 西南房间横墙 x∈[-21.5,-14.5]
+           inner_h4: 右上横墙 x∈[15,21]
+           新增 inner_thick_v1/v2: 两条1.2m厚墙(西扩区内，上下错位形成S形绕行)，
+           thick_v1: x=-40, y∈[-32.3,-8]，北侧留通道接主走廊
+           thick_v2: x=-52, y∈[8,31.3]，南侧留通道接主走廊 -->
+      <link name='inner_h1a'>
+        <pose>-10.5 -3.4 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>7 0.72 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>7 0.72 3</size></box></geometry>
+          <material><ambient>0.55 0.55 0.45 1</ambient><diffuse>0.55 0.55 0.45 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='inner_h1b'>
+        <pose>10.5 -3.4 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>7 0.72 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>7 0.72 3</size></box></geometry>
+          <material><ambient>0.55 0.55 0.45 1</ambient><diffuse>0.55 0.55 0.45 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='inner_h2'>
+        <pose>0 2.4 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>26 0.72 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>26 0.72 3</size></box></geometry>
+          <material><ambient>0.45 0.5 0.55 1</ambient><diffuse>0.45 0.5 0.55 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='inner_v1'>
+        <pose>-13 12.9 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>0.72 12.4 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>0.72 12.4 3</size></box></geometry>
+          <material><ambient>0.5 0.55 0.45 1</ambient><diffuse>0.5 0.55 0.45 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='inner_v2'>
+        <pose>13 -12.9 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>0.72 12.4 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>0.72 12.4 3</size></box></geometry>
+          <material><ambient>0.55 0.4 0.5 1</ambient><diffuse>0.55 0.4 0.5 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='inner_h3'>
+        <pose>-18 -14 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>7 0.72 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>7 0.72 3</size></box></geometry>
+          <material><ambient>0.5 0.45 0.4 1</ambient><diffuse>0.5 0.45 0.4 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='inner_h4'>
+        <pose>18 12 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>6 0.72 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>6 0.72 3</size></box></geometry>
+          <material><ambient>0.4 0.5 0.5 1</ambient><diffuse>0.4 0.5 0.5 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='inner_thick_v1'>
+        <pose>-40 -20.15 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>1.2 24.3 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>1.2 24.3 3</size></box></geometry>
+          <material><ambient>0.55 0.42 0.38 1</ambient><diffuse>0.55 0.42 0.38 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='inner_thick_v2'>
+        <pose>-52 19.65 1.5 0 0 0</pose>
+        <collision name='c'><geometry><box><size>1.2 23.3 3</size></box></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface></collision>
+        <visual name='v'><geometry><box><size>1.2 23.3 3</size></box></geometry>
+          <material><ambient>0.55 0.42 0.38 1</ambient><diffuse>0.55 0.42 0.38 1</diffuse></material></visual>
+        <enable_wind>false</enable_wind>
+      </link>
+
+      <static>true</static>
+      <self_collide>false</self_collide>
+    </model>
+
+    <!-- ==================== 特征物体 (Z = 高度/2，原world_m全部原样保留) ==================== -->
+    <!-- 右上角落: 两两组合贴墙(cyl_1+2a紧靠北墙内侧, 2b+3a紧靠东墙内侧) -->
+    <model name='fm_cyl_1'><static>true</static><pose>19.55 22.5 1.3 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.7</radius><length>2.6</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.7</radius><length>2.6</length></cylinder></geometry><material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material></visual></link></model>
+    <model name='fm_box_2a'><static>true</static><pose>18 22.4 0.8 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.7 1.6 1.6</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.7 1.6 1.6</size></box></geometry><material><ambient>0.3 0.5 0.6 1</ambient><diffuse>0.3 0.5 0.6 1</diffuse></material></visual></link></model>
+    <model name='fm_box_2b'><static>true</static><pose>26.4 14 1.2 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>2.0 1.9 2.4</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>2.0 1.9 2.4</size></box></geometry><material><ambient>0.3 0.5 0.6 1</ambient><diffuse>0.3 0.5 0.6 1</diffuse></material></visual></link></model>
+    <model name='fm_cyl_3a'><static>true</static><pose>26.6 12.4 0.6 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.65</radius><length>1.2</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.65</radius><length>1.2</length></cylinder></geometry><material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material></visual></link></model>
+
+    <!-- 左上西房间(inner_v1以西, 顶部门洞) -->
+    <model name='fm_cyl_4'><static>true</static><pose>-19.2 16 1.5 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.8</radius><length>3.0</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.8</radius><length>3.0</length></cylinder></geometry><material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material></visual></link></model>
+    <model name='fm_box_5a'><static>true</static><pose>-17.5 16 0.8 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.8 1.6 1.6</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.8 1.6 1.6</size></box></geometry><material><ambient>0.3 0.5 0.6 1</ambient><diffuse>0.3 0.5 0.6 1</diffuse></material></visual></link></model>
+    <model name='fm_box_5b'><static>true</static><pose>-17.5 18.5 0.6 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.65 1.85 1.2</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.65 1.85 1.2</size></box></geometry><material><ambient>0.3 0.5 0.6 1</ambient><diffuse>0.3 0.5 0.6 1</diffuse></material></visual></link></model>
+
+    <!-- 北部大厅(走廊以北开阔区): cyl_big居中, 7b/13a/new5贴其北/南/西, 四件凑成十字 -->
+    <model name='fm_cyl_big'><static>true</static><pose>-3 12 1.5 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.8</radius><length>3.0</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.8</radius><length>3.0</length></cylinder></geometry><material><ambient>0.7 0.6 0.15 1</ambient><diffuse>0.7 0.6 0.15 1</diffuse></material></visual></link></model>
+    <model name='fm_box_6'><static>true</static><pose>7 8 0.7 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.7 1.55 1.4</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.7 1.55 1.4</size></box></geometry><material><ambient>0.3 0.5 0.6 1</ambient><diffuse>0.3 0.5 0.6 1</diffuse></material></visual></link></model>
+    <model name='fm_cyl_7a'><static>true</static><pose>4.5 8 1.0 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.675</radius><length>2.0</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.675</radius><length>2.0</length></cylinder></geometry><material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material></visual></link></model>
+    <model name='fm_cyl_7b'><static>true</static><pose>-3 13.63 0.9 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.825</radius><length>1.8</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.825</radius><length>1.8</length></cylinder></geometry><material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material></visual></link></model>
+    <model name='fm_cub_13a'><static>true</static><pose>-3 10.6 0.95 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.8 1.2 1.9</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.8 1.2 1.9</size></box></geometry><material><ambient>0.8 0.3 0.3 1</ambient><diffuse>0.8 0.3 0.3 1</diffuse></material></visual></link></model>
+    <model name='fm_box_new5'><static>true</static><pose>-4.65 12 0.9 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.7 1.4 1.8</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.7 1.4 1.8</size></box></geometry><material><ambient>0.5 0.3 0.6 1</ambient><diffuse>0.5 0.3 0.6 1</diffuse></material></visual></link></model>
+
+    <!-- 东部开阔作业区(含五边形凸角): cub_8/9a/9b/box_10 靠拢成一列 -->
+    <model name='fm_cub_8'><static>true</static><pose>23 -3 0.9 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>2.0 1.3 1.8</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>2.0 1.3 1.8</size></box></geometry><material><ambient>0.8 0.3 0.3 1</ambient><diffuse>0.8 0.3 0.3 1</diffuse></material></visual></link></model>
+    <model name='fm_cyl_9a'><static>true</static><pose>23.5 -5 0.7 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.75</radius><length>1.4</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.75</radius><length>1.4</length></cylinder></geometry><material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material></visual></link></model>
+    <model name='fm_cyl_9b'><static>true</static><pose>23.5 -6.8 1.0 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.65</radius><length>2.0</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.65</radius><length>2.0</length></cylinder></geometry><material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material></visual></link></model>
+    <model name='fm_box_10'><static>true</static><pose>23 -9 0.9 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.75 1.9 1.8</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.75 1.9 1.8</size></box></geometry><material><ambient>0.3 0.5 0.6 1</ambient><diffuse>0.3 0.5 0.6 1</diffuse></material></visual></link></model>
+    <model name='fm_box_21a'><static>true</static><pose>20 -18 0.8 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.6 1.85 1.6</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.6 1.85 1.6</size></box></geometry><material><ambient>0.2 0.6 0.4 1</ambient><diffuse>0.2 0.6 0.4 1</diffuse></material></visual></link></model>
+    <model name='fm_box_21b'><static>true</static><pose>17.7 -18 1.1 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.75 1.7 2.2</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.75 1.7 2.2</size></box></geometry><material><ambient>0.2 0.6 0.4 1</ambient><diffuse>0.2 0.6 0.4 1</diffuse></material></visual></link></model>
+
+    <!-- 南部作业区: box_11+12a+12b 尺寸翻倍后紧靠成一组 -->
+    <model name='fm_box_11'><static>true</static><pose>0 -8.5 0.8 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>3.0 3.0 1.6</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>3.0 3.0 1.6</size></box></geometry><material><ambient>0.8 0.5 0.2 1</ambient><diffuse>0.8 0.5 0.2 1</diffuse></material></visual></link></model>
+    <model name='fm_cyl_12a'><static>true</static><pose>-2.2 -7.9 0.8 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.7</radius><length>1.6</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.7</radius><length>1.6</length></cylinder></geometry><material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material></visual></link></model>
+    <model name='fm_cyl_12b'><static>true</static><pose>-2.9 -9.9 1.0 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>1.4</radius><length>2.0</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>1.4</radius><length>2.0</length></cylinder></geometry><material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material></visual></link></model>
+
+    <!-- 南部作业区: cub_17+box_19+cyl_18 摆成品字(上一北/下二南) -->
+    <model name='fm_cyl_18'><static>true</static><pose>1.9 -13.3 0.9 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.75</radius><length>1.8</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.75</radius><length>1.8</length></cylinder></geometry><material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material></visual></link></model>
+    <model name='fm_cub_17'><static>true</static><pose>0.5 -15.5 0.7 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>2.4 1.6 1.4</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>2.4 1.6 1.4</size></box></geometry><material><ambient>0.8 0.3 0.3 1</ambient><diffuse>0.8 0.3 0.3 1</diffuse></material></visual></link></model>
+    <model name='fm_box_19'><static>true</static><pose>3.2 -15.5 0.7 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.8 1.8 1.4</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.8 1.8 1.4</size></box></geometry><material><ambient>0.8 0.5 0.2 1</ambient><diffuse>0.8 0.5 0.2 1</diffuse></material></visual></link></model>
+
+    <!-- 西部及西南房间(inner_h3以南), cyl_16a/16b 横向紧贴成一对(圆心距0.725+0.675=1.4) -->
+    <model name='fm_box_14'><static>true</static><pose>-20 -19 0.6 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.8 1.65 1.2</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.8 1.65 1.2</size></box></geometry><material><ambient>0.2 0.6 0.4 1</ambient><diffuse>0.2 0.6 0.4 1</diffuse></material></visual></link></model>
+    <model name='fm_cyl_16a'><static>true</static><pose>-21.7 -7 0.6 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.725</radius><length>1.2</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.725</radius><length>1.2</length></cylinder></geometry><material><ambient>0.3 0.7 0.3 1</ambient><diffuse>0.3 0.7 0.3 1</diffuse></material></visual></link></model>
+    <model name='fm_cyl_16b'><static>true</static><pose>-20.3 -7 1.0 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><cylinder><radius>0.675</radius><length>2.0</length></cylinder></geometry></collision>
+      <visual name='v'><geometry><cylinder><radius>0.675</radius><length>2.0</length></cylinder></geometry><material><ambient>0.3 0.7 0.3 1</ambient><diffuse>0.3 0.7 0.3 1</diffuse></material></visual></link></model>
+
+    <!-- ==================== 西扩车间作业台 (1.4x3.0x0.95, 共3张, 纵向贴西墙一字排开, 东侧整条走道畅通) ==================== -->
+    <model name='ws_bench_1'><static>true</static><pose>-63 11 0.475 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.4 3.0 0.95</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.4 3.0 0.95</size></box></geometry><material><ambient>0.35 0.45 0.55 1</ambient><diffuse>0.35 0.45 0.55 1</diffuse></material></visual></link></model>
+    <model name='ws_bench_2'><static>true</static><pose>-63 15 0.475 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.4 3.0 0.95</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.4 3.0 0.95</size></box></geometry><material><ambient>0.35 0.45 0.55 1</ambient><diffuse>0.35 0.45 0.55 1</diffuse></material></visual></link></model>
+    <model name='ws_bench_3'><static>true</static><pose>-63 19 0.475 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.4 3.0 0.95</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.4 3.0 0.95</size></box></geometry><material><ambient>0.35 0.45 0.55 1</ambient><diffuse>0.35 0.45 0.55 1</diffuse></material></visual></link></model>
+
+    <!-- ==================== 北条带长作业台 (4.0x1.5x1.0, 共3张, 集中摆在北条带中部靠北墙) ==================== -->
+    <model name='ws_desk_n1'><static>true</static><pose>-9 28.5 0.5 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>4.0 1.5 1.0</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>4.0 1.5 1.0</size></box></geometry><material><ambient>0.35 0.55 0.4 1</ambient><diffuse>0.35 0.55 0.4 1</diffuse></material></visual></link></model>
+    <model name='ws_desk_n2'><static>true</static><pose>-4 28.5 0.5 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>4.0 1.5 1.0</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>4.0 1.5 1.0</size></box></geometry><material><ambient>0.35 0.55 0.4 1</ambient><diffuse>0.35 0.55 0.4 1</diffuse></material></visual></link></model>
+    <model name='ws_desk_n3'><static>true</static><pose>1 28.5 0.5 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>4.0 1.5 1.0</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>4.0 1.5 1.0</size></box></geometry><material><ambient>0.35 0.55 0.4 1</ambient><diffuse>0.35 0.55 0.4 1</diffuse></material></visual></link></model>
+
+    <!-- ==================== 南条带质检桌 (2.5x1.2x1.0, 共3张, 集中摆在南条带中部靠南墙) ==================== -->
+    <model name='ws_desk_s1'><static>true</static><pose>-5 -28.5 0.5 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>2.5 1.2 1.0</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>2.5 1.2 1.0</size></box></geometry><material><ambient>0.6 0.55 0.25 1</ambient><diffuse>0.6 0.55 0.25 1</diffuse></material></visual></link></model>
+    <model name='ws_desk_s2'><static>true</static><pose>0 -28.5 0.5 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>2.5 1.2 1.0</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>2.5 1.2 1.0</size></box></geometry><material><ambient>0.6 0.55 0.25 1</ambient><diffuse>0.6 0.55 0.25 1</diffuse></material></visual></link></model>
+    <model name='ws_desk_s3'><static>true</static><pose>5 -28.5 0.5 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>2.5 1.2 1.0</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>2.5 1.2 1.0</size></box></geometry><material><ambient>0.6 0.55 0.25 1</ambient><diffuse>0.6 0.55 0.25 1</diffuse></material></visual></link></model>
+
+    <!-- ==================== 料箱方块 (1.2m/1.5m 正方体) ====================
+         cube_5..8: 西南区沿y纵向一字排开(离主走廊留8m+, 不挡入口)
+         cube_2/9/10: (-46,-6)附近堆成品字(上一/下二) -->
+    <model name='ws_cube_1'><static>true</static><pose>-63 6 0.6 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.2 1.2 1.2</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.2 1.2 1.2</size></box></geometry><material><ambient>0.75 0.6 0.35 1</ambient><diffuse>0.75 0.6 0.35 1</diffuse></material></visual></link></model>
+    <model name='ws_cube_2'><static>true</static><pose>-46 -6 0.6 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.2 1.2 1.2</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.2 1.2 1.2</size></box></geometry><material><ambient>0.75 0.6 0.35 1</ambient><diffuse>0.75 0.6 0.35 1</diffuse></material></visual></link></model>
+    <!-- ws_cube_3 已移除: 北条带 (-30,27.5) 附近留空作原地旋转测试区 -->
+    <model name='ws_cube_4'><static>true</static><pose>-20.5 -27.5 0.6 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.2 1.2 1.2</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.2 1.2 1.2</size></box></geometry><material><ambient>0.75 0.6 0.35 1</ambient><diffuse>0.75 0.6 0.35 1</diffuse></material></visual></link></model>
+    <model name='ws_cube_5'><static>true</static><pose>-63 -20 0.75 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.5 1.5 1.5</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.5 1.5 1.5</size></box></geometry><material><ambient>0.8 0.35 0.3 1</ambient><diffuse>0.8 0.35 0.3 1</diffuse></material></visual></link></model>
+    <model name='ws_cube_6'><static>true</static><pose>-63 -16.5 0.75 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.5 1.5 1.5</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.5 1.5 1.5</size></box></geometry><material><ambient>0.8 0.35 0.3 1</ambient><diffuse>0.8 0.35 0.3 1</diffuse></material></visual></link></model>
+    <model name='ws_cube_7'><static>true</static><pose>-63 -13 0.75 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.5 1.5 1.5</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.5 1.5 1.5</size></box></geometry><material><ambient>0.8 0.35 0.3 1</ambient><diffuse>0.8 0.35 0.3 1</diffuse></material></visual></link></model>
+    <model name='ws_cube_8'><static>true</static><pose>-63 -23.5 0.75 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.5 1.5 1.5</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.5 1.5 1.5</size></box></geometry><material><ambient>0.8 0.35 0.3 1</ambient><diffuse>0.8 0.35 0.3 1</diffuse></material></visual></link></model>
+    <model name='ws_cube_9'><static>true</static><pose>-46.7 -7.4 0.6 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.2 1.2 1.2</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.2 1.2 1.2</size></box></geometry><material><ambient>0.75 0.6 0.35 1</ambient><diffuse>0.75 0.6 0.35 1</diffuse></material></visual></link></model>
+    <model name='ws_cube_10'><static>true</static><pose>-45.3 -7.4 0.6 0 0 0</pose>
+      <link name='l'><collision name='c'><geometry><box><size>1.2 1.2 1.2</size></box></geometry></collision>
+      <visual name='v'><geometry><box><size>1.2 1.2 1.2</size></box></geometry><material><ambient>0.75 0.6 0.35 1</ambient><diffuse>0.75 0.6 0.35 1</diffuse></material></visual></link></model>
+  </world>
+</sdf>
