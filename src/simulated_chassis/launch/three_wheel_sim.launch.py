@@ -39,7 +39,8 @@ def generate_launch_description():
     xacro_path = LaunchConfiguration('description_file')
     # robot_state_publisher 可用独立描述(缺省同 description_file):组合 profile 传
     # package:// mesh 版给上位机读,Gazebo 拉起仍用 file:// 版,互不影响
-    world_path = os.path.join(pkg_share, "world", "world_m.sdf")
+    # 默认大地图 world_l.sdf(内净空约94x64m,面积约6000m²)；需回小图改回 world_m.sdf
+    world_path = os.path.join(pkg_share, "world", "world_l.sdf")
     robot_description = {
         "robot_description": ParameterValue(Command(["xacro ", xacro_path]), value_type=str)
     }

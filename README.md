@@ -40,6 +40,8 @@ Docker 默认 `ROBOT_PROFILE=chassis_3d_ur5e`；需要原纯底盘时设为 `cha
 source install/setup.bash
 ros2 launch simulated_chassis three_wheel_sim.launch.py
 
+默认世界为 `world/world_l.sdf` 大地图（内净空约 94x64m，面积约 6000m²；含西扩车间、南北条带、两条 1.2m 厚墙，东侧五边形外凸墙保留用于辨认 +x 朝向）。换回原 50x60 地图时，把 `three_wheel_sim.launch.py` 中的 `world_l.sdf` 改回 `world_m.sdf` 后重新构建即可。
+
 默认不弹 xterm 键盘遥控窗口（launch 退出杀不掉它，是进程残留大户；日常遥控用手柄）。
 需要键盘遥控时：
 
