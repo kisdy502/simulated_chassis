@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <sdf version='1.9'>
   <world name='test_world'>
-    <physics name='1ms' type='ignored'>
-      <max_step_size>0.001</max_step_size>
+    <!-- 2ms/500Hz：AGV 仿真精度足够，物理 CPU 减半（控制器 100Hz 仍有 5x 余量） -->
+    <physics name='2ms' type='ignored'>
+      <max_step_size>0.002</max_step_size>
       <real_time_factor>1</real_time_factor>
-      <real_time_update_rate>1000</real_time_update_rate>
+      <real_time_update_rate>500</real_time_update_rate>
     </physics>
     <plugin name='ignition::gazebo::systems::Physics' filename='ignition-gazebo-physics-system' />
     <plugin name='ignition::gazebo::systems::UserCommands' filename='ignition-gazebo-user-commands-system' />

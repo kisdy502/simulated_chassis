@@ -127,7 +127,7 @@ colcon build --symlink-install --packages-select agv_bridge_v2_interfaces agv_br
 source install/setup.bash
 
 # 终端一：一个世界、一台组合机器人、一个 controller_manager
-ros2 launch simulated_chassis_ur5e simulation.launch.py gui:=true
+ros2 launch simulated_chassis_ur5e simulation.launch.py gui:=false
 
 # 终端二：原有 bridge + MoveIt + arm_manager，无需单独启动机械臂
 ros2 launch simulated_chassis_ur5e bridge.launch.py rviz:=true
